@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
-import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Lead } from '@/types'
+import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Lead, LeadFollowup } from '@/types'
 import { calculateEMI, generateEMISchedule } from '@/utils'
 import dayjs from 'dayjs'
+import { customerProfileService } from '@/services/customerProfileService'
 
 // ─── Customer Hooks ───────────────────────────────────────────────────────────
 
@@ -786,11 +787,12 @@ export function useLeads() {
       // Status column now exists directly on the table.
       // For older rows that still have JSON in message, fall back gracefully.
       return (data ?? []).map((l: any) => {
+        type LeadStatus = 'Pending' | 'Converted' | 'Rejected' | 'Interested'
         // If the row already has a proper status column value, use it
         if (l.status && l.status !== 'Pending') {
           return {
             ...l,
-            status: l.status as 'Pending' | 'Converted' | 'Rejected',
+            status: l.status as LeadStatus,
           } as Lead
         }
         // Legacy: try to parse old JSON from message column
@@ -800,14 +802,14 @@ export function useLeads() {
             if (parsed && typeof parsed === 'object' && 'status' in parsed) {
               return {
                 ...l,
-                status: (parsed.status || 'Pending') as 'Pending' | 'Converted' | 'Rejected',
+                status: (parsed.status || 'Pending') as LeadStatus,
                 rejection_reason: parsed.rejection_reason || l.rejection_reason,
                 message: parsed.text || '',
               } as Lead
             }
           } catch { /* not JSON, fall through */ }
         }
-        return { ...l, status: (l.status || 'Pending') as 'Pending' | 'Converted' | 'Rejected' } as Lead
+        return { ...l, status: (l.status || 'Pending') as LeadStatus } as Lead
       })
     },
     retry: 1,
@@ -987,3 +989,327 @@ export function useRejectLead() {
     },
   })
 }
+
+// ─── Lead: Mark as Interested ────────────────────────────────────────────────
+
+export function useMarkLeadInterested() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (lead: Lead) => {
+      const { error } = await supabase
+        .from('applications')
+        .update({ status: 'Interested' })
+        .eq('id', lead.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['extendedDashboardData'] })
+    },
+  })
+}
+
+// ─── Lead Follow-ups ─────────────────────────────────────────────────────────
+
+export function useFollowups() {
+  return useQuery({
+    queryKey: ['lead_followups'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('lead_followups')
+        .select('*')
+        .order('next_followup_date', { ascending: true })
+      if (error) throw error
+      return (data ?? []) as LeadFollowup[]
+    },
+    staleTime: 30_000,
+  })
+}
+
+export function useUpsertFollowup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: {
+      lead_id: string
+      last_conversation_note?: string
+      next_followup_date?: string
+      next_followup_time?: string
+      reminder_status?: 'pending' | 'completed' | 'overdue'
+    }) => {
+      const { data, error } = await supabase
+        .from('lead_followups')
+        .upsert(
+          {
+            lead_id:                payload.lead_id,
+            last_conversation_note: payload.last_conversation_note ?? null,
+            next_followup_date:     payload.next_followup_date ?? null,
+            next_followup_time:     payload.next_followup_time ?? null,
+            reminder_status:        payload.reminder_status ?? 'pending',
+          },
+          { onConflict: 'lead_id' }
+        )
+        .select()
+        .single()
+      if (error) throw error
+      return data as LeadFollowup
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead_followups'] })
+    },
+  })
+}
+
+export function useCompleteReminder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (leadId: string) => {
+      const { error } = await supabase
+        .from('lead_followups')
+        .update({
+          reminder_status:    'completed',
+          next_followup_date: null,
+          next_followup_time: null,
+        })
+        .eq('lead_id', leadId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead_followups'] })
+    },
+  })
+}
+
+// ─── Customer Profile Dashboard Hooks ─────────────────────────────────────────
+
+export function useCustomerProfile(customerId: string) {
+  return useQuery({
+    queryKey: ['customerProfile', customerId, 'profile'],
+    queryFn: () => customerProfileService.getProfile(customerId),
+    enabled: !!customerId,
+  })
+}
+
+export function useUpdateCustomerProfile() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, payload }: { customerId: string; payload: any }) =>
+      customerProfileService.updateProfile(customerId, payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'profile'] })
+      queryClient.invalidateQueries({ queryKey: ['customers', variables.customerId] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+    },
+  })
+}
+
+export function useCustomerProjects(customerId: string) {
+  return useQuery({
+    queryKey: ['customerProfile', customerId, 'projects'],
+    queryFn: () => customerProfileService.getProjects(customerId),
+    enabled: !!customerId,
+  })
+}
+
+export function useSaveCustomerProject() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, project }: { customerId: string; project: any }) =>
+      customerProfileService.saveProject(customerId, project),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'projects'] })
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'activities'] })
+    },
+  })
+}
+
+export function useDeleteCustomerProject() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, projectId }: { customerId: string; projectId: string }) =>
+      customerProfileService.deleteProject(customerId, projectId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'projects'] })
+    },
+  })
+}
+
+export function useCustomerQuotations(customerId: string) {
+  return useQuery({
+    queryKey: ['customerProfile', customerId, 'quotations'],
+    queryFn: () => customerProfileService.getQuotations(customerId),
+    enabled: !!customerId,
+  })
+}
+
+export function useSaveCustomerQuotation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, quotation }: { customerId: string; quotation: any }) =>
+      customerProfileService.saveQuotation(customerId, quotation),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'quotations'] })
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'activities'] })
+    },
+  })
+}
+
+export function useCustomerInvoices(customerId: string) {
+  return useQuery({
+    queryKey: ['customerProfile', customerId, 'invoices'],
+    queryFn: () => customerProfileService.getInvoices(customerId),
+    enabled: !!customerId,
+  })
+}
+
+export function useSaveCustomerInvoice() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, invoice }: { customerId: string; invoice: any }) =>
+      customerProfileService.saveInvoice(customerId, invoice),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'activities'] })
+    },
+  })
+}
+
+export function useCustomerPayments(customerId: string) {
+  return useQuery({
+    queryKey: ['customerProfile', customerId, 'payments'],
+    queryFn: () => customerProfileService.getPayments(customerId),
+    enabled: !!customerId,
+  })
+}
+
+export function useSaveCustomerPayment() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, payment }: { customerId: string; payment: any }) =>
+      customerProfileService.savePayment(customerId, payment),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'payments'] })
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'activities'] })
+    },
+  })
+}
+
+export function useCustomerDocuments(customerId: string) {
+  return useQuery({
+    queryKey: ['customerProfile', customerId, 'documents'],
+    queryFn: () => customerProfileService.getDocuments(customerId),
+    enabled: !!customerId,
+  })
+}
+
+export function useSaveCustomerDocument() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, document }: { customerId: string; document: any }) =>
+      customerProfileService.saveDocument(customerId, document),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'documents'] })
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'activities'] })
+    },
+  })
+}
+
+export function useDeleteCustomerDocument() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, documentId }: { customerId: string; documentId: string }) =>
+      customerProfileService.deleteDocument(customerId, documentId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'documents'] })
+    },
+  })
+}
+
+export function useCustomerCommunications(customerId: string) {
+  return useQuery({
+    queryKey: ['customerProfile', customerId, 'communications'],
+    queryFn: () => customerProfileService.getCommunications(customerId),
+    enabled: !!customerId,
+  })
+}
+
+export function useSaveCustomerCommunication() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, communication }: { customerId: string; communication: any }) =>
+      customerProfileService.saveCommunication(customerId, communication),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'communications'] })
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'activities'] })
+    },
+  })
+}
+
+export function useCustomerFollowups(customerId: string) {
+  return useQuery({
+    queryKey: ['customerProfile', customerId, 'followups'],
+    queryFn: () => customerProfileService.getFollowups(customerId),
+    enabled: !!customerId,
+  })
+}
+
+export function useSaveCustomerFollowup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, followup }: { customerId: string; followup: any }) =>
+      customerProfileService.saveFollowup(customerId, followup),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'followups'] })
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'activities'] })
+    },
+  })
+}
+
+export function useCustomerNotes(customerId: string) {
+  return useQuery({
+    queryKey: ['customerProfile', customerId, 'notes'],
+    queryFn: () => customerProfileService.getNotes(customerId),
+    enabled: !!customerId,
+  })
+}
+
+export function useSaveCustomerNote() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, note }: { customerId: string; note: any }) =>
+      customerProfileService.saveNote(customerId, note),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'notes'] })
+    },
+  })
+}
+
+export function useDeleteCustomerNote() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, noteId }: { customerId: string; noteId: string }) =>
+      customerProfileService.deleteNote(customerId, noteId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'notes'] })
+    },
+  })
+}
+
+export function useCustomerActivities(customerId: string) {
+  return useQuery({
+    queryKey: ['customerProfile', customerId, 'activities'],
+    queryFn: () => customerProfileService.getActivities(customerId),
+    enabled: !!customerId,
+  })
+}
+
+export function useSaveCustomerActivity() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, activity }: { customerId: string; activity: any }) =>
+      customerProfileService.saveActivity(customerId, activity),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'activities'] })
+    },
+  })
+}
+

@@ -1,62 +1,21 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, Search, Bell, ChevronDown } from 'lucide-react'
+import { Menu, Search, ChevronDown, Plus, Settings, LogOut } from 'lucide-react'
 import { useUIStore } from '@/store/uiStore'
 import { useAuthStore } from '@/store/authStore'
-import { Avatar } from '@/components/ui'
-import { useNotificationsData } from '@/hooks/useDb'
-import { formatDateTime, cn } from '@/utils'
-import type { Notification } from '@/types'
+import { Avatar, CommandPalette } from '@/components/ui'
 
 export function Header() {
   const { setSidebarOpen } = useUIStore()
   const { user, signOut } = useAuthStore()
-  const [searchQuery, setSearchQuery] = useState('')
-  const [showNotifications, setShowNotifications] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showCommandPalette, setShowCommandPalette] = useState(false)
   const navigate = useNavigate()
-  const notifRef = useRef<HTMLDivElement>(null)
   const userRef = useRef<HTMLDivElement>(null)
-
-  const { data: rawNotifications = [] } = useNotificationsData()
-  const [localReads, setLocalReads] = useState<Record<string, boolean>>(() => {
-    try {
-      const saved = localStorage.getItem('read_notifications')
-      return saved ? JSON.parse(saved) : {}
-    } catch {
-      return {}
-    }
-  })
-
-  useEffect(() => {
-    const handleStorage = () => {
-      try {
-        const saved = localStorage.getItem('read_notifications')
-        if (saved) {
-          setLocalReads(JSON.parse(saved))
-        }
-      } catch {}
-    }
-    window.addEventListener('storage', handleStorage)
-    window.addEventListener('focus', handleStorage)
-    handleStorage() // Read initial state
-    return () => {
-      window.removeEventListener('storage', handleStorage)
-      window.removeEventListener('focus', handleStorage)
-    }
-  }, [])
-
-  const notifications = rawNotifications.map((n: Notification) => ({
-    ...n,
-    is_read: localReads[n.id] ?? n.is_read
-  }))
-
-  const unreadCount = notifications.filter((n: Notification) => !n.is_read).length
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotifications(false)
       if (userRef.current && !userRef.current.contains(e.target as Node)) setShowUserMenu(false)
     }
     document.addEventListener('mousedown', handler)
@@ -64,133 +23,93 @@ export function Header() {
   }, [])
 
   return (
-    <header className="glass sticky top-0 z-30 h-16 border-b border-slate-100/80 flex items-center gap-4 px-4 lg:px-6">
-      {/* Mobile menu button */}
-      <button
-        onClick={() => setSidebarOpen(true)}
-        className="lg:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"
-        aria-label="Open menu"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
+    <>
+      <header className="glass sticky top-0 z-30 h-16 border-b border-slate-200/80 flex items-center gap-4 px-4 lg:px-6">
+        {/* Mobile menu button */}
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="lg:hidden p-2 rounded-xl hover:bg-slate-100 text-slate-600 transition-colors"
+          aria-label="Open menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
 
-      {/* Global Search */}
-      <div className="flex-1 max-w-xl">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search customers, loans, receipts..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all"
-          />
-          {searchQuery && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-50">
-              <div className="p-2">
-                <p className="text-xs text-slate-400 px-2 py-1 font-medium uppercase tracking-wider">Quick Results</p>
-                {['Rajesh Kumar — CUS001', 'Priya Sharma — CUS002', 'LN2024001 — Rajesh Kumar'].map((r) => (
-                  <button key={r} className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2">
-                    <Search className="h-3.5 w-3.5 text-slate-400" />
-                    {r}
-                  </button>
-                ))}
+        {/* Global Search Spotlight Trigger */}
+        <button
+          onClick={() => setShowCommandPalette(true)}
+          className="flex items-center gap-3 px-3.5 py-2 w-full max-w-sm sm:max-w-md bg-slate-100/80 hover:bg-slate-200/60 border border-slate-200/60 rounded-xl text-slate-500 transition-all text-xs font-medium group text-left"
+        >
+          <Search className="h-4 w-4 text-slate-400 group-hover:text-brand-600 transition-colors flex-shrink-0" />
+          <span className="flex-1 truncate">Search customers, loans, receipts...</span>
+          <kbd className="hidden sm:inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-mono font-bold text-slate-400 bg-white rounded border border-slate-200 shadow-2xs">
+            ⌘K
+          </kbd>
+        </button>
+
+        {/* Right Nav Options */}
+        <div className="flex items-center gap-2.5 ml-auto">
+          {/* Quick Actions Dropdown */}
+          <button
+            onClick={() => navigate('/emi-collection')}
+            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-600 bg-brand-50 hover:bg-brand-100 rounded-xl border border-brand-200/60 transition-colors shadow-2xs"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Quick EMI
+          </button>
+
+          <div className="h-5 w-px bg-slate-200" />
+
+          {/* User Menu Dropdown */}
+          <div ref={userRef} className="relative">
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
+            >
+              <Avatar name={user?.full_name ?? 'Admin User'} size="sm" />
+              <div className="hidden sm:block text-left">
+                <p className="text-xs font-bold text-slate-900 leading-tight">{user?.full_name ?? 'Admin User'}</p>
+                <p className="text-[10px] text-slate-400 capitalize font-medium">{user?.role ?? 'Admin'}</p>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-400 hidden sm:block" />
+            </button>
 
-      <div className="flex items-center gap-2 ml-auto">
-        {/* Notifications */}
-        <div ref={notifRef} className="relative">
-          <button
-            onClick={() => setShowNotifications(!showNotifications)}
-            className="relative p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
-            aria-label="Notifications"
-          >
-            <Bell style={{ width: 18, height: 18 }} />
-            {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                {unreadCount}
-              </span>
-            )}
-          </button>
-
-          <AnimatePresence>
-            {showNotifications && (
-              <motion.div
-                initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                transition={{ duration: 0.15 }}
-                className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden z-50"
-              >
-                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                  <h3 className="font-semibold text-slate-900 text-sm">Notifications</h3>
-                  <span className="text-xs text-brand-600 cursor-pointer hover:underline" onClick={() => navigate('/notifications')}>View all</span>
-                </div>
-                <div className="max-h-80 overflow-y-auto">
-                  {notifications.slice(0, 5).map((notif: Notification) => (
-                    <div
-                      key={notif.id}
-                      className={cn('px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors', !notif.is_read && 'bg-blue-50/40')}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={cn(
-                          'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
-                          notif.type === 'overdue_emi' ? 'bg-red-500' :
-                          notif.type === 'due_today' ? 'bg-amber-500' :
-                          notif.type === 'payment_received' ? 'bg-emerald-500' : 'bg-blue-500'
-                        )} />
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-slate-800">{notif.title}</p>
-                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{notif.message}</p>
-                          <p className="text-[10px] text-slate-400 mt-1">{formatDateTime(notif.created_at)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* User menu */}
-        <div ref={userRef} className="relative">
-          <button
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
-          >
-            <Avatar name={user?.full_name ?? 'Admin User'} size="sm" />
-            <div className="hidden sm:block text-left">
-              <p className="text-xs font-semibold text-slate-900 leading-none">{user?.full_name ?? 'Admin User'}</p>
-              <p className="text-[10px] text-slate-400 capitalize mt-0.5">{user?.role ?? 'Admin'}</p>
-            </div>
-            <ChevronDown className="h-3 w-3 text-slate-400 hidden sm:block" />
-          </button>
-
-          <AnimatePresence>
-            {showUserMenu && (
-              <motion.div
-                initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                transition={{ duration: 0.15 }}
-                className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden z-50"
-              >
-                <div className="p-2">
-                  <button onClick={() => { navigate('/settings'); setShowUserMenu(false) }} className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-lg">Profile Settings</button>
-                  <button onClick={() => { navigate('/settings'); setShowUserMenu(false) }} className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-lg">Company Settings</button>
+            <AnimatePresence>
+              {showUserMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                  transition={{ duration: 0.15, ease: 'easeOut' }}
+                  className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden z-50 p-1.5"
+                >
+                  <div className="px-3 py-2 border-b border-slate-100 mb-1">
+                    <p className="text-xs font-bold text-slate-900">{user?.full_name ?? 'Admin User'}</p>
+                    <p className="text-[11px] text-slate-400 truncate">{user?.email ?? 'admin@financeApp.com'}</p>
+                  </div>
+                  <button
+                    onClick={() => { navigate('/settings'); setShowUserMenu(false) }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-brand-600 rounded-xl transition-colors text-left"
+                  >
+                    <Settings className="h-4 w-4 text-slate-400" />
+                    Company Settings
+                  </button>
                   <div className="border-t border-slate-100 my-1" />
-                  <button onClick={signOut} className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg">Sign Out</button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  <button
+                    onClick={signOut}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-xl transition-colors text-left"
+                  >
+                    <LogOut className="h-4 w-4 text-red-500" />
+                    Sign Out
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+
+      {/* Command Palette Spotlight Search */}
+      <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
+    </>
   )
 }

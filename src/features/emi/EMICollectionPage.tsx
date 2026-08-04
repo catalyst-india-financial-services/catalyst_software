@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, CheckCircle2, AlertTriangle, Printer, Download, Plus } from 'lucide-react'
+import { Search, CheckCircle2, AlertTriangle, Printer, Download, Plus, Coins, WalletCards } from 'lucide-react'
 import { useCustomers, useLoans, usePayments, useLoanSchedule, useCreatePayment } from '@/hooks/useDb'
 import { useAuthStore } from '@/store/authStore'
 import {
   Button, Input, Select, Card, CardHeader, CardTitle, CardBody,
-  Modal, StatusBadge, Avatar
+  Modal, StatusBadge, Avatar, PageHeader
 } from '@/components/ui'
 import { formatCurrency, formatDate, cn } from '@/utils'
 
@@ -71,18 +71,18 @@ function PaymentModal({
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ type: 'spring', stiffness: 200 }}
-          className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center"
+          className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-xl"
         >
-          <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+          <CheckCircle2 className="h-10 w-10" />
         </motion.div>
-        <h3 className="text-xl font-bold text-slate-900">Payment Collected!</h3>
-        <div className="bg-slate-50 rounded-xl p-4 w-full space-y-2 text-sm">
-          <div className="flex justify-between"><span className="text-slate-500">Receipt No.</span><span className="font-semibold text-brand-600">RCP{Date.now().toString().slice(-6)}</span></div>
-          <div className="flex justify-between"><span className="text-slate-500">Customer</span><span className="font-semibold">{customer.name}</span></div>
-          <div className="flex justify-between"><span className="text-slate-500">Loan No.</span><span className="font-semibold">{loan.loan_number}</span></div>
-          <div className="flex justify-between"><span className="text-slate-500">Amount</span><span className="font-bold text-emerald-700 amount-display">{formatCurrency(totalAmount)}</span></div>
-          <div className="flex justify-between"><span className="text-slate-500">Mode</span><span className="font-semibold capitalize">{paymentMode}</span></div>
-          <div className="flex justify-between"><span className="text-slate-500">Date</span><span className="font-semibold">{formatDate(new Date().toISOString())}</span></div>
+        <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Payment Successfully Collected!</h3>
+        <div className="bg-slate-50 rounded-2xl p-4 w-full space-y-2 text-xs border border-slate-200/80">
+          <div className="flex justify-between"><span className="text-slate-500 font-medium">Receipt No.</span><span className="font-bold text-brand-600 font-mono">RCP{Date.now().toString().slice(-6)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500 font-medium">Customer</span><span className="font-bold text-slate-800">{customer.name}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500 font-medium">Loan No.</span><span className="font-bold text-slate-800 font-mono">{loan.loan_number}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500 font-medium">Amount Collected</span><span className="font-extrabold text-emerald-600 text-sm amount-display">{formatCurrency(totalAmount)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500 font-medium">Payment Mode</span><span className="font-bold uppercase text-slate-800">{paymentMode}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500 font-medium">Collection Date</span><span className="font-bold text-slate-800">{formatDate(new Date().toISOString())}</span></div>
         </div>
         <div className="flex gap-3 mt-2">
           <Button variant="outline" size="sm"><Printer className="h-4 w-4" /> Print Receipt</Button>
@@ -95,47 +95,47 @@ function PaymentModal({
 
   return (
     <div className="space-y-5">
-      {/* Customer & Loan Info */}
-      <div className="bg-slate-50 rounded-xl p-4 flex items-center gap-4">
+      {/* Customer & Loan Header */}
+      <div className="bg-slate-50 rounded-2xl p-4 flex items-center gap-4 border border-slate-200/80">
         <Avatar name={customer.name} size="lg" />
         <div>
-          <p className="font-bold text-slate-900">{customer.name}</p>
-          <p className="text-sm text-slate-500">{customer.mobile}</p>
-          <p className="text-xs text-brand-600 font-semibold mt-0.5">{loan.loan_number} — {loan.loan_type.toUpperCase()} LOAN</p>
+          <p className="font-bold text-slate-900 text-sm">{customer.name}</p>
+          <p className="text-xs text-slate-500">{customer.mobile}</p>
+          <p className="text-xs text-brand-600 font-bold font-mono mt-0.5">{loan.loan_number} — {loan.loan_type.toUpperCase()} LOAN</p>
         </div>
         <div className="ml-auto text-right">
-          <p className="text-2xl font-bold text-slate-900 amount-display">{formatCurrency(loan.emi_amount)}</p>
-          <p className="text-xs text-slate-500">EMI Amount</p>
+          <p className="text-xl font-extrabold text-slate-900 amount-display">{formatCurrency(loan.emi_amount)}</p>
+          <p className="text-[11px] text-slate-400 font-medium">Base Monthly EMI</p>
           <StatusBadge status={loan.status} />
         </div>
       </div>
 
-      {/* Loan Summary */}
-      <div className="grid grid-cols-3 gap-3 text-sm">
+      {/* Loan Summary Strip */}
+      <div className="grid grid-cols-3 gap-3 text-xs">
         {[
-          { label: 'Remaining EMI', value: loan.remaining_emi.toString() },
-          { label: 'Balance', value: formatCurrency(loan.remaining_balance) },
-          { label: 'Overdue', value: loan.status === 'overdue' ? 'Yes' : 'No' },
+          { label: 'EMIs Remaining', value: `${loan.remaining_emi} Left` },
+          { label: 'Balance Principal', value: formatCurrency(loan.remaining_balance) },
+          { label: 'Overdue Status', value: loan.status === 'overdue' ? 'Yes (Overdue)' : 'Normal' },
         ].map((s) => (
-          <div key={s.label} className="bg-white border border-slate-100 rounded-lg p-3 text-center">
-            <p className="text-xs text-slate-500 mb-1">{s.label}</p>
+          <div key={s.label} className="bg-white border border-slate-200/80 rounded-xl p-3 text-center">
+            <p className="text-[11px] text-slate-400 font-medium mb-1">{s.label}</p>
             <p className="font-bold text-slate-800 amount-display">{s.value}</p>
           </div>
         ))}
       </div>
 
-      {/* Payment Mode */}
+      {/* Payment Mode Selector */}
       <div>
-        <label className="form-label">Payment Mode</label>
+        <label className="form-label">Select Payment Mode</label>
         <div className="flex gap-2">
           {(['cash', 'upi', 'bank', 'cheque'] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => setPaymentMode(mode)}
               className={cn(
-                'flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all uppercase tracking-wide',
+                'flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all uppercase tracking-wider',
                 paymentMode === mode
-                  ? 'bg-brand-500 text-white border-brand-500 shadow-kpi'
+                  ? 'bg-brand-600 text-white border-brand-600 shadow-kpi'
                   : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300'
               )}
             >
@@ -145,17 +145,17 @@ function PaymentModal({
         </div>
       </div>
 
-      {/* Options */}
+      {/* Adjustments */}
       <div className="grid grid-cols-2 gap-4">
         <Input
-          label="Penalty Amount (₹)"
+          label="Late Penalty Charge (₹)"
           type="number"
           value={penalty}
           onChange={(e) => setPenalty(e.target.value)}
           placeholder="0"
         />
         <Input
-          label="Discount Amount (₹)"
+          label="Discount Concession (₹)"
           type="number"
           value={discount}
           onChange={(e) => setDiscount(e.target.value)}
@@ -163,21 +163,21 @@ function PaymentModal({
         />
       </div>
 
-      {/* Special options */}
-      <div className="flex gap-4">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={advance} onChange={(e) => setAdvance(e.target.checked)} className="w-4 h-4 accent-brand-500" />
-          <span className="text-sm text-slate-700">Advance EMI</span>
+      {/* Advance / Partial Checkboxes */}
+      <div className="flex gap-6">
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" checked={advance} onChange={(e) => setAdvance(e.target.checked)} className="w-4 h-4 rounded accent-brand-600" />
+          <span className="text-xs font-semibold text-slate-700">Advance EMI Collection</span>
         </label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={partial} onChange={(e) => setPartial(e.target.checked)} className="w-4 h-4 accent-brand-500" />
-          <span className="text-sm text-slate-700">Partial Payment</span>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" checked={partial} onChange={(e) => setPartial(e.target.checked)} className="w-4 h-4 rounded accent-brand-600" />
+          <span className="text-xs font-semibold text-slate-700">Partial Payment</span>
         </label>
       </div>
 
       {partial && (
         <Input
-          label="Partial Amount (₹)"
+          label="Partial Amount to Collect (₹)"
           type="number"
           value={partialAmount}
           onChange={(e) => setPartialAmount(e.target.value)}
@@ -185,22 +185,22 @@ function PaymentModal({
         />
       )}
 
-      {/* Total */}
-      <div className="bg-gradient-to-r from-brand-50 to-emerald-50 rounded-xl p-4 border border-brand-100">
+      {/* Total Display */}
+      <div className="bg-gradient-to-r from-brand-50 to-emerald-50 rounded-2xl p-4 border border-brand-100">
         <div className="flex justify-between items-center">
           <div>
-            <p className="text-sm text-slate-600 font-medium">Total to Collect</p>
-            <p className="text-xs text-slate-400 mt-0.5">EMI + Penalty - Discount</p>
+            <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">Total Collection Amount</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Base EMI + Penalty - Concession</p>
           </div>
-          <p className="text-3xl font-bold text-brand-600 amount-display">{formatCurrency(totalAmount)}</p>
+          <p className="text-2xl font-extrabold text-brand-600 amount-display">{formatCurrency(totalAmount)}</p>
         </div>
       </div>
 
-      <div className="flex justify-end gap-3">
+      <div className="flex justify-end gap-3 pt-2">
         <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
         <Button onClick={handleCollect} className="bg-emerald-600 hover:bg-emerald-700" loading={loading} disabled={!nextPending}>
           <CheckCircle2 className="h-4 w-4" />
-          Collect Payment
+          Confirm Collection
         </Button>
       </div>
     </div>
@@ -231,28 +231,29 @@ export default function EMICollectionPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">EMI Collection</h1>
-          <p className="page-subtitle">Today's collection center — manage daily EMI payments</p>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2">
-          <span className="font-medium text-slate-700">{formatDate(new Date().toISOString())}</span>
-        </div>
-      </div>
+      <PageHeader
+        title="EMI Collection Desk"
+        subtitle="Process daily EMI payments, issue digital receipts, and record penalties."
+        action={
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-2xs">
+            <Coins className="h-4 w-4 text-brand-600" />
+            <span>{formatDate(new Date().toISOString())}</span>
+          </div>
+        }
+      />
 
-      {/* Tab */}
-      <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+      {/* Tab Controls */}
+      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200/50">
         {(['collection', 'history'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={cn(
-              'px-6 py-2 text-sm font-semibold rounded-md capitalize transition-all',
-              activeTab === tab ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              'px-5 py-2 text-xs font-bold rounded-lg capitalize transition-all',
+              activeTab === tab ? 'bg-white text-brand-600 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
             )}
           >
-            {tab === 'collection' ? 'Daily Collection' : 'Payment History'}
+            {tab === 'collection' ? 'Daily Collection Desk' : 'Collection History & Receipts'}
           </button>
         ))}
       </div>
@@ -266,24 +267,24 @@ export default function EMICollectionPage() {
             exit={{ opacity: 0, y: -10 }}
             className="grid grid-cols-1 lg:grid-cols-2 gap-6"
           >
-            {/* Search Customer */}
+            {/* Search Customer Card */}
             <Card>
               <CardHeader>
-                <CardTitle>Search Customer</CardTitle>
+                <CardTitle>1. Select Borrower Account</CardTitle>
               </CardHeader>
               <CardBody>
                 <div className="relative mb-4">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                   <input
-                    className="form-input pl-9"
-                    placeholder="Search by name, mobile, customer ID..."
+                    className="form-input pl-9.5"
+                    placeholder="Search borrower by name, mobile, customer ID..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
-                <div className="space-y-2 max-h-80 overflow-y-auto">
+                <div className="space-y-2 max-h-84 overflow-y-auto pr-1">
                   {isCustLoading ? (
-                    <div className="text-center py-4 text-slate-500">Loading...</div>
+                    <div className="text-center py-6 text-slate-400 font-medium">Loading customers...</div>
                   ) : filteredCustomers.map((customer) => {
                     const activeLoans = loans.filter((l) => l.customer_id === customer.id && l.status === 'active')
                     if (activeLoans.length === 0) return null
@@ -292,23 +293,19 @@ export default function EMICollectionPage() {
                         key={customer.id}
                         onClick={() => { setSelectedCustomer(customer); setSelectedLoan(null) }}
                         className={cn(
-                          'w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left',
+                          'w-full flex items-center gap-3 p-3 rounded-2xl border transition-all text-left',
                           selectedCustomer?.id === customer.id
-                            ? 'border-brand-300 bg-brand-50'
+                            ? 'border-brand-300 bg-brand-50/50 shadow-2xs'
                             : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'
                         )}
                       >
                         <Avatar name={customer.name} size="md" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-slate-800 truncate">{customer.name}</p>
-                          <p className="text-xs text-slate-500">{customer.mobile} · {customer.customer_id}</p>
-                          <p className="text-xs text-brand-600 font-medium mt-0.5">{activeLoans.length} active loan{activeLoans.length > 1 ? 's' : ''}</p>
+                          <p className="text-xs font-bold text-slate-900 truncate">{customer.name}</p>
+                          <p className="text-[11px] text-slate-400 font-medium">{customer.mobile} · {customer.customer_id}</p>
+                          <p className="text-[11px] text-brand-600 font-bold mt-0.5">{activeLoans.length} active loan account{activeLoans.length > 1 ? 's' : ''}</p>
                         </div>
-                        {customer.status === 'active' ? (
-                          <StatusBadge status="active" />
-                        ) : (
-                          <AlertTriangle className="h-4 w-4 text-amber-500" />
-                        )}
+                        <StatusBadge status={customer.status} />
                       </button>
                     )
                   })}
@@ -316,16 +313,17 @@ export default function EMICollectionPage() {
               </CardBody>
             </Card>
 
-            {/* Select Loan & Collect */}
+            {/* Select Loan & Collect Card */}
             <Card>
               <CardHeader>
-                <CardTitle>{selectedCustomer ? `${selectedCustomer.name}'s Loans` : 'Select Customer First'}</CardTitle>
+                <CardTitle>{selectedCustomer ? `2. Choose ${selectedCustomer.name}'s Loan Account` : '2. Select Loan Account'}</CardTitle>
               </CardHeader>
               <CardBody>
                 {!selectedCustomer ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                    <Search className="h-12 w-12 mb-3 opacity-30" />
-                    <p className="text-sm font-medium">Search & select a customer to collect EMI</p>
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-400 text-center">
+                    <Search className="h-10 w-10 mb-3 opacity-30 text-slate-400" />
+                    <p className="text-xs font-semibold text-slate-600">Select a borrower from the left panel</p>
+                    <p className="text-[11px] text-slate-400 mt-1">Their active loan accounts will populate here for collection</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -333,29 +331,29 @@ export default function EMICollectionPage() {
                       <div
                         key={loan.id}
                         className={cn(
-                          'rounded-xl border p-4 transition-all cursor-pointer',
+                          'rounded-2xl border p-4 transition-all cursor-pointer',
                           selectedLoan?.id === loan.id
-                            ? 'border-brand-300 bg-brand-50'
+                            ? 'border-brand-300 bg-brand-50/50 shadow-2xs'
                             : 'border-slate-100 bg-white hover:border-slate-200'
                         )}
                         onClick={() => setSelectedLoan(loan)}
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div>
-                            <p className="text-sm font-bold text-slate-800">{loan.loan_number}</p>
-                            <p className="text-xs text-slate-500 capitalize">{loan.loan_type} Loan</p>
+                            <p className="text-xs font-extrabold text-slate-900 font-mono">{loan.loan_number}</p>
+                            <p className="text-[11px] text-slate-400 capitalize font-medium">{loan.loan_type} Loan Account</p>
                           </div>
                           <StatusBadge status={loan.status} />
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-xs">
-                          <div><p className="text-slate-400">EMI</p><p className="font-bold text-emerald-700 amount-display">{formatCurrency(loan.emi_amount)}</p></div>
-                          <div><p className="text-slate-400">Remaining</p><p className="font-semibold text-slate-700">{loan.remaining_emi} EMIs</p></div>
-                          <div><p className="text-slate-400">Balance</p><p className="font-semibold amount-display text-slate-700">{formatCurrency(loan.remaining_balance)}</p></div>
+                          <div><p className="text-slate-400 font-medium">Monthly EMI</p><p className="font-bold text-emerald-600 amount-display">{formatCurrency(loan.emi_amount)}</p></div>
+                          <div><p className="text-slate-400 font-medium">Remaining</p><p className="font-bold text-slate-800">{loan.remaining_emi} EMIs</p></div>
+                          <div><p className="text-slate-400 font-medium">Balance Principal</p><p className="font-bold amount-display text-slate-800">{formatCurrency(loan.remaining_balance)}</p></div>
                         </div>
                         {loan.status === 'overdue' && (
-                          <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600 font-medium">
-                            <AlertTriangle className="h-3 w-3" />
-                            <span>Overdue — Penalty may apply</span>
+                          <div className="mt-3 flex items-center gap-1.5 text-xs text-red-600 font-bold bg-red-50 p-2 rounded-xl border border-red-100">
+                            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                            <span>Overdue EMIs — Late penalty applies</span>
                           </div>
                         )}
                       </div>
@@ -367,11 +365,11 @@ export default function EMICollectionPage() {
                         animate={{ opacity: 1, y: 0 }}
                       >
                         <Button
-                          className="w-full mt-2 py-3 text-base bg-emerald-600 hover:bg-emerald-700"
+                          className="w-full mt-3 py-3 text-sm font-extrabold bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
                           onClick={() => setShowPaymentModal(true)}
                         >
-                          <Plus className="h-5 w-5" />
-                          Collect EMI — {formatCurrency(selectedLoan.emi_amount)}
+                          <Plus className="h-4 w-4" />
+                          Collect EMI Payment — {formatCurrency(selectedLoan.emi_amount)}
                         </Button>
                       </motion.div>
                     )}
@@ -389,51 +387,49 @@ export default function EMICollectionPage() {
           >
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Payment History</CardTitle>
-                  <Button variant="outline" size="sm"><Download className="h-4 w-4" /> Export</Button>
-                </div>
+                <CardTitle>Collection History Log</CardTitle>
+                <Button variant="outline" size="sm"><Download className="h-4 w-4" /> Export Receipts</Button>
               </CardHeader>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b border-slate-100">
+                <table className="data-table">
+                  <thead>
                     <tr>
-                      {['Receipt No.', 'Customer', 'Loan', 'EMI#', 'Date', 'Amount', 'Penalty', 'Mode', 'Status'].map((h) => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                      {['Receipt No.', 'Customer Name', 'Loan No.', 'EMI#', 'Collection Date', 'Amount Paid', 'Penalty', 'Payment Mode', 'Status'].map((h) => (
+                        <th key={h}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {isPaymentsLoading ? (
-                      <tr><td colSpan={9} className="text-center py-6 text-slate-500">Loading...</td></tr>
+                      <tr><td colSpan={9} className="text-center py-6 text-slate-400">Loading collection records...</td></tr>
                     ) : payments.map((p) => {
                       const customer = customers.find((c) => c.id === p.customer_id)
                       const loan = loans.find((l) => l.id === p.loan_id)
                       return (
-                        <tr key={p.id} className="border-b border-slate-50 hover:bg-blue-50/20 transition-colors">
-                          <td className="px-4 py-3 text-xs font-mono text-brand-600 font-semibold">{p.receipt_number}</td>
-                          <td className="px-4 py-3">
+                        <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="text-xs font-mono text-brand-600 font-bold">{p.receipt_number}</td>
+                          <td>
                             <div className="flex items-center gap-2">
                               <Avatar name={customer?.name ?? ''} size="sm" />
-                              <span className="text-sm font-medium text-slate-800">{customer?.name ?? '—'}</span>
+                              <span className="text-xs font-bold text-slate-800">{customer?.name ?? '—'}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{loan?.loan_number ?? '—'}</td>
-                          <td className="px-4 py-3 text-sm text-slate-600">#{p.emi_number}</td>
-                          <td className="px-4 py-3 text-sm text-slate-500">{formatDate(p.payment_date)}</td>
-                          <td className="px-4 py-3 text-sm font-bold text-emerald-700 amount-display">{formatCurrency(p.amount_paid)}</td>
-                          <td className="px-4 py-3 text-sm text-red-600 amount-display">{p.penalty > 0 ? formatCurrency(p.penalty) : '—'}</td>
-                          <td className="px-4 py-3">
+                          <td className="text-xs text-slate-500 font-mono">{loan?.loan_number ?? '—'}</td>
+                          <td className="text-xs font-bold text-slate-700">#{p.emi_number}</td>
+                          <td className="text-xs text-slate-500">{formatDate(p.payment_date)}</td>
+                          <td className="text-xs font-bold text-emerald-600 amount-display">{formatCurrency(p.amount_paid)}</td>
+                          <td className="text-xs text-red-600 amount-display font-semibold">{p.penalty > 0 ? formatCurrency(p.penalty) : '—'}</td>
+                          <td>
                             <span className={cn(
-                              'px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase',
-                              p.payment_mode === 'cash' ? 'bg-emerald-50 text-emerald-700' :
-                              p.payment_mode === 'upi' ? 'bg-purple-50 text-purple-700' :
-                              'bg-blue-50 text-blue-700'
+                              'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase',
+                              p.payment_mode === 'cash' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                              p.payment_mode === 'upi' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
+                              'bg-blue-50 text-blue-700 border border-blue-100'
                             )}>
                               {p.payment_mode}
                             </span>
                           </td>
-                          <td className="px-4 py-3"><StatusBadge status={p.partial ? 'partial' : 'paid'} /></td>
+                          <td><StatusBadge status={p.partial ? 'partial' : 'paid'} /></td>
                         </tr>
                       )
                     })}
@@ -450,7 +446,7 @@ export default function EMICollectionPage() {
         <Modal
           isOpen={showPaymentModal}
           onClose={() => setShowPaymentModal(false)}
-          title="Collect EMI Payment"
+          title="Collect EMI Payment Receipt"
           size="md"
         >
           <PaymentModal

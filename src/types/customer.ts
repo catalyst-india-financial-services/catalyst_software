@@ -42,6 +42,17 @@ export interface Lead {
   amount?: number
   message?: string
   created_at: string
-  status?: 'Pending' | 'Rejected' | 'Converted'
+  status?: 'Pending' | 'Rejected' | 'Converted' | 'Interested'
   rejection_reason?: string
+}
+
+export interface LeadFollowup {
+  id: string
+  lead_id: string
+  last_conversation_note?: string
+  next_followup_date?: string
+  next_followup_time?: string
+  reminder_status: 'pending' | 'completed' | 'overdue'
+  created_at: string
+  updated_at: string
 }

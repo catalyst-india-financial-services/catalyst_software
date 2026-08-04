@@ -1,13 +1,22 @@
 import * as React from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/utils'
+import {
+  Search, ChevronLeft, ChevronRight, Check, X, AlertTriangle,
+  Clock, ArrowUpRight, ArrowDownRight, CheckCircle2, CircleDot
+} from 'lucide-react'
+
+export { PageHeader } from './PageHeader'
+export { Tooltip } from './Tooltip'
+export { CommandPalette } from './CommandPalette'
 
 // ─── Badge ─────────────────────────────────────────────────────────────────────
 const badgeVariants = {
-  default: 'bg-brand-100 text-brand-700 border-brand-200',
+  default: 'bg-brand-50 text-brand-700 border-brand-200/60',
   secondary: 'bg-slate-100 text-slate-700 border-slate-200',
-  destructive: 'bg-red-100 text-red-700 border-red-200',
-  success: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  warning: 'bg-amber-100 text-amber-700 border-amber-200',
+  destructive: 'bg-red-50 text-red-700 border-red-200/60',
+  success: 'bg-emerald-50 text-emerald-700 border-emerald-200/60',
+  warning: 'bg-amber-50 text-amber-700 border-amber-200/60',
   outline: 'border border-slate-200 text-slate-700 bg-transparent',
 }
 
@@ -19,7 +28,7 @@ export function Badge({ className, variant = 'default', ...props }: BadgeProps) 
   return (
     <div
       className={cn(
-        'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors',
+        'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all duration-150',
         badgeVariants[variant],
         className
       )}
@@ -30,19 +39,19 @@ export function Badge({ className, variant = 'default', ...props }: BadgeProps) 
 
 // ─── Button ─────────────────────────────────────────────────────────────────────
 const buttonVariants = {
-  default: 'bg-brand-500 text-white hover:bg-brand-600 shadow-sm',
-  secondary: 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm',
-  destructive: 'bg-red-500 text-white hover:bg-red-600 shadow-sm',
-  outline: 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
-  ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+  default: 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm shadow-brand-500/20 active:scale-[0.98]',
+  secondary: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-500/20 active:scale-[0.98]',
+  destructive: 'bg-red-600 text-white hover:bg-red-700 shadow-sm shadow-red-500/20 active:scale-[0.98]',
+  outline: 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-2xs active:scale-[0.98]',
+  ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-[0.98]',
   link: 'text-brand-600 underline-offset-4 hover:underline',
 }
 const buttonSizes = {
   default: 'h-9 px-4 py-2 text-sm',
-  sm: 'h-7 px-3 text-xs',
-  lg: 'h-11 px-6 text-base',
-  icon: 'h-9 w-9',
-  'icon-sm': 'h-7 w-7',
+  sm: 'h-8 px-3 text-xs font-medium',
+  lg: 'h-11 px-6 text-base font-semibold',
+  icon: 'h-9 w-9 p-0',
+  'icon-sm': 'h-7 w-7 p-0',
 }
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -57,7 +66,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={cn(
-          'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-95',
+          'inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
           buttonVariants[variant],
           buttonSizes[size],
           className
@@ -96,24 +105,24 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             {label}
           </label>
         )}
-        <div className="relative">
+        <div className="relative flex items-center">
           {leftIcon && (
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">{leftIcon}</div>
+            <div className="absolute left-3 text-slate-400 pointer-events-none">{leftIcon}</div>
           )}
           <input
             ref={ref}
             id={inputId}
             className={cn(
               'form-input',
-              leftIcon && 'pl-9',
-              rightIcon && 'pr-9',
-              error && 'border-red-400 focus:border-red-400 focus:ring-red-100',
+              leftIcon && 'pl-9.5',
+              rightIcon && 'pr-9.5',
+              error && 'border-red-400 focus:border-red-500 focus:ring-red-100',
               className
             )}
             {...props}
           />
           {rightIcon && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">{rightIcon}</div>
+            <div className="absolute right-3 text-slate-400">{rightIcon}</div>
           )}
         </div>
         {error && <p className="form-error">{error}</p>}
@@ -145,7 +154,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           ref={ref}
           id={selectId}
           className={cn(
-            'form-input appearance-none bg-white cursor-pointer',
+            'form-input appearance-none bg-white cursor-pointer pr-8',
             error && 'border-red-400',
             className
           )}
@@ -195,7 +204,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
 )
 Textarea.displayName = 'Textarea'
 
-// ─── Card ───────────────────────────────────────────────────────────────────────
+// ─── Card (20px radius per spec) ────────────────────────────────────────────────
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   hover?: boolean
 }
@@ -204,7 +213,7 @@ export function Card({ className, hover, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        'bg-white rounded-xl border border-slate-100 shadow-card',
+        'bg-white rounded-2xl border border-slate-200/80 shadow-card overflow-hidden',
         hover && 'transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5 cursor-pointer',
         className
       )}
@@ -214,19 +223,19 @@ export function Card({ className, hover, ...props }: CardProps) {
 }
 
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-6 py-4 border-b border-slate-100', className)} {...props} />
+  return <div className={cn('px-6 py-4.5 border-b border-slate-100 flex items-center justify-between', className)} {...props} />
 }
 
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn('text-base font-semibold text-slate-900', className)} {...props} />
+  return <h3 className={cn('text-base font-bold text-slate-900 tracking-tight', className)} {...props} />
 }
 
 export function CardBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-6 py-4', className)} {...props} />
+  return <div className={cn('px-6 py-5', className)} {...props} />
 }
 
 export function CardFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-xl', className)} {...props} />
+  return <div className={cn('px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl', className)} {...props} />
 }
 
 // ─── Avatar ─────────────────────────────────────────────────────────────────────
@@ -237,16 +246,16 @@ interface AvatarProps {
   className?: string
 }
 
-const avatarSizes = { sm: 'w-7 h-7 text-xs', md: 'w-9 h-9 text-sm', lg: 'w-12 h-12 text-base', xl: 'w-16 h-16 text-xl' }
+const avatarSizes = { sm: 'w-7 h-7 text-xs', md: 'w-9 h-9 text-sm', lg: 'w-11 h-11 text-base', xl: 'w-16 h-16 text-xl' }
 
 const avatarColors = [
-  'bg-blue-100 text-blue-700', 'bg-green-100 text-green-700', 'bg-purple-100 text-purple-700',
-  'bg-orange-100 text-orange-700', 'bg-pink-100 text-pink-700', 'bg-cyan-100 text-cyan-700',
+  'bg-blue-100 text-blue-700', 'bg-emerald-100 text-emerald-700', 'bg-purple-100 text-purple-700',
+  'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-indigo-100 text-indigo-700',
 ]
 
 export function Avatar({ name, src, size = 'md', className }: AvatarProps) {
-  const initials = name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
-  const colorIdx = name.charCodeAt(0) % avatarColors.length
+  const initials = name ? name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) : '?'
+  const colorIdx = name ? name.charCodeAt(0) % avatarColors.length : 0
   const color = avatarColors[colorIdx]
 
   if (src) {
@@ -254,7 +263,7 @@ export function Avatar({ name, src, size = 'md', className }: AvatarProps) {
       <img
         src={src}
         alt={name}
-        className={cn('rounded-full object-cover', avatarSizes[size], className)}
+        className={cn('rounded-full object-cover shadow-2xs', avatarSizes[size], className)}
       />
     )
   }
@@ -262,7 +271,7 @@ export function Avatar({ name, src, size = 'md', className }: AvatarProps) {
   return (
     <div
       className={cn(
-        'rounded-full flex items-center justify-center font-semibold flex-shrink-0',
+        'rounded-full flex items-center justify-center font-bold flex-shrink-0 shadow-2xs border border-white/40',
         avatarSizes[size],
         color,
         className
@@ -280,7 +289,7 @@ interface SkeletonProps extends React.HTMLAttributes<HTMLDivElement> {
   rounded?: string
 }
 
-export function Skeleton({ className, height, width, rounded = 'rounded-md', style, ...props }: SkeletonProps) {
+export function Skeleton({ className, height, width, rounded = 'rounded-xl', style, ...props }: SkeletonProps) {
   return (
     <div
       className={cn('skeleton', rounded, className)}
@@ -295,7 +304,7 @@ export function Spinner({ size = 'md', className }: { size?: 'sm' | 'md' | 'lg';
   const sizes = { sm: 'h-4 w-4', md: 'h-6 w-6', lg: 'h-10 w-10' }
   return (
     <svg
-      className={cn('animate-spin text-brand-500', sizes[size], className)}
+      className={cn('animate-spin text-brand-600', sizes[size], className)}
       fill="none"
       viewBox="0 0 24 24"
     >
@@ -305,7 +314,7 @@ export function Spinner({ size = 'md', className }: { size?: 'sm' | 'md' | 'lg';
   )
 }
 
-// ─── Modal / Dialog ─────────────────────────────────────────────────────────────
+// ─── Modal / Dialog (Backdrop blur + Framer Motion) ────────────────────────────
 interface ModalProps {
   isOpen: boolean
   onClose: () => void
@@ -333,38 +342,47 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', footer }:
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <div
-        className={cn(
-          'relative w-full bg-white rounded-2xl shadow-2xl animate-scale-in overflow-hidden flex flex-col max-h-[90vh]',
-          modalSizes[size]
-        )}
-      >
-        {title && (
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-            <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        )}
-        <div className="flex-1 overflow-y-auto p-6">{children}</div>
-        {footer && (
-          <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
-            {footer}
-          </div>
-        )}
-      </div>
-    </div>
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+            onClick={onClose}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className={cn(
+              'relative w-full bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] z-10 border border-slate-200',
+              modalSizes[size]
+            )}
+          >
+            {title && (
+              <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100">
+                <h2 className="text-lg font-bold text-slate-900 tracking-tight">{title}</h2>
+                <button
+                  onClick={onClose}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto p-6">{children}</div>
+            {footer && (
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3 rounded-b-2xl">
+                {footer}
+              </div>
+            )}
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -378,16 +396,16 @@ interface TabsProps {
 
 export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
   return (
-    <div className={cn('flex gap-1 bg-slate-100 rounded-lg p-1', className)}>
+    <div className={cn('flex gap-1 bg-slate-100/80 rounded-xl p-1 border border-slate-200/50', className)}>
       {tabs.map((tab) => (
         <button
           key={tab.id}
           onClick={() => onChange(tab.id)}
           className={cn(
-            'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all duration-150',
+            'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-150',
             activeTab === tab.id
               ? 'bg-white text-brand-600 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
+              : 'text-slate-500 hover:text-slate-800'
           )}
         >
           {tab.icon}
@@ -401,7 +419,7 @@ export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
 // ─── Table (base) ───────────────────────────────────────────────────────────────
 export function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="overflow-auto rounded-xl border border-slate-200">
+    <div className="overflow-auto rounded-2xl border border-slate-200">
       <table className={cn('data-table', className)} {...props} />
     </div>
   )
@@ -437,32 +455,38 @@ export function DropdownMenu({ trigger, items, align = 'right' }: DropdownMenuPr
   return (
     <div ref={ref} className="relative inline-block">
       <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
-      {isOpen && (
-        <div
-          className={cn(
-            'absolute top-full mt-1 z-50 min-w-[160px] bg-white rounded-xl border border-slate-200 shadow-lg py-1 animate-scale-in',
-            align === 'right' ? 'right-0' : 'left-0'
-          )}
-        >
-          {items.map((item, idx) => (
-            <React.Fragment key={idx}>
-              {item.separator && <div className="my-1 border-t border-slate-100" />}
-              <button
-                className={cn(
-                  'flex w-full items-center gap-2.5 px-4 py-2 text-sm transition-colors',
-                  item.variant === 'danger'
-                    ? 'text-red-600 hover:bg-red-50'
-                    : 'text-slate-700 hover:bg-slate-50'
-                )}
-                onClick={() => { item.onClick?.(); setIsOpen(false) }}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            </React.Fragment>
-          ))}
-        </div>
-      )}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className={cn(
+              'absolute top-full mt-1 z-50 min-w-[170px] bg-white rounded-2xl border border-slate-200 shadow-xl py-1.5 overflow-hidden',
+              align === 'right' ? 'right-0' : 'left-0'
+            )}
+          >
+            {items.map((item, idx) => (
+              <React.Fragment key={idx}>
+                {item.separator && <div className="my-1 border-t border-slate-100" />}
+                <button
+                  className={cn(
+                    'flex w-full items-center gap-2.5 px-4 py-2 text-sm font-medium transition-colors text-left',
+                    item.variant === 'danger'
+                      ? 'text-red-600 hover:bg-red-50'
+                      : 'text-slate-700 hover:bg-slate-50 hover:text-brand-600'
+                  )}
+                  onClick={() => { item.onClick?.(); setIsOpen(false) }}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              </React.Fragment>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -477,21 +501,21 @@ interface ToggleProps {
 
 export function Toggle({ checked, onChange, label, size = 'md' }: ToggleProps) {
   return (
-    <label className="flex items-center gap-2 cursor-pointer">
+    <label className="flex items-center gap-2.5 cursor-pointer select-none">
       <div
         className={cn(
           'relative rounded-full transition-colors duration-200',
           size === 'md' ? 'w-10 h-6' : 'w-8 h-5',
-          checked ? 'bg-brand-500' : 'bg-slate-200'
+          checked ? 'bg-brand-600' : 'bg-slate-200'
         )}
         onClick={() => onChange(!checked)}
       >
         <div
           className={cn(
-            'absolute top-0.5 rounded-full bg-white shadow transition-transform duration-200',
+            'absolute top-0.5 rounded-full bg-white shadow-sm transition-transform duration-200',
             size === 'md' ? 'w-5 h-5' : 'w-4 h-4',
             checked
-              ? size === 'md' ? 'translate-x-4' : 'translate-x-3'
+              ? size === 'md' ? 'translate-x-4.5' : 'translate-x-3.5'
               : 'translate-x-0.5'
           )}
         />
@@ -511,49 +535,53 @@ interface EmptyStateProps {
 
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-      {icon && <div className="mb-4 text-slate-300">{icon}</div>}
-      <h3 className="text-base font-semibold text-slate-600">{title}</h3>
+    <div className="flex flex-col items-center justify-center py-14 px-4 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3 text-slate-400">
+        {icon ?? <Search className="h-6 w-6" />}
+      </div>
+      <h3 className="text-base font-bold text-slate-800">{title}</h3>
       {description && <p className="mt-1 text-sm text-slate-400 max-w-xs">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   )
 }
 
-// ─── Status Badge ───────────────────────────────────────────────────────────────
+// ─── Status Badge (Premium dot + text) ───────────────────────────────────────────
 interface StatusBadgeProps {
   status: string
   label?: string
 }
 
 const statusConfig: Record<string, { bg: string; text: string; dot: string; label: string }> = {
-  active: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Active' },
-  inactive: { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400', label: 'Inactive' },
-  blocked: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500', label: 'Blocked' },
-  closed: { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400', label: 'Closed' },
-  overdue: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500', label: 'Overdue' },
-  pending: { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500', label: 'Pending' },
-  paid: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Paid' },
-  partial: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500', label: 'Partial' },
-  verified: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Verified' },
-  rejected: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500', label: 'Rejected' },
-  synced: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Synced' },
-  failed: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500', label: 'Failed' },
+  active: { bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Active' },
+  approved: { bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700', dot: 'bg-blue-500', label: 'Approved' },
+  inactive: { bg: 'bg-slate-100 border-slate-200', text: 'text-slate-600', dot: 'bg-slate-400', label: 'Inactive' },
+  blocked: { bg: 'bg-red-50 border-red-100', text: 'text-red-700', dot: 'bg-red-500', label: 'Blocked' },
+  closed: { bg: 'bg-slate-100 border-slate-200', text: 'text-slate-600', dot: 'bg-slate-400', label: 'Closed' },
+  overdue: { bg: 'bg-red-50 border-red-100', text: 'text-red-700', dot: 'bg-red-500', label: 'Overdue' },
+  pending: { bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700', dot: 'bg-amber-500', label: 'Pending' },
+  paid: { bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Paid' },
+  partial: { bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700', dot: 'bg-blue-500', label: 'Partial' },
+  verified: { bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Verified' },
+  rejected: { bg: 'bg-rose-50 border-rose-100', text: 'text-rose-700', dot: 'bg-rose-500', label: 'Rejected' },
+  synced: { bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Synced' },
+  failed: { bg: 'bg-red-50 border-red-100', text: 'text-red-700', dot: 'bg-red-500', label: 'Failed' },
 }
 
 export function StatusBadge({ status, label }: StatusBadgeProps) {
-  const config = statusConfig[status] ?? { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400', label: status }
+  const normalized = status ? status.toLowerCase() : 'closed'
+  const config = statusConfig[normalized] ?? { bg: 'bg-slate-100 border-slate-200', text: 'text-slate-600', dot: 'bg-slate-400', label: status }
   const displayLabel = label ?? config.label
 
   return (
-    <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold', config.bg, config.text)}>
-      <span className={cn('w-1.5 h-1.5 rounded-full', config.dot)} />
+    <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border', config.bg, config.text)}>
+      <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', config.dot)} />
       {displayLabel}
     </span>
   )
 }
 
-// ─── Stats Card (KPI) ────────────────────────────────────────────────────────────
+// ─── Stats Card (KPI with 20px radius & hover lift) ──────────────────────────────
 interface StatsCardProps {
   title: string
   value: string | number
@@ -564,25 +592,26 @@ interface StatsCardProps {
   subtext?: string
 }
 
-export function StatsCard({ title, value, icon, trend, bgClass = 'kpi-blue', iconBg = 'bg-brand-500', subtext }: StatsCardProps) {
+export function StatsCard({ title, value, icon, trend, bgClass = 'kpi-blue', iconBg = 'bg-brand-600', subtext }: StatsCardProps) {
   return (
-    <div className={cn('rounded-xl p-5 border border-white/50 shadow-card transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5', bgClass)}>
+    <div className={cn('rounded-2xl p-5 border border-white/60 shadow-card transition-all duration-200 hover:shadow-card-hover hover:-translate-y-1', bgClass)}>
       <div className="flex items-start justify-between mb-3">
-        <div className={cn('p-2.5 rounded-xl text-white', iconBg)}>
+        <div className={cn('p-2.5 rounded-xl text-white shadow-2xs', iconBg)}>
           {icon}
         </div>
         {trend && (
           <span className={cn(
-            'text-xs font-semibold px-2 py-0.5 rounded-full',
-            trend.value >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+            'inline-flex items-center gap-0.5 text-xs font-bold px-2 py-0.5 rounded-full',
+            trend.value >= 0 ? 'bg-emerald-100/80 text-emerald-700 border border-emerald-200' : 'bg-red-100/80 text-red-700 border border-red-200'
           )}>
-            {trend.value >= 0 ? '↑' : '↓'} {Math.abs(trend.value)}%
+            {trend.value >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+            {Math.abs(trend.value)}%
           </span>
         )}
       </div>
-      <div className="amount-display text-2xl font-bold text-slate-900 mb-1">{value}</div>
-      <div className="text-sm font-medium text-slate-600">{title}</div>
-      {subtext && <div className="text-xs text-slate-400 mt-0.5">{subtext}</div>}
+      <div className="amount-display text-2xl font-bold text-slate-900 tracking-tight mb-1">{value}</div>
+      <div className="text-xs font-semibold text-slate-600">{title}</div>
+      {subtext && <div className="text-[11px] text-slate-400 mt-0.5">{subtext}</div>}
     </div>
   )
 }
@@ -599,9 +628,7 @@ export function SearchInput({ className, onSearch, onChange, ...props }: SearchI
   }
   return (
     <div className="relative">
-      <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
       <input
         className={cn('form-input pl-9 pr-4', className)}
         placeholder="Search..."
@@ -621,26 +648,24 @@ interface PaginationProps {
 }
 
 export function Pagination({ page, total, pageSize, onPageChange }: PaginationProps) {
-  const totalPages = Math.ceil(total / pageSize)
-  const start = (page - 1) * pageSize + 1
+  const totalPages = Math.ceil(total / pageSize) || 1
+  const start = Math.min((page - 1) * pageSize + 1, total)
   const end = Math.min(page * pageSize, total)
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
-      <p className="text-sm text-slate-500">
-        Showing <span className="font-medium text-slate-700">{start}</span> to{' '}
-        <span className="font-medium text-slate-700">{end}</span> of{' '}
-        <span className="font-medium text-slate-700">{total}</span> results
+    <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-100 bg-slate-50/50">
+      <p className="text-xs text-slate-500 font-medium">
+        Showing <span className="font-bold text-slate-800">{start}</span> to{' '}
+        <span className="font-bold text-slate-800">{end}</span> of{' '}
+        <span className="font-bold text-slate-800">{total}</span> results
       </p>
       <div className="flex items-center gap-1">
         <button
           onClick={() => onPageChange(page - 1)}
           disabled={page === 1}
-          className="p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-1.5 rounded-lg hover:bg-slate-200/60 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          <svg className="h-4 w-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+          <ChevronLeft className="h-4 w-4" />
         </button>
         {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
           let pageNum = i + 1
@@ -651,10 +676,10 @@ export function Pagination({ page, total, pageSize, onPageChange }: PaginationPr
               key={pageNum}
               onClick={() => onPageChange(pageNum)}
               className={cn(
-                'min-w-[32px] h-8 px-2 rounded-md text-sm font-medium transition-colors',
+                'min-w-[32px] h-8 px-2 rounded-lg text-xs font-bold transition-all',
                 page === pageNum
-                  ? 'bg-brand-500 text-white'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-brand-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-200/60'
               )}
             >
               {pageNum}
@@ -664,11 +689,9 @@ export function Pagination({ page, total, pageSize, onPageChange }: PaginationPr
         <button
           onClick={() => onPageChange(page + 1)}
           disabled={page === totalPages}
-          className="p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-1.5 rounded-lg hover:bg-slate-200/60 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          <svg className="h-4 w-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
+          <ChevronRight className="h-4 w-4" />
         </button>
       </div>
     </div>

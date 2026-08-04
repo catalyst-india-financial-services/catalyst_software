@@ -3,154 +3,149 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/utils'
 import { useUIStore } from '@/store/uiStore'
 import { useAuthStore } from '@/store/authStore'
-import { Avatar } from '@/components/ui'
+import { Avatar, Tooltip } from '@/components/ui'
 import {
-  LayoutDashboard, Users, CreditCard, Wallet, TrendingUp, TrendingDown,
-  BarChart3, Bell, UserCog, Settings, LogOut, ChevronLeft,
-  DollarSign, X, UserPlus
+  LayoutDashboard, Users, WalletCards, CalendarClock, Settings2,
+  LogOut, PanelLeftClose, PanelLeftOpen, DollarSign, X, UserPlus
 } from 'lucide-react'
 
-const menuItems = [
+interface NavItem {
+  path: string
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+}
+
+const navItems: NavItem[] = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/leads', label: 'Leads', icon: UserPlus },
-  { path: '/customers', label: 'Customers', icon: Users },
-  { path: '/loans', label: 'Loans', icon: CreditCard },
-  { path: '/emi-collection', label: 'EMI Collection', icon: Wallet },
-  { path: '/income', label: 'Income', icon: TrendingUp },
-  { path: '/expenses', label: 'Expenses', icon: TrendingDown },
-  { path: '/reports', label: 'Reports', icon: BarChart3 },
-  { path: '/notifications', label: 'Notifications', icon: Bell },
-  { path: '/users', label: 'User Management', icon: UserCog },
-  { path: '/settings', label: 'Settings', icon: Settings },
+  { path: '/customers', label: 'Customer Profile', icon: Users },
+  { path: '/loans', label: 'Accounts', icon: WalletCards },
+  { path: '/emi-collection', label: 'Transactions', icon: CalendarClock },
+  { path: '/settings', label: 'Settings', icon: Settings2 },
 ]
 
 function SidebarContent({ collapsed }: { collapsed: boolean }) {
   const { user, signOut } = useAuthStore()
   const location = useLocation()
+  const { toggleSidebar } = useUIStore()
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Logo */}
-      <div className={cn('px-4 py-5 border-b border-slate-100 flex items-center gap-3', collapsed && 'justify-center px-2')}>
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center flex-shrink-0 shadow-kpi">
-          <DollarSign className="h-5 w-5 text-white" />
-        </div>
-        <AnimatePresence mode="wait">
+    <div className="flex flex-col h-full bg-slate-900 text-slate-300">
+      {/* Brand Header */}
+      <div className={cn('px-4 py-4.5 border-b border-slate-800/80 flex items-center justify-between', collapsed && 'px-3 justify-center')}>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-blue-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-brand-500/30 text-white font-bold">
+            <DollarSign className="h-5 w-5 stroke-[2.5]" />
+          </div>
           {!collapsed && (
             <motion.div
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: 'auto' }}
-              exit={{ opacity: 0, width: 0 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
               className="overflow-hidden"
             >
-              <div className="text-sm font-bold text-slate-900 whitespace-nowrap leading-tight">FinanceERP</div>
-              <div className="text-xs text-slate-400 whitespace-nowrap">Enterprise Suite</div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-extrabold text-white tracking-tight">FinanceERP</span>
+                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-brand-500/20 text-brand-400 border border-brand-500/30">PRO</span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-medium truncate">Enterprise SaaS 2026</p>
             </motion.div>
           )}
-        </AnimatePresence>
+        </div>
       </div>
 
-      {/* Navigation */}
-      <nav className={cn('flex-1 overflow-y-auto py-3 px-2 space-y-0.5 no-scrollbar')}>
-        {menuItems.map((item) => {
+      {/* Navigation Sections */}
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5 no-scrollbar">
+        {navItems.map((item) => {
           const Icon = item.icon
           const isActive = location.pathname.startsWith(item.path)
-          return (
+
+          const linkContent = (
             <NavLink
-              key={item.path}
               to={item.path}
-              title={collapsed ? item.label : undefined}
               className={cn(
-                'sidebar-item',
-                isActive && 'active',
-                collapsed && 'justify-center px-2'
+                'relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all duration-150 group',
+                isActive
+                  ? 'bg-brand-600 text-white shadow-md shadow-brand-600/30'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80',
+                collapsed && 'justify-center px-2 py-2.5'
               )}
             >
-              <Icon className="h-4.5 w-4.5 flex-shrink-0" style={{ width: 18, height: 18 }} />
-              <AnimatePresence mode="wait">
-                {!collapsed && (
-                  <motion.span
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: 'auto' }}
-                    exit={{ opacity: 0, width: 0 }}
-                    transition={{ duration: 0.15 }}
-                    className="flex-1 whitespace-nowrap overflow-hidden"
-                  >
-                    {item.label}
-                  </motion.span>
-                )}
-              </AnimatePresence>
+              <Icon className={cn('h-4 w-4 flex-shrink-0 transition-transform duration-150 group-hover:scale-110', isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-200')} />
+              {!collapsed && (
+                <span className="flex-1 truncate tracking-tight">{item.label}</span>
+              )}
+              {isActive && !collapsed && (
+                <motion.div
+                  layoutId="sidebarActiveIndicator"
+                  className="absolute right-0 top-2 bottom-2 w-1 bg-white rounded-l-full"
+                />
+              )}
             </NavLink>
           )
+
+          if (collapsed) {
+            return (
+              <Tooltip key={item.path} content={item.label} side="right">
+                {linkContent}
+              </Tooltip>
+            )
+          }
+
+          return <div key={item.path}>{linkContent}</div>
         })}
       </nav>
 
-      {/* User section */}
-      <div className={cn('border-t border-slate-100 p-3', collapsed ? 'items-center' : '')}>
-        <div className={cn('flex items-center gap-2.5 mb-2', collapsed && 'justify-center')}>
-          <Avatar name={user?.full_name ?? 'Admin User'} size="sm" />
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex-1 min-w-0"
-              >
-                <p className="text-sm font-semibold text-slate-900 truncate">{user?.full_name ?? 'Admin User'}</p>
-                <p className="text-xs text-slate-400 capitalize truncate">{user?.role ?? 'admin'}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+      {/* Collapse Toggle Footer */}
+      <div className="px-3 py-2 border-t border-slate-800/80 flex items-center justify-between">
         <button
-          onClick={signOut}
+          onClick={toggleSidebar}
           className={cn(
-            'sidebar-item w-full text-red-500 hover:bg-red-50 hover:text-red-600',
+            'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors',
             collapsed && 'justify-center px-2'
           )}
-          title={collapsed ? 'Logout' : undefined}
         >
-          <LogOut style={{ width: 18, height: 18 }} className="flex-shrink-0" />
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: 'auto' }}
-                exit={{ opacity: 0, width: 0 }}
-                className="whitespace-nowrap overflow-hidden"
-              >
-                Logout
-              </motion.span>
-            )}
-          </AnimatePresence>
+          {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          {!collapsed && <span>Collapse Sidebar</span>}
         </button>
+      </div>
+
+      {/* User Card */}
+      <div className="p-3 border-t border-slate-800/80 bg-slate-950/40">
+        <div className={cn('flex items-center gap-2.5', collapsed && 'justify-center')}>
+          <Avatar name={user?.full_name ?? 'Admin User'} size="sm" className="ring-2 ring-brand-500/30" />
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white truncate">{user?.full_name ?? 'Admin User'}</p>
+              <p className="text-[10px] text-slate-400 capitalize truncate">{user?.role ?? 'admin'}</p>
+            </div>
+          )}
+          {!collapsed && (
+            <button
+              onClick={signOut}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors ml-auto"
+              title="Logout"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
 export function Sidebar() {
-  const { sidebarCollapsed, toggleSidebar } = useUIStore()
+  const { sidebarCollapsed } = useUIStore()
 
   return (
     <motion.aside
       animate={{ width: sidebarCollapsed ? 72 : 260 }}
-      transition={{ duration: 0.25, ease: 'easeInOut' }}
-      className="hidden lg:flex flex-col h-full bg-white border-r border-slate-100 shadow-sidebar relative flex-shrink-0"
+      transition={{ duration: 0.2, ease: 'easeInOut' }}
+      className="hidden lg:flex flex-col h-full bg-slate-900 border-r border-slate-800 shadow-sidebar relative flex-shrink-0 z-30"
       style={{ minWidth: sidebarCollapsed ? 72 : 260 }}
     >
       <SidebarContent collapsed={sidebarCollapsed} />
-      {/* Collapse toggle */}
-      <button
-        onClick={toggleSidebar}
-        className="absolute -right-3 top-20 z-10 w-6 h-6 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center hover:bg-slate-50 transition-colors"
-      >
-        <motion.div animate={{ rotate: sidebarCollapsed ? 180 : 0 }} transition={{ duration: 0.2 }}>
-          <ChevronLeft className="h-3.5 w-3.5 text-slate-500" />
-        </motion.div>
-      </button>
     </motion.aside>
   )
 }
@@ -166,22 +161,22 @@ export function MobileSidebar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden"
             onClick={() => setSidebarOpen(false)}
           />
           <motion.aside
             initial={{ x: -280 }}
             animate={{ x: 0 }}
             exit={{ x: -280 }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed left-0 top-0 bottom-0 z-50 w-64 bg-white shadow-2xl lg:hidden"
+            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+            className="fixed left-0 top-0 bottom-0 z-50 w-64 bg-slate-900 shadow-2xl lg:hidden"
           >
-            <div className="absolute right-3 top-3">
+            <div className="absolute right-3 top-3 z-10">
               <button
                 onClick={() => setSidebarOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
             <SidebarContent collapsed={false} />

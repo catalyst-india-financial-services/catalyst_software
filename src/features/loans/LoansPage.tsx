@@ -5,16 +5,15 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, createColumnHelper, type SortingState
 } from '@tanstack/react-table'
-import { Plus, Download, Eye, Edit2, FileText, Filter, Calculator } from 'lucide-react'
+import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { useLoans, useCustomers, useCreateLoan } from '@/hooks/useDb'
 import type { Loan } from '@/types'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
 import {
   Button, SearchInput, Pagination, StatusBadge, Card, CardHeader, CardTitle,
-  CardBody, Modal, Input, Select, Badge, DropdownMenu, EmptyState, StatsCard
+  CardBody, Modal, Input, Select, Badge, DropdownMenu, EmptyState, StatsCard, PageHeader
 } from '@/components/ui'
 import { formatCurrency, formatDate, calculateEMI, generateEMISchedule, cn } from '@/utils'
-import { CreditCard, TrendingUp, CheckCircle2, AlertTriangle } from 'lucide-react'
 
 const columnHelper = createColumnHelper<Loan>()
 
@@ -71,19 +70,19 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
           />
         </div>
         <Select
-          label="Loan Type *"
+          label="Loan Category *"
           value={formData.loan_type}
           onChange={(e) => setFormData({ ...formData, loan_type: e.target.value as Loan['loan_type'] })}
           options={loanTypes}
         />
         <Input
-          label="Loan Date *"
+          label="Disbursement Date *"
           type="date"
           value={formData.loan_date}
           onChange={(e) => setFormData({ ...formData, loan_date: e.target.value })}
         />
         <Input
-          label="Loan Amount (₹) *"
+          label="Loan Principal Amount (₹) *"
           type="number"
           value={formData.loan_amount}
           onChange={(e) => setFormData({ ...formData, loan_amount: e.target.value })}
@@ -112,7 +111,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
         />
         <div className="col-span-2">
           <Input
-            label="Duration (Months) *"
+            label="Tenure Duration (Months) *"
             type="number"
             value={formData.duration_months}
             onChange={(e) => setFormData({ ...formData, duration_months: e.target.value })}
@@ -121,35 +120,35 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
         </div>
       </div>
 
-      {/* EMI Calculator Result */}
+      {/* EMI Calculator Live Preview Card */}
       {emiAmount > 0 && (
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl bg-gradient-to-r from-brand-50 to-emerald-50 border border-brand-100 p-4"
+          className="rounded-2xl bg-gradient-to-r from-brand-50 to-blue-50/80 border border-brand-100 p-4"
         >
           <div className="flex items-center gap-2 mb-3">
             <Calculator className="h-4 w-4 text-brand-600" />
-            <h4 className="text-sm font-semibold text-brand-700">EMI Calculation</h4>
+            <h4 className="text-xs font-bold text-brand-700 uppercase tracking-wider">EMI Breakdown Calculation</h4>
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <p className="text-xs text-slate-500">Monthly EMI</p>
-              <p className="text-xl font-bold text-brand-600 amount-display">{formatCurrency(emiAmount)}</p>
+              <p className="text-[11px] text-slate-500 font-medium">Monthly EMI</p>
+              <p className="text-lg font-extrabold text-brand-600 amount-display">{formatCurrency(emiAmount)}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Total Interest</p>
-              <p className="text-xl font-bold text-slate-700 amount-display">{formatCurrency(totalInterest)}</p>
+              <p className="text-[11px] text-slate-500 font-medium">Total Interest</p>
+              <p className="text-lg font-extrabold text-slate-800 amount-display">{formatCurrency(totalInterest)}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Total Payable</p>
-              <p className="text-xl font-bold text-slate-700 amount-display">{formatCurrency(emiAmount * parseInt(formData.duration_months || '0'))}</p>
+              <p className="text-[11px] text-slate-500 font-medium">Total Loan Repayment</p>
+              <p className="text-lg font-extrabold text-slate-800 amount-display">{formatCurrency(emiAmount * parseInt(formData.duration_months || '0'))}</p>
             </div>
           </div>
         </motion.div>
       )}
 
-      <div className="flex justify-end gap-3 pt-2">
+      <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
         <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
         <Button
           onClick={async () => {
@@ -179,7 +178,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
           }}
           loading={loading}
         >
-          {loan ? 'Update Loan' : 'Create Loan & Generate Schedule'}
+          {loan ? 'Update Loan' : 'Disburse Loan & Build Schedule'}
         </Button>
       </div>
     </div>
@@ -204,57 +203,57 @@ export default function LoansPage() {
   const columns = useMemo(() => [
     columnHelper.accessor('loan_number', {
       header: 'Loan No.',
-      cell: (info) => <span className="text-xs font-mono text-brand-600 font-semibold">{info.getValue()}</span>,
+      cell: (info) => <span className="text-xs font-mono text-brand-600 font-bold">{info.getValue()}</span>,
     }),
     columnHelper.accessor('customer_name', {
-      header: 'Customer',
-      cell: (info) => <span className="text-sm font-semibold text-slate-800">{info.getValue()}</span>,
+      header: 'Customer Name',
+      cell: (info) => <span className="text-sm font-bold text-slate-800 tracking-tight">{info.getValue()}</span>,
     }),
     columnHelper.accessor('loan_type', {
-      header: 'Type',
+      header: 'Category',
       cell: (info) => (
-        <Badge variant="outline" className="capitalize text-xs">{info.getValue().replace('_', ' ')}</Badge>
+        <Badge variant="outline" className="capitalize text-[10px] font-bold">{info.getValue().replace('_', ' ')}</Badge>
       ),
     }),
     columnHelper.accessor('loan_amount', {
-      header: 'Amount',
-      cell: (info) => <span className="text-sm font-semibold amount-display">{formatCurrency(info.getValue())}</span>,
+      header: 'Principal',
+      cell: (info) => <span className="text-xs font-bold text-slate-800 amount-display">{formatCurrency(info.getValue())}</span>,
     }),
     columnHelper.accessor('interest_rate', {
-      header: 'Rate',
+      header: 'Interest Rate',
       cell: (info) => (
-        <span className="text-sm text-slate-600">
+        <span className="text-xs font-semibold text-slate-700">
           {info.getValue()}%{' '}
-          <span className="text-xs text-slate-400 capitalize">({info.row.original.interest_type})</span>
+          <span className="text-[10px] text-slate-400 capitalize font-medium">({info.row.original.interest_type})</span>
         </span>
       ),
     }),
     columnHelper.accessor('emi_amount', {
-      header: 'EMI',
-      cell: (info) => <span className="text-sm font-semibold amount-display text-emerald-700">{formatCurrency(info.getValue())}</span>,
+      header: 'Monthly EMI',
+      cell: (info) => <span className="text-xs font-extrabold amount-display text-emerald-600">{formatCurrency(info.getValue())}</span>,
     }),
     columnHelper.accessor('remaining_emi', {
-      header: 'Remaining',
+      header: 'Progress',
       cell: (info) => {
         const total = info.row.original.emi_count
         const remaining = info.getValue()
         const pct = ((total - remaining) / total) * 100
         return (
           <div className="min-w-[100px]">
-            <div className="flex justify-between text-xs mb-1">
-              <span className="text-slate-600">{total - remaining}/{total}</span>
+            <div className="flex justify-between text-[11px] font-semibold mb-1">
+              <span className="text-slate-700">{total - remaining}/{total}</span>
               <span className="text-slate-400">{remaining} left</span>
             </div>
             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-brand-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+              <div className="h-full bg-brand-600 rounded-full transition-all" style={{ width: `${pct}%` }} />
             </div>
           </div>
         )
       },
     }),
     columnHelper.accessor('remaining_balance', {
-      header: 'Balance',
-      cell: (info) => <span className="text-sm font-medium amount-display text-slate-700">{formatCurrency(info.getValue())}</span>,
+      header: 'Outstanding',
+      cell: (info) => <span className="text-xs font-bold amount-display text-slate-800">{formatCurrency(info.getValue())}</span>,
     }),
     columnHelper.accessor('status', {
       header: 'Status',
@@ -262,7 +261,7 @@ export default function LoansPage() {
     }),
     columnHelper.accessor('loan_date', {
       header: 'Date',
-      cell: (info) => <span className="text-sm text-slate-500">{formatDate(info.getValue())}</span>,
+      cell: (info) => <span className="text-xs text-slate-400 font-medium">{formatDate(info.getValue())}</span>,
     }),
     columnHelper.display({
       id: 'actions',
@@ -271,15 +270,13 @@ export default function LoansPage() {
         <DropdownMenu
           align="right"
           trigger={
-            <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors">
-              <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-              </svg>
+            <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+              <SlidersHorizontal className="h-4 w-4" />
             </button>
           }
           items={[
-            { label: 'View Details', icon: <Eye className="h-4 w-4" />, onClick: () => navigate(`/loans/${info.row.original.id}`) },
-            { label: 'Edit Loan', icon: <Edit2 className="h-4 w-4" />, onClick: () => { setEditLoan(info.row.original); setShowModal(true) } },
+            { label: 'View Schedule', icon: <Eye className="h-4 w-4" />, onClick: () => navigate(`/loans/${info.row.original.id}`) },
+            { label: 'Edit Loan', icon: <SquarePen className="h-4 w-4" />, onClick: () => { setEditLoan(info.row.original); setShowModal(true) } },
             { label: 'View Agreement', icon: <FileText className="h-4 w-4" />, onClick: () => {} },
           ]}
         />
@@ -302,30 +299,30 @@ export default function LoansPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Loans</h1>
-          <p className="page-subtitle">Manage all loan accounts and EMI schedules</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4" />
-            Export
-          </Button>
-          <Button onClick={() => { setEditLoan(undefined); setShowModal(true) }}>
-            <Plus className="h-4 w-4" />
-            New Loan
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Loan Accounts"
+        subtitle="Manage active loan disbursals, interest types, and EMI repayment plans."
+        action={
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm">
+              <Download className="h-4 w-4" />
+              Export Accounts
+            </Button>
+            <Button onClick={() => { setEditLoan(undefined); setShowModal(true) }}>
+              <Plus className="h-4 w-4" />
+              Disburse Loan
+            </Button>
+          </div>
+        }
+      />
 
-      {/* Summary Cards */}
+      {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Total Loans', value: loans.length, icon: <CreditCard className="h-5 w-5" />, bg: 'kpi-blue', iconBg: 'bg-brand-500' },
-          { label: 'Active', value: loans.filter((l) => l.status === 'active').length, icon: <TrendingUp className="h-5 w-5" />, bg: 'kpi-green', iconBg: 'bg-emerald-500' },
-          { label: 'Closed', value: loans.filter((l) => l.status === 'closed').length, icon: <CheckCircle2 className="h-5 w-5" />, bg: 'kpi-purple', iconBg: 'bg-violet-500' },
-          { label: 'Overdue', value: loans.filter((l) => l.status === 'overdue').length, icon: <AlertTriangle className="h-5 w-5" />, bg: 'kpi-red', iconBg: 'bg-red-500' },
+          { label: 'Total Loan Portfolio', value: loans.length, icon: <WalletCards className="h-5 w-5" />, bg: 'kpi-blue', iconBg: 'bg-brand-600' },
+          { label: 'Active Disbursals', value: loans.filter((l) => l.status === 'active').length, icon: <TrendingUp className="h-5 w-5" />, bg: 'kpi-green', iconBg: 'bg-emerald-600' },
+          { label: 'Closed Accounts', value: loans.filter((l) => l.status === 'closed').length, icon: <CheckCircle2 className="h-5 w-5" />, bg: 'kpi-purple', iconBg: 'bg-violet-600' },
+          { label: 'Overdue Loans', value: loans.filter((l) => l.status === 'overdue').length, icon: <AlertTriangle className="h-5 w-5" />, bg: 'kpi-red', iconBg: 'bg-red-600' },
         ].map((s) => (
           <StatsCard key={s.label} title={s.label} value={s.value.toString()} icon={s.icon} bgClass={s.bg} iconBg={s.iconBg} />
         ))}
@@ -334,19 +331,19 @@ export default function LoansPage() {
       <Card>
         <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
-            className="w-64"
+            className="w-72"
             placeholder="Search loan number, customer..."
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
           />
-          <div className="flex gap-1.5 ml-auto">
+          <div className="flex gap-1.5 ml-auto bg-slate-100 p-1 rounded-xl border border-slate-200/50">
             {['all', 'active', 'overdue', 'closed', 'pending'].map((s) => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
                 className={cn(
-                  'px-3 py-1.5 text-xs font-medium rounded-lg capitalize transition-colors',
-                  statusFilter === s ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  'px-3 py-1.5 text-xs font-bold rounded-lg capitalize transition-all',
+                  statusFilter === s ? 'bg-brand-600 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
                 )}
               >
                 {s}
@@ -356,8 +353,8 @@ export default function LoansPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
+          <table className="data-table">
+            <thead>
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
                   {hg.headers.map((h) => (
@@ -365,8 +362,8 @@ export default function LoansPage() {
                       key={h.id}
                       onClick={h.column.getToggleSortingHandler()}
                       className={cn(
-                        'px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap',
-                        h.column.getCanSort() && 'cursor-pointer select-none hover:text-slate-700'
+                        'whitespace-nowrap',
+                        h.column.getCanSort() && 'cursor-pointer select-none hover:text-slate-900'
                       )}
                     >
                       {flexRender(h.column.columnDef.header, h.getContext())}
@@ -382,9 +379,9 @@ export default function LoansPage() {
                 <tr><td colSpan={columns.length}><EmptyState title="No loans found" /></td></tr>
               ) : (
                 table.getRowModel().rows.map((row) => (
-                  <tr key={row.id} className="border-b border-slate-50 hover:bg-blue-50/30 transition-colors">
+                  <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-4 py-3 whitespace-nowrap">
+                      <td key={cell.id} className="whitespace-nowrap">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -406,7 +403,7 @@ export default function LoansPage() {
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title={editLoan ? 'Edit Loan' : 'Create New Loan'}
+        title={editLoan ? 'Edit Loan Account' : 'Disburse New Loan Account'}
         size="lg"
       >
         <LoanForm loan={editLoan} onClose={() => setShowModal(false)} />
