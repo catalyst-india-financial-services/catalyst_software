@@ -179,10 +179,10 @@ export interface CustomerActivity {
   created_at: string
 }
 
-// --- Customer Profile Service (100% Supabase — no mock data) ---
+// --- Customer Profile Service (100% Supabase   no mock data) ---
 export const customerProfileService = {
 
-  // 1. Fetch complete profile — returns raw DB data only, no defaults injected
+  // 1. Fetch complete profile   returns raw DB data only, no defaults injected
   async getProfile(customerId: string): Promise<ExtendedCustomer> {
     const { data, error } = await supabase
       .from('customers')
@@ -200,7 +200,7 @@ export const customerProfileService = {
     return data as ExtendedCustomer
   },
 
-  // 2. Update profile — PATCH changed fields only, throws on error
+  // 2. Update profile   PATCH changed fields only, throws on error
   async updateProfile(customerId: string, payload: Partial<ExtendedCustomer>): Promise<ExtendedCustomer> {
     const { data, error } = await supabase
       .from('customers')
