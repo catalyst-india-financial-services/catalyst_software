@@ -20,6 +20,8 @@ export interface Customer {
   created_at: string
   updated_at: string
   sync_status: 'synced' | 'pending' | 'failed'
+  risk_level?: 'LOW' | 'MEDIUM' | 'HIGH' | null
+  customer_segment?: string | null
 }
 
 export interface Guarantor {

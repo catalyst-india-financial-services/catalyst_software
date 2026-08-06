@@ -37,9 +37,9 @@ const getProductConfig = (product: string) => PRODUCT_CONFIG[product] ?? DEFAULT
 
 function StatBadge({ count, label, color }: { count: number; label: string; color: string }) {
   return (
-    <div className={cn('flex flex-col items-center justify-center rounded-2xl p-4 min-w-[120px]', color)}>
-      <span className="text-2xl font-bold amount-display">{count}</span>
-      <span className="text-xs font-semibold mt-0.5 opacity-80">{label}</span>
+    <div className={cn('flex flex-col items-center justify-center rounded-xl py-1.5 px-3.5 min-w-[90px]', color)}>
+      <span className="text-lg font-bold amount-display leading-tight">{count}</span>
+      <span className="text-[10px] font-semibold opacity-80 leading-none mt-0.5">{label}</span>
     </div>
   )
 }
@@ -859,16 +859,16 @@ export default function LeadsPage() {
     <div className="p-6 space-y-6">
 
       {/* Hero Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-brand-700 via-brand-600 to-blue-600 p-6 text-white shadow-xl">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-brand-700 via-brand-600 to-blue-600 py-3.5 px-6 text-white shadow-xl">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(255,255,255,0.15),_transparent_60%)]" />
-        <div className="relative flex items-start justify-between gap-4">
+        <div className="relative flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Inbox className="h-5 w-5 opacity-80" />
+              <Inbox className="h-4.5 w-4.5 opacity-80" />
               <span className="text-xs font-bold uppercase tracking-wider opacity-80">Website Borrowing Applications</span>
             </div>
-            <h1 className="text-2xl font-extrabold tracking-tight">Leads & Inbound Inquiries</h1>
-            <p className="text-xs opacity-75 mt-1 font-medium">
+            <h1 className="text-xl font-extrabold tracking-tight">Leads & Inbound Inquiries</h1>
+            <p className="text-xs opacity-75 mt-0.5 font-medium">
               Real-time loan applications from website visitors — approve directly to active customers.
             </p>
           </div>
@@ -889,25 +889,25 @@ export default function LeadsPage() {
       />
 
       {/* Status Filter Tabs */}
-      <div className="flex gap-1.5 bg-slate-100 rounded-xl p-1.5 w-fit border border-slate-200/50 flex-wrap">
+      <div className="flex gap-2 bg-slate-100 rounded-2xl p-2 w-fit border border-slate-200/60 shadow-xs flex-wrap items-center">
         {[
-          { id: 'all',        label: 'All Leads',  count: totalCount,     activeColor: 'bg-white text-slate-900 shadow-2xs' },
-          { id: 'Pending',    label: 'Pending',    count: pendingCount,   activeColor: 'bg-amber-500 text-white shadow-xs' },
-          { id: 'Interested', label: 'Interested', count: interestedCount, activeColor: 'bg-blue-600 text-white shadow-xs' },
-          { id: 'Converted',  label: 'Approved',   count: convertedCount, activeColor: 'bg-emerald-600 text-white shadow-xs' },
-          { id: 'Rejected',   label: 'Rejected',   count: rejectedCount,  activeColor: 'bg-red-500 text-white shadow-xs' },
+          { id: 'all',        label: 'All Leads',  count: totalCount,     activeColor: 'bg-white text-slate-900 shadow-sm border border-slate-200/30' },
+          { id: 'Pending',    label: 'Pending',    count: pendingCount,   activeColor: 'bg-amber-500 text-white shadow-sm shadow-amber-500/25 border border-amber-600/10' },
+          { id: 'Interested', label: 'Interested', count: interestedCount, activeColor: 'bg-blue-600 text-white shadow-sm shadow-blue-600/25 border border-blue-700/10' },
+          { id: 'Converted',  label: 'Approved',   count: convertedCount, activeColor: 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25 border border-emerald-700/10' },
+          { id: 'Rejected',   label: 'Rejected',   count: rejectedCount,  activeColor: 'bg-red-500 text-white shadow-sm shadow-red-500/25 border border-red-600/10' },
         ].map((s) => (
           <button
             key={s.id}
             onClick={() => setStatusFilter(s.id)}
             className={cn(
-              'px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2',
-              statusFilter === s.id ? s.activeColor : 'text-slate-500 hover:text-slate-800'
+              'h-12 px-6 text-[15px] font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-2',
+              statusFilter === s.id ? s.activeColor : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50/50'
             )}
           >
             {s.label}
             <span className={cn(
-              'px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold',
+              'px-2 py-0.5 rounded-full text-[11px] font-mono font-bold transition-all duration-200',
               statusFilter === s.id ? 'bg-black/10 text-inherit' : 'bg-slate-200 text-slate-600'
             )}>
               {s.count}

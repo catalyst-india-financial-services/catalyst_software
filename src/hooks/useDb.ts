@@ -4,6 +4,7 @@ import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Le
 import { calculateEMI, generateEMISchedule } from '@/utils'
 import dayjs from 'dayjs'
 import { customerProfileService } from '@/services/customerProfileService'
+import type { CustomerSegmentOption } from '@/services/customerProfileService'
 
 // ─── Customer Hooks ───────────────────────────────────────────────────────────
 
@@ -1313,3 +1314,22 @@ export function useSaveCustomerActivity() {
   })
 }
 
+// ─── Customer Segment Options Hooks ───────────────────────────────────────────
+
+export function useCustomerSegmentOptions() {
+  return useQuery({
+    queryKey: ['customerSegmentOptions'],
+    queryFn: () => customerProfileService.getSegmentOptions(),
+    staleTime: 1000 * 60 * 5, // 5 min cache
+  })
+}
+
+export function useAddCustomerSegmentOption() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => customerProfileService.addSegmentOption(name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerSegmentOptions'] })
+    },
+  })
+}

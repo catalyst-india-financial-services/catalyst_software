@@ -69,6 +69,16 @@ export interface ExtendedCustomer {
 
   google_maps_url?: string | null
   customer_type?: 'Individual' | 'Business' | null
+  risk_level?: 'LOW' | 'MEDIUM' | 'HIGH' | null
+  customer_segment?: string | null
+}
+
+export interface CustomerSegmentOption {
+  id: string
+  name: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface CustomerProject {
@@ -392,5 +402,28 @@ export const customerProfileService = {
     const payload = { ...activity, customer_id: customerId }
     const { error } = await supabase.from('customer_activities').upsert([payload])
     if (error) throw error
+  },
+
+  // 12. Customer Segment Options
+  async getSegmentOptions(): Promise<CustomerSegmentOption[]> {
+    const { data, error } = await supabase
+      .from('customer_segment_options')
+      .select('*')
+      .eq('is_active', true)
+      .order('name', { ascending: true })
+
+    if (error) throw error
+    return (data ?? []) as CustomerSegmentOption[]
+  },
+
+  async addSegmentOption(name: string): Promise<CustomerSegmentOption> {
+    const { data, error } = await supabase
+      .from('customer_segment_options')
+      .insert([{ name: name.trim(), is_active: true }])
+      .select()
+      .single()
+
+    if (error) throw error
+    return data as CustomerSegmentOption
   },
 }

@@ -8,7 +8,7 @@ import {
   Download, Eye, SquarePen, Trash2, Upload, SlidersHorizontal, UserPlus,
   Mail, Calendar, Briefcase, Award, TrendingUp, TrendingDown, Star, Activity,
   Clock, ShieldAlert, AlertTriangle, FileText as DocIcon, MessageSquare,
-  Sparkles, Pin, Check, X, Printer, FileSpreadsheet, Lock, MoreVertical, Globe, Languages
+  Sparkles, Pin, Check, X, Printer, FileSpreadsheet, Lock, MoreVertical, Globe, Languages, Pencil
 } from 'lucide-react'
 import {
   useCustomerProfile, useUpdateCustomerProfile, useCustomerProjects, useSaveCustomerProject,
@@ -16,7 +16,8 @@ import {
   useSaveCustomerInvoice, useCustomerPayments, useSaveCustomerPayment, useCustomerDocuments,
   useSaveCustomerDocument, useDeleteCustomerDocument, useCustomerCommunications,
   useSaveCustomerCommunication, useCustomerFollowups, useSaveCustomerFollowup, useCustomerNotes,
-  useSaveCustomerNote, useDeleteCustomerNote, useCustomerActivities, useSaveCustomerActivity
+  useSaveCustomerNote, useDeleteCustomerNote, useCustomerActivities, useSaveCustomerActivity,
+  useCustomerSegmentOptions, useAddCustomerSegmentOption
 } from '@/hooks/useDb'
 import {
   Button, Card, CardHeader, CardTitle, CardBody, Avatar, StatusBadge, Badge,
@@ -176,6 +177,7 @@ export default function CustomerDetailPage() {
   const { data: followups = [], isLoading: isFupsLoading } = useCustomerFollowups(customerId)
   const { data: notes = [], isLoading: isNotesLoading } = useCustomerNotes(customerId)
   const { data: activities = [], isLoading: isActsLoading } = useCustomerActivities(customerId)
+  const { data: segmentOptions = [] } = useCustomerSegmentOptions()
 
   // --- Mutations ---
   const updateProfile = useUpdateCustomerProfile()
@@ -191,6 +193,7 @@ export default function CustomerDetailPage() {
   const saveNote = useSaveCustomerNote()
   const deleteNote = useDeleteCustomerNote()
   const saveActivity = useSaveCustomerActivity()
+  const addSegmentOption = useAddCustomerSegmentOption()
 
   // Track changes to prevent leaving with unsaved changes
   const hasChanges = useMemo(() => {
@@ -262,7 +265,8 @@ export default function CustomerDetailPage() {
         'name', 'photo_url', 'mobile', 'whatsapp', 'alt_mobile', 'email',
         'dob', 'gender', 'occupation', 'company', 'pref_language',
         'address', 'billing_address', 'shipping_address', 'permanent_address',
-        'city', 'district', 'state', 'pincode', 'country', 'google_maps_url'
+        'city', 'district', 'state', 'pincode', 'country', 'google_maps_url',
+        'risk_level', 'customer_segment'
       ]
       return staffAllowed.includes(fieldName)
     }
@@ -542,6 +546,8 @@ export default function CustomerDetailPage() {
   const [isCommModalOpen, setIsCommModalOpen] = useState(false)
   const [isFollowupModalOpen, setIsFollowupModalOpen] = useState(false)
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false)
+  const [isManageSegmentsOpen, setIsManageSegmentsOpen] = useState(false)
+  const [newSegmentName, setNewSegmentName] = useState('')
 
   // --- Form Data States ---
   const [profileForm, setProfileForm] = useState<any>(null)
@@ -1033,6 +1039,45 @@ export default function CustomerDetailPage() {
                     {customer.customer_type}
                   </Badge>
                 )}
+
+                {/* Risk Level Badge / Dropdown */}
+                {isEditing ? (
+                  <select
+                    value={formData.risk_level || 'LOW'}
+                    onChange={(e) => handleFieldChange('risk_level', e.target.value)}
+                    disabled={!canEditField('risk_level')}
+                    className="form-input text-[11px] font-bold border-blue-200 bg-blue-50/10 focus:border-blue-500 focus:ring-blue-100 rounded-lg px-2 py-0.5 w-32 bg-white"
+                  >
+                    <option value="LOW">Low Risk</option>
+                    <option value="MEDIUM">Medium Risk</option>
+                    <option value="HIGH">High Risk</option>
+                  </select>
+                ) : (() => {
+                  const risk = customer.risk_level || 'LOW'
+                  const riskStyles: Record<string, string> = {
+                    LOW: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                    MEDIUM: 'bg-amber-50   text-amber-700   border-amber-200',
+                    HIGH: 'bg-red-50     text-red-700     border-red-200',
+                  }
+                  const riskLabels: Record<string, string> = {
+                    LOW: 'LOW RISK',
+                    MEDIUM: 'MEDIUM RISK',
+                    HIGH: 'HIGH RISK',
+                  }
+                  return (
+                    <span className={cn(
+                      'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wider',
+                      riskStyles[risk] ?? riskStyles.LOW
+                    )}>
+                      <span className={cn('w-1.5 h-1.5 rounded-full', {
+                        'bg-emerald-500': risk === 'LOW',
+                        'bg-amber-500': risk === 'MEDIUM',
+                        'bg-red-500': risk === 'HIGH',
+                      })} />
+                      {riskLabels[risk] ?? 'LOW RISK'}
+                    </span>
+                  )
+                })()}
               </div>
 
               {isEditing ? (
@@ -1225,7 +1270,7 @@ export default function CustomerDetailPage() {
 
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 shadow-2xs hover:shadow-sm transition-all">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Active Orders</span>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Loan Available</span>
               <Briefcase className="h-4 w-4 text-blue-500" />
             </div>
             <p className="text-lg font-extrabold text-slate-900 mt-2 font-mono">{activeProjectsCount}</p>
@@ -1333,6 +1378,48 @@ export default function CustomerDetailPage() {
                 {renderEditableField('Preferred Language', 'pref_language', 'select', languageOptions)}
                 {renderEditableField('Customer Category', 'category', 'select', categoryOptions)}
                 {renderEditableField('Status', 'status', 'select', statusOptions)}
+
+                {/* Customer Segment field — always the last in Basic Information */}
+                <div className="py-2.5 md:col-span-2">
+                  <p className="text-[10px] uppercase font-bold text-slate-400">Customer Segment</p>
+                  {isEditing ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <select
+                        value={formData.customer_segment || 'Website'}
+                        onChange={(e) => handleFieldChange('customer_segment', e.target.value)}
+                        className="form-input text-xs font-bold w-full border-blue-200 bg-blue-50/10 focus:border-blue-500 focus:ring-blue-100 rounded-xl p-2.5 h-10 appearance-none bg-white"
+                      >
+                        {segmentOptions.length > 0
+                          ? segmentOptions.map((opt) => (
+                            <option key={opt.id} value={opt.name}>{opt.name}</option>
+                          ))
+                          : (
+                            <>
+                              <option value="Website">Website</option>
+                              <option value="Social Media">Social Media</option>
+                              <option value="Direct Customer">Direct Customer</option>
+                            </>
+                          )
+                        }
+                      </select>
+                      <button
+                        type="button"
+                        title="Manage Segments"
+                        onClick={() => setIsManageSegmentsOpen(true)}
+                        className="flex-shrink-0 p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-300 hover:bg-brand-50 transition-all"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-bold text-slate-800 mt-0.5">
+                      {customer.customer_segment
+                        ? <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-bold">{customer.customer_segment}</span>
+                        : <span className="text-slate-350 italic font-medium">Enter Customer Segment</span>
+                      }
+                    </p>
+                  )}
+                </div>
               </CardBody>
             </Card>
           )}
@@ -2580,6 +2667,72 @@ export default function CustomerDetailPage() {
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
               <Button variant="outline" size="sm" onClick={() => setIsNoteModalOpen(false)}>Cancel</Button>
               <Button variant="default" size="sm" onClick={handleAddNote}>Save Note</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Customer Segments Modal */}
+      {isManageSegmentsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-center pb-4 mb-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-800">Manage Customer Segments</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Add new segment options — available globally for all customers</p>
+              </div>
+              <Button variant="ghost" size="icon-sm" onClick={() => { setIsManageSegmentsOpen(false); setNewSegmentName('') }}><X className="h-4 w-4" /></Button>
+            </div>
+
+            {/* Existing options */}
+            <div className="mb-4">
+              <p className="text-[10px] uppercase font-bold text-slate-400 mb-2">Existing Segments</p>
+              <div className="flex flex-wrap gap-2">
+                {segmentOptions.length > 0
+                  ? segmentOptions.map((opt) => (
+                    <span key={opt.id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-bold">
+                      {opt.name}
+                    </span>
+                  ))
+                  : (
+                    <p className="text-xs text-slate-400 italic">No segments loaded yet. Database migration may be pending.</p>
+                  )
+                }
+              </div>
+            </div>
+
+            {/* Add new segment */}
+            <div className="space-y-3">
+              <p className="text-[10px] uppercase font-bold text-slate-400">Add New Segment</p>
+              <Input
+                label="New Segment Name"
+                value={newSegmentName}
+                onChange={(e) => setNewSegmentName(e.target.value)}
+                placeholder="e.g. Retail Walk-in"
+              />
+            </div>
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
+              <Button variant="outline" size="sm" onClick={() => { setIsManageSegmentsOpen(false); setNewSegmentName('') }}>Cancel</Button>
+              <Button
+                variant="default"
+                size="sm"
+                loading={addSegmentOption.isPending}
+                onClick={async () => {
+                  if (!newSegmentName.trim()) {
+                    toast.error('Please enter a segment name')
+                    return
+                  }
+                  try {
+                    await addSegmentOption.mutateAsync(newSegmentName.trim())
+                    toast.success(`Segment "${newSegmentName.trim()}" added successfully`)
+                    setNewSegmentName('')
+                  } catch (err: any) {
+                    toast.error(err.message || 'Failed to add segment')
+                  }
+                }}
+              >
+                + Add Segment
+              </Button>
             </div>
           </div>
         </div>
