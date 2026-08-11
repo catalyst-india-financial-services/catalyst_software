@@ -226,6 +226,28 @@ export function useCreateLoan() {
   })
 }
 
+export function useUpdateLoan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...loanData }: Partial<Loan> & { id: string }) => {
+      const { data, error } = await supabase
+        .from('loans')
+        .update(loanData)
+        .eq('id', id)
+        .select()
+        .single()
+      if (error) throw error
+      return data as Loan
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['loans'] })
+      queryClient.invalidateQueries({ queryKey: ['loans', variables.id] })
+      queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
+    },
+  })
+}
+
+
 // ─── EMI Payment Hooks ─────────────────────────────────────────────────────────
 
 export function usePayments(loanId?: string) {
@@ -1331,5 +1353,60 @@ export function useAddCustomerSegmentOption() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customerSegmentOptions'] })
     },
+  })
+}
+
+// ─── Account View Hooks ───────────────────────────────────────────────────────
+
+export function useCustomerLoans(customerId?: string) {
+  return useQuery({
+    queryKey: ['loans', 'customer', customerId],
+    queryFn: async () => {
+      if (!customerId) return []
+      const { data, error } = await supabase
+        .from('loans')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data as Loan[]
+    },
+    enabled: !!customerId,
+  })
+}
+
+export function useCustomerPaymentsForLoan(customerId?: string, loanId?: string) {
+  return useQuery({
+    queryKey: ['payments', 'customer', customerId, loanId],
+    queryFn: async () => {
+      if (!customerId) return []
+      let query = supabase
+        .from('emi_payments')
+        .select('*')
+        .eq('customer_id', customerId)
+      if (loanId) query = (query as any).eq('loan_id', loanId)
+      const { data, error } = await (query as any).order('payment_date', { ascending: false })
+      if (error) throw error
+      return data as EMIPayment[]
+    },
+    enabled: !!customerId,
+  })
+}
+
+export function useCustomerIncomeRecords(customerId?: string, loanId?: string) {
+  return useQuery({
+    queryKey: ['income', 'customer', customerId, loanId],
+    queryFn: async () => {
+      if (!customerId) return []
+      let query = supabase
+        .from('income')
+        .select('*')
+        .eq('customer_id', customerId)
+      if (loanId) query = (query as any).eq('loan_id', loanId)
+      const { data, error } = await (query as any).order('date', { ascending: false })
+      if (error) throw error
+      return data as any[]
+    },
+    enabled: !!customerId,
   })
 }

@@ -8,7 +8,10 @@ import {
   Download, Eye, SquarePen, Trash2, Upload, SlidersHorizontal, UserPlus,
   Mail, Calendar, Briefcase, Award, TrendingUp, TrendingDown, Star, Activity,
   Clock, ShieldAlert, AlertTriangle, FileText as DocIcon, MessageSquare,
-  Sparkles, Pin, Check, X, Printer, FileSpreadsheet, Lock, MoreVertical, Globe, Languages, Pencil
+  Sparkles, Pin, Check, X, Printer, FileSpreadsheet, Lock, MoreVertical, Globe, Languages, Pencil,
+  WalletCards, Banknote, BadgeIndianRupee, Target, Info, Bell, ChevronRight,
+  LayoutDashboard, List, BookOpen, Receipt, Shield, FolderOpen, Zap, RefreshCcw,
+  CircleDollarSign, IndianRupee, ArrowUpCircle, CalendarClock, ClipboardList, Percent
 } from 'lucide-react'
 import {
   useCustomerProfile, useUpdateCustomerProfile, useCustomerProjects, useSaveCustomerProject,
@@ -17,7 +20,8 @@ import {
   useSaveCustomerDocument, useDeleteCustomerDocument, useCustomerCommunications,
   useSaveCustomerCommunication, useCustomerFollowups, useSaveCustomerFollowup, useCustomerNotes,
   useSaveCustomerNote, useDeleteCustomerNote, useCustomerActivities, useSaveCustomerActivity,
-  useCustomerSegmentOptions, useAddCustomerSegmentOption
+  useCustomerSegmentOptions, useAddCustomerSegmentOption,
+  useCustomerLoans, useLoanSchedule, useCustomerPaymentsForLoan, useCustomerIncomeRecords, useCreatePayment
 } from '@/hooks/useDb'
 import {
   Button, Card, CardHeader, CardTitle, CardBody, Avatar, StatusBadge, Badge,
@@ -33,6 +37,7 @@ import 'jspdf-autotable'
 import * as XLSX from 'xlsx'
 import { toast } from 'sonner'
 import dayjs from 'dayjs'
+
 
 const COMPLIANCE_STATUS_VARIANTS = {
   Compliant: 'success',
