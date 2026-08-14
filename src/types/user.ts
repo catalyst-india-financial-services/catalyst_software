@@ -5,11 +5,13 @@ export interface User {
   id: string
   email: string
   full_name: string
-  role: UserRole
+  role: UserRole | 'employee'
   avatar_url?: string
   mobile?: string
+  employee_id?: string
   is_active: boolean
   last_login?: string
+  last_logout?: string
   created_at: string
   updated_at: string
 }

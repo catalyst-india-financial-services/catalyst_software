@@ -1,16 +1,20 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Building2, Save, Upload, Percent, AlertCircle, Palette, Database, Download, CheckCircle2 } from 'lucide-react'
+import { Building2, Save, Upload, Percent, AlertCircle, Palette, Database, Download, CheckCircle2, ShieldCheck } from 'lucide-react'
 import { Button, Card, CardHeader, CardTitle, CardBody, Input, Select, Toggle, PageHeader } from '@/components/ui'
 import { cn } from '@/utils'
+import { useAuthStore } from '@/store/authStore'
+import AuthenticationTab from './AuthenticationTab'
 
-const settingsTabs = [
+const baseSettingsTabs = [
   { id: 'company', label: 'Company', icon: Building2, desc: 'Business info & logo' },
   { id: 'interest', label: 'Interest & Penalty', icon: Percent, desc: 'Rates & grace period' },
   { id: 'receipt', label: 'Receipt', icon: AlertCircle, desc: 'Numbering & layout' },
   { id: 'theme', label: 'Appearance', icon: Palette, desc: 'Colors & display' },
   { id: 'backup', label: 'Backup & Data', icon: Database, desc: 'Export & restore' },
 ]
+
+const adminOnlyTab = { id: 'authentication', label: 'Authentication', icon: ShieldCheck, desc: 'Users & security' }
 
 interface CompanyState {
   name: string; address: string; city: string; state: string;
@@ -19,8 +23,11 @@ interface CompanyState {
 interface InterestState { default_rate: string; default_type: string; penalty_rate: string; grace_days: string }
 interface ReceiptState { prefix: string; loan_prefix: string; customer_prefix: string; show_logo: boolean; show_terms: boolean }
 
-export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState('company')
+export default function SettingsPage({ initialTab }: { initialTab?: string } = {}) {
+  const { user } = useAuthStore()
+  const isAdmin = user?.role === 'admin'
+  const settingsTabs = isAdmin ? [...baseSettingsTabs, adminOnlyTab] : baseSettingsTabs
+  const [activeTab, setActiveTab] = useState(initialTab || 'company')
   const [savedFeedback, setSavedFeedback] = useState(false)
   const [company, setCompany] = useState<CompanyState>({
     name: 'Sri Lakshmi Finance', address: '45, MG Road, Anna Nagar', city: 'Chennai', state: 'Tamil Nadu',
@@ -354,6 +361,10 @@ export default function SettingsPage() {
                     </div>
                   </CardBody>
                 </Card>
+              )}
+              {/* ── Authentication (Admin only) ── */}
+              {activeTab === 'authentication' && isAdmin && (
+                <AuthenticationTab />
               )}
             </motion.div>
           </AnimatePresence>

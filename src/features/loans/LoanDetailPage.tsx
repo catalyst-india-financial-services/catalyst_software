@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -37,10 +37,10 @@ export default function LoanDetailPage() {
   const { data: emiSchedule = [], isLoading: isScheduleLoading, refetch: refetchSchedule } = useLoanSchedule(loanId)
 
   const { data: payments = [], isLoading: isPaymentsLoading, refetch: refetchPayments } = usePayments(loanId)
-  
+
   // Custom query for income / transaction Integration
   const { data: incomeRecords = [], isLoading: isIncomeLoading, refetch: refetchIncome } = useCustomerIncomeRecords(loan?.customer_id, loanId)
-  
+
   // Customer documents
   const { data: documents = [], refetch: refetchDocs } = useCustomerDocuments(loan?.customer_id || '')
 
@@ -52,15 +52,26 @@ export default function LoanDetailPage() {
 
   // --- UI States ---
   const [activeTab, setActiveTab] = useState<'overview' | 'loan-details' | 'demand-flow' | 'collections' | 'transactions' | 'security' | 'documents'>('overview')
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+
+  useEffect(() => {
+    if (activeTab && tabRefs.current[activeTab]) {
+      tabRefs.current[activeTab]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center'
+      })
+    }
+  }, [activeTab])
   const [isEmiModalOpen, setIsEmiModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false)
   const [isUploadDocOpen, setIsUploadDocOpen] = useState(false)
-  
+
   // Transaction filtering states
   const [txSearch, setTxSearch] = useState('')
   const [txTypeFilter, setTxTypeFilter] = useState('all')
-  
+
   // Document form state
   const [docForm, setDocForm] = useState({
     name: '',
@@ -97,17 +108,17 @@ export default function LoanDetailPage() {
   }, [loan])
 
   // --- Dynamic Math and Rollups ---
-  
+
   // 1. Dynamic DPD Calculation
   const dpd = useMemo(() => {
     const overdueItems = emiSchedule.filter(
       s => (s.status === 'pending' || s.status === 'overdue' || s.status === 'partial') &&
-           dayjs(s.due_date).isBefore(dayjs(), 'day')
+        dayjs(s.due_date).isBefore(dayjs(), 'day')
     )
     if (overdueItems.length === 0) return 0
-    const earliestDue = overdueItems.reduce((earliest, curr) => 
+    const earliestDue = overdueItems.reduce((earliest, curr) =>
       dayjs(curr.due_date).isBefore(dayjs(earliest)) ? curr.due_date : earliest
-    , overdueItems[0].due_date)
+      , overdueItems[0].due_date)
     return dayjs().diff(dayjs(earliestDue), 'day')
   }, [emiSchedule])
 
@@ -212,7 +223,7 @@ export default function LoanDetailPage() {
   }, [dpd, nextEmi, customer, loan])
 
   // --- Handlers ---
-  
+
   // Collect EMI submit handler
   const handleCollectEmiSubmit = async (paymentData: any) => {
     try {
@@ -279,7 +290,7 @@ export default function LoanDetailPage() {
   const handleAddDocument = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!docForm.name.trim()) return toast.error('Please enter a document name')
-    
+
     try {
       await saveDocument.mutateAsync({
         customerId: loan?.customer_id || '',
@@ -315,10 +326,10 @@ export default function LoanDetailPage() {
       p.receipt_number,
       p.collected_by
     ])
-    
-    const csvContent = "data:text/csv;charset=utf-8," 
+
+    const csvContent = "data:text/csv;charset=utf-8,"
       + [headers.join(','), ...rows.map(e => e.join(','))].join('\n')
-    
+
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement("a")
     link.setAttribute("href", encodedUri)
@@ -361,14 +372,52 @@ export default function LoanDetailPage() {
 
   return (
     <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen text-slate-800">
-      
-      {/* Back to list button */}
-      <button
-        onClick={() => navigate('/loans')}
-        className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-slate-800 transition-colors uppercase tracking-wider print:hidden"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to Accounts
-      </button>
+
+      {/* --- TOP NAVIGATION AREA --- */}
+      <div className="flex flex-col md:flex-row md:items-center gap-4 bg-white p-2.5 rounded-2xl border border-slate-100 shadow-3xs print:hidden">
+        {/* Back Button */}
+        <button
+          onClick={() => navigate('/loans')}
+          className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors uppercase tracking-wider rounded-xl whitespace-nowrap flex-shrink-0 cursor-pointer"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to Accounts
+        </button>
+
+        {/* Vertical Divider (hidden on mobile) */}
+        <div className="hidden md:block w-px h-6 bg-slate-200" />
+
+        {/* Scrollable Tabs */}
+        <div className="flex-1 overflow-x-auto flex gap-1 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth select-none">
+          {[
+            { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+            { id: 'loan-details', label: 'Loan Details', icon: Info },
+            { id: 'demand-flow', label: 'Demand Flow', icon: CalendarDays },
+            { id: 'collections', label: 'Collections', icon: Coins },
+            { id: 'transactions', label: 'Transactions', icon: IndianRupee },
+            { id: 'security', label: 'Security', icon: ShieldCheck },
+            { id: 'documents', label: 'Documents', icon: FileText }
+          ].map((tab) => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                ref={(el) => { tabRefs.current[tab.id] = el }}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 whitespace-nowrap cursor-pointer',
+                  isActive
+                    ? 'bg-brand-600 text-white shadow-xs font-extrabold scale-[1.01]'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 font-medium'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
       {/* ==================================================
           1. ACCOUNT PAGE HEADER
@@ -393,7 +442,7 @@ export default function LoanDetailPage() {
                 {loan.status}
               </span>
             </div>
-            
+
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-xs text-slate-500 font-semibold pt-1">
               <div>Borrower: <span className="text-slate-800 font-bold hover:underline cursor-pointer" onClick={() => navigate(`/customers/${customer.id}`)}>{customer.name}</span></div>
               <div>Customer ID: <span className="font-mono text-slate-800 font-bold">{customer.customer_id}</span></div>
@@ -412,7 +461,7 @@ export default function LoanDetailPage() {
           >
             <Coins className="h-4 w-4" /> Collect EMI
           </Button>
-          
+
           <Button
             variant="outline"
             onClick={() => setIsStatementModalOpen(true)}
@@ -438,126 +487,108 @@ export default function LoanDetailPage() {
       </div>
 
       {/* ==================================================
-          3. FINANCIAL SUMMARY CARDS
+          3. FINANCIAL & ACCOUNT STATUS SUMMARY (Overview Only)
           ================================================== */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-        {[
-          { label: 'Loan Amount', value: formatCurrency(loan.loan_amount), subtitle: 'Sanctioned base principal', color: 'text-slate-900', icon: Banknote },
-          { label: 'Outstanding Principal', value: formatCurrency(loan.remaining_balance), subtitle: 'Balance base amount', color: 'text-slate-900', icon: Landmark },
-          { label: 'Outstanding Interest', value: formatCurrency(outstandingInterest), subtitle: 'Accrued unpaid interest', color: 'text-amber-600', icon: TrendingDown },
-          { label: 'EMI (Monthly)', value: formatCurrency(loan.emi_amount), subtitle: `${loan.duration_months} Months tenure`, color: 'text-brand-600', icon: Coins },
-          { label: 'ROI', value: `${loan.interest_rate}%`, subtitle: `${loan.interest_type} rate calculation`, color: 'text-emerald-600', icon: Percent },
-          { label: 'Tenure', value: `${loan.duration_months} Months`, subtitle: `End date: ${formatDate(dayjs(loan.loan_date).add(loan.duration_months, 'month').toDate())}`, color: 'text-purple-600', icon: CalendarDays }
-        ].map((c) => {
-          const Icon = c.icon
-          return (
-            <Card key={c.label} className="p-4 bg-white border border-slate-100 hover:shadow-md transition-all flex flex-col justify-between">
-              <div className="flex justify-between items-center text-slate-400">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider">{c.label}</span>
-                <Icon className="h-3.5 w-3.5" />
-              </div>
-              <div className="mt-3">
-                <p className={cn('text-lg font-black font-mono tracking-tight', c.color)}>{c.value}</p>
-                <p className="text-[10px] text-slate-400 mt-1 leading-snug">{c.subtitle}</p>
-              </div>
-            </Card>
-          )
-        })}
-      </div>
-
-      {/* ==================================================
-          4. ACCOUNT STATUS SUMMARY
-          ================================================== */}
-      <div className="bg-white p-4.5 rounded-2xl border border-slate-150/80 shadow-2xs grid grid-cols-2 md:grid-cols-6 gap-4">
-        {[
-          {
-            label: 'DPD (Days Past Due)',
-            value: dpd > 0 ? `${dpd} Days` : '0 Days',
-            badgeColor: dpd > 0 ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-          },
-          {
-            label: 'Next EMI Due',
-            value: nextEmi ? formatDate(nextEmi.due_date) : 'Fully Paid',
-            badgeColor: nextEmi ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-          },
-          {
-            label: 'EMI Amount',
-            value: formatCurrency(loan.emi_amount),
-            badgeColor: 'bg-slate-50 text-slate-700 border-slate-200'
-          },
-          {
-            label: 'Account Status',
-            value: loan.status.toUpperCase(),
-            badgeColor: loan.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        loan.status === 'overdue' ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' : 'bg-slate-100 text-slate-600 border-slate-200'
-          },
-          {
-            label: 'Document Status',
-            value: customer.compliance_doc_verified ? 'Verified' : 'Pending',
-            badgeColor: customer.compliance_doc_verified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-          },
-          {
-            label: 'Insurance Status',
-            value: 'Active',
-            badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
-          }
-        ].map((item) => (
-          <div key={item.label} className="flex flex-col gap-1 px-2.5">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.label}</span>
-            <span className={cn(
-              'inline-fit w-fit px-2 py-0.5 rounded-md border text-[11px] font-extrabold font-mono mt-1 text-center',
-              item.badgeColor
-            )}>
-              {item.value}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Main Grid area */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left 2 Cols: TABS PANEL */}
-        <div className="lg:col-span-2 space-y-6">
-          
-          {/* Tabs header list */}
-          <div className="overflow-x-auto border-b border-slate-200 bg-white p-2 rounded-2xl shadow-2xs flex gap-1.5 scrollbar-thin print:hidden">
+      {activeTab === 'overview' && (
+        <>
+          {/* ==================================================
+              3. FINANCIAL SUMMARY CARDS
+              ================================================== */}
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
             {[
-              { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-              { id: 'loan-details', label: 'Loan Details', icon: Info },
-              { id: 'demand-flow', label: 'Demand Flow', icon: CalendarDays },
-              { id: 'collections', label: 'Collections', icon: Coins },
-              { id: 'transactions', label: 'Transactions', icon: IndianRupee },
-              { id: 'security', label: 'Security', icon: ShieldCheck },
-              { id: 'documents', label: 'Documents', icon: FileText }
-            ].map((tab) => {
-              const Icon = tab.icon
-              const isActive = activeTab === tab.id
+              { label: 'Loan Amount', value: formatCurrency(loan.loan_amount), subtitle: 'Sanctioned base principal', color: 'text-slate-900', icon: Banknote },
+              { label: 'Outstanding Principal', value: formatCurrency(loan.remaining_balance), subtitle: 'Balance base amount', color: 'text-slate-900', icon: Landmark },
+              { label: 'Outstanding Interest', value: formatCurrency(outstandingInterest), subtitle: 'Accrued unpaid interest', color: 'text-amber-600', icon: TrendingDown },
+              { label: 'EMI (Monthly)', value: formatCurrency(loan.emi_amount), subtitle: `${loan.duration_months} Months tenure`, color: 'text-brand-600', icon: Coins },
+              { label: 'ROI', value: `${loan.interest_rate}%`, subtitle: `${loan.interest_type} rate calculation`, color: 'text-emerald-600', icon: Percent },
+              { label: 'Tenure', value: `${loan.duration_months} Months`, subtitle: `End date: ${formatDate(dayjs(loan.loan_date).add(loan.duration_months, 'month').toDate())}`, color: 'text-purple-600', icon: CalendarDays }
+            ].map((c) => {
+              const Icon = c.icon
               return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={cn(
-                    'flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap',
-                    isActive
-                      ? 'bg-brand-600 text-white shadow-md shadow-brand-500/20'
-                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {tab.label}
-                </button>
+                <Card key={c.label} className="p-4 bg-white border border-slate-100 hover:shadow-md transition-all flex flex-col justify-between">
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">{c.label}</span>
+                    <Icon className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="mt-3">
+                    <p className={cn('text-lg font-black font-mono tracking-tight', c.color)}>{c.value}</p>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-snug">{c.subtitle}</p>
+                  </div>
+                </Card>
               )
             })}
           </div>
 
+          {/* ==================================================
+              4. ACCOUNT STATUS SUMMARY
+              ================================================== */}
+          <div className="bg-white p-4.5 rounded-2xl border border-slate-150/80 shadow-2xs grid grid-cols-2 md:grid-cols-6 gap-4">
+            {[
+              {
+                label: 'DPD (Days Past Due)',
+                value: dpd > 0 ? `${dpd} Days` : '0 Days',
+                badgeColor: dpd > 0 ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              },
+              {
+                label: 'Next EMI Due',
+                value: nextEmi ? formatDate(nextEmi.due_date) : 'Fully Paid',
+                badgeColor: nextEmi ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              },
+              {
+                label: 'EMI Amount',
+                value: formatCurrency(loan.emi_amount),
+                badgeColor: 'bg-slate-50 text-slate-700 border-slate-200'
+              },
+              {
+                label: 'Account Status',
+                value: loan.status.toUpperCase(),
+                badgeColor: loan.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  loan.status === 'overdue' ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' : 'bg-slate-100 text-slate-600 border-slate-200'
+              },
+              {
+                label: 'Document Status',
+                value: customer.compliance_doc_verified ? 'Verified' : 'Pending',
+                badgeColor: customer.compliance_doc_verified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+              },
+              {
+                label: 'Insurance Status',
+                value: 'Active',
+                badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              }
+            ].map((item) => (
+              <div key={item.label} className="flex flex-col gap-1 px-2.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.label}</span>
+                <span className={cn(
+                  'inline-fit w-fit px-2 py-0.5 rounded-md border text-[11px] font-extrabold font-mono mt-1 text-center',
+                  item.badgeColor
+                )}>
+                  {item.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Main Grid area */}
+      <div className={cn(
+        "grid grid-cols-1 gap-6",
+        activeTab === 'overview' ? "lg:grid-cols-3" : "grid-cols-1"
+      )}>
+
+        {/* Left 2 Cols: TABS PANEL */}
+        <div className={cn(
+          "space-y-6",
+          activeTab === 'overview' ? "lg:col-span-2" : "w-full"
+        )}>
+
           {/* TAB CONTENTS */}
           <div className="space-y-6">
-            
+
             {/* OVERVIEW TAB */}
             {activeTab === 'overview' && (
               <div className="grid grid-cols-1 gap-6">
-                
+
                 {/* Visual amortization schedule overview bar */}
                 <Card className="p-6">
                   <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3">Principal Repayment Schedule Progress</h3>
@@ -566,7 +597,7 @@ export default function LoanDetailPage() {
                     <span className="text-brand-600">Remaining Balance: {formatCurrency(loan.remaining_balance)}</span>
                   </div>
                   <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
-                    <div 
+                    <div
                       className="bg-brand-600 h-full rounded-full transition-all duration-500"
                       style={{ width: `${Math.min(100, Math.max(0, (paymentsRollup.totalPrincipalPaid / loan.loan_amount) * 100))}%` }}
                     />
@@ -885,157 +916,159 @@ export default function LoanDetailPage() {
         </div>
 
         {/* Right 1 Col: SIDE PANEL INFO */}
-        <div className="space-y-6">
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
 
-          {/* ==================================================
+            {/* ==================================================
               5. ACCOUNT SNAPSHOT
               ================================================== */}
-          <Card className="p-5 space-y-4">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-150 pb-3 flex justify-between items-center">
-              <span>Account Snapshot</span>
-              <Badge variant="outline" className="text-[10px] uppercase font-bold text-brand-600 bg-brand-50 border-brand-200">Summary</Badge>
-            </h3>
-
-            <div className="grid grid-cols-2 gap-y-3.5 gap-x-4 text-xs font-semibold text-slate-600">
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Loan Type</p>
-                <p className="text-slate-800 capitalize font-bold">{loan.loan_type}</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Repayment Mode</p>
-                <p className="text-slate-800 font-bold">UPI / Auto Debit</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Loan Start Date</p>
-                <p className="text-slate-800 font-bold">{formatDate(loan.loan_date)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Linked Bank Account</p>
-                <p className="text-slate-800 font-bold truncate">
-                  {customer.bank_name ? `${customer.bank_name} - ****${customer.account_number?.slice(-4) || '5678'}` : 'HDFC Bank - ****5678'}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Maturity Date</p>
-                <p className="text-slate-800 font-bold">{formatDate(dayjs(loan.loan_date).add(loan.duration_months, 'month').toDate())}</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Mode of Collection</p>
-                <p className="text-slate-800 font-bold">UPI Mandate</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Sanctioned Amount</p>
-                <p className="text-slate-800 font-bold">{formatCurrency(loan.loan_amount)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">DPD</p>
-                <p className={cn('font-bold', dpd > 0 ? 'text-red-500 font-black' : 'text-slate-800')}>{dpd} Days</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Disbursement Date</p>
-                <p className="text-slate-800 font-bold">{formatDate(loan.loan_date)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Next Review Date</p>
-                <p className="text-slate-800 font-bold">{formatDate(dayjs(loan.loan_date).add(1, 'year').toDate())}</p>
-              </div>
-            </div>
-          </Card>
-
-          {/* ==================================================
-              6. QUICK ACTIONS
-              ================================================== */}
-          <Card className="p-5 space-y-4 print:hidden">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-150 pb-3">Quick Actions</h3>
-            <div className="grid grid-cols-2 gap-3.5 text-center">
-              <button 
-                onClick={() => setIsEmiModalOpen(true)}
-                disabled={loan.status === 'closed'}
-                className="bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-xl p-3.5 border border-brand-100 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
-              >
-                <Coins className="h-5 w-5" />
-                <span className="text-[11px] font-bold uppercase tracking-wide">Collect EMI</span>
-              </button>
-              <button 
-                onClick={() => setActiveTab('demand-flow')}
-                className="bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl p-3.5 border border-slate-200/60 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
-              >
-                <CalendarDays className="h-5 w-5 text-purple-500" />
-                <span className="text-[11px] font-bold uppercase tracking-wide">Schedule</span>
-              </button>
-              <button 
-                onClick={() => setIsStatementModalOpen(true)}
-                className="bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl p-3.5 border border-slate-200/60 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
-              >
-                <FileText className="h-5 w-5 text-emerald-500" />
-                <span className="text-[11px] font-bold uppercase tracking-wide">Statement</span>
-              </button>
-              <button 
-                onClick={() => setIsEditModalOpen(true)}
-                className="bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl p-3.5 border border-slate-200/60 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
-              >
-                <SquarePen className="h-5 w-5 text-amber-500" />
-                <span className="text-[11px] font-bold uppercase tracking-wide">Edit Account</span>
-              </button>
-            </div>
-          </Card>
-
-          {/* ==================================================
-              7. ALERTS & REMINDERS
-              ================================================== */}
-          <div className="hidden lg:block">
-            <Card className="p-5">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-150 pb-3 mb-4 flex justify-between items-center">
-                <span>Alerts & Reminders</span>
-                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">Live</span>
+            <Card className="p-5 space-y-4">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-150 pb-3 flex justify-between items-center">
+                <span>Account Snapshot</span>
+                <Badge variant="outline" className="text-[10px] uppercase font-bold text-brand-600 bg-brand-50 border-brand-200">Summary</Badge>
               </h3>
-              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                {alerts.length === 0 ? (
-                  <div className="text-xs text-slate-400 italic text-center py-4 flex flex-col items-center gap-1.5">
-                    <CheckCircle2 className="h-8 w-8 text-emerald-500" />
-                    <span>No active alerts for this account</span>
-                  </div>
-                ) : (
-                  alerts.map(a => (
-                    <div key={a.id} className={cn('p-3 rounded-xl border flex gap-2.5 text-xs', a.color)}>
-                      <a.icon className="h-4.5 w-4.5 flex-shrink-0" />
-                      <div>
-                        <p className="font-extrabold">{a.type}</p>
-                        <p className="font-medium mt-0.5 leading-snug">{a.message}</p>
-                      </div>
-                    </div>
-                  ))
-                )}
+
+              <div className="grid grid-cols-2 gap-y-3.5 gap-x-4 text-xs font-semibold text-slate-600">
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Loan Type</p>
+                  <p className="text-slate-800 capitalize font-bold">{loan.loan_type}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Repayment Mode</p>
+                  <p className="text-slate-800 font-bold">UPI / Auto Debit</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Loan Start Date</p>
+                  <p className="text-slate-800 font-bold">{formatDate(loan.loan_date)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Linked Bank Account</p>
+                  <p className="text-slate-800 font-bold truncate">
+                    {customer.bank_name ? `${customer.bank_name} - ****${customer.account_number?.slice(-4) || '5678'}` : 'HDFC Bank - ****5678'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Maturity Date</p>
+                  <p className="text-slate-800 font-bold">{formatDate(dayjs(loan.loan_date).add(loan.duration_months, 'month').toDate())}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Mode of Collection</p>
+                  <p className="text-slate-800 font-bold">UPI Mandate</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Sanctioned Amount</p>
+                  <p className="text-slate-800 font-bold">{formatCurrency(loan.loan_amount)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">DPD</p>
+                  <p className={cn('font-bold', dpd > 0 ? 'text-red-500 font-black' : 'text-slate-800')}>{dpd} Days</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Disbursement Date</p>
+                  <p className="text-slate-800 font-bold">{formatDate(loan.loan_date)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Next Review Date</p>
+                  <p className="text-slate-800 font-bold">{formatDate(dayjs(loan.loan_date).add(1, 'year').toDate())}</p>
+                </div>
               </div>
             </Card>
-          </div>
 
-          {/* ==================================================
+            {/* ==================================================
+              6. QUICK ACTIONS
+              ================================================== */}
+            <Card className="p-5 space-y-4 print:hidden">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-150 pb-3">Quick Actions</h3>
+              <div className="grid grid-cols-2 gap-3.5 text-center">
+                <button
+                  onClick={() => setIsEmiModalOpen(true)}
+                  disabled={loan.status === 'closed'}
+                  className="bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-xl p-3.5 border border-brand-100 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  <Coins className="h-5 w-5" />
+                  <span className="text-[11px] font-bold uppercase tracking-wide">Collect EMI</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('demand-flow')}
+                  className="bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl p-3.5 border border-slate-200/60 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
+                >
+                  <CalendarDays className="h-5 w-5 text-purple-500" />
+                  <span className="text-[11px] font-bold uppercase tracking-wide">Schedule</span>
+                </button>
+                <button
+                  onClick={() => setIsStatementModalOpen(true)}
+                  className="bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl p-3.5 border border-slate-200/60 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
+                >
+                  <FileText className="h-5 w-5 text-emerald-500" />
+                  <span className="text-[11px] font-bold uppercase tracking-wide">Statement</span>
+                </button>
+                <button
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl p-3.5 border border-slate-200/60 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
+                >
+                  <SquarePen className="h-5 w-5 text-amber-500" />
+                  <span className="text-[11px] font-bold uppercase tracking-wide">Edit Account</span>
+                </button>
+              </div>
+            </Card>
+
+            {/* ==================================================
+              7. ALERTS & REMINDERS
+              ================================================== */}
+            <div className="hidden lg:block">
+              <Card className="p-5">
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-150 pb-3 mb-4 flex justify-between items-center">
+                  <span>Alerts & Reminders</span>
+                  <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">Live</span>
+                </h3>
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                  {alerts.length === 0 ? (
+                    <div className="text-xs text-slate-400 italic text-center py-4 flex flex-col items-center gap-1.5">
+                      <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+                      <span>No active alerts for this account</span>
+                    </div>
+                  ) : (
+                    alerts.map(a => (
+                      <div key={a.id} className={cn('p-3 rounded-xl border flex gap-2.5 text-xs', a.color)}>
+                        <a.icon className="h-4.5 w-4.5 flex-shrink-0" />
+                        <div>
+                          <p className="font-extrabold">{a.type}</p>
+                          <p className="font-medium mt-0.5 leading-snug">{a.message}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </Card>
+            </div>
+
+            {/* ==================================================
               8. PAYMENT / COLLECTION SUMMARY
               ================================================== */}
-          <Card className="p-5 space-y-4">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-150 pb-3 flex justify-between items-center">
-              <span>Collection Performance</span>
-            </h3>
+            <Card className="p-5 space-y-4">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-150 pb-3 flex justify-between items-center">
+                <span>Collection Performance</span>
+              </h3>
 
-            <div className="space-y-3.5">
-              {[
-                { label: 'Total Paid (Principal)', value: formatCurrency(paymentsRollup.totalPrincipalPaid), color: 'text-slate-800' },
-                { label: 'Total Paid (Interest)', value: formatCurrency(paymentsRollup.totalInterestPaid), color: 'text-slate-800' },
-                { label: 'Total Collected', value: formatCurrency(paymentsRollup.totalCollected), color: 'text-emerald-600 font-extrabold' },
-                { label: 'Interest Collected (YTD)', value: formatCurrency(paymentsRollup.interestYTD), color: 'text-brand-600' },
-                { label: 'Last Payment Date', value: paymentsRollup.lastPaymentDate !== 'N/A' ? formatDate(paymentsRollup.lastPaymentDate) : 'N/A', color: 'text-slate-700' },
-                { label: 'Last Payment Amount', value: paymentsRollup.lastPaymentAmount > 0 ? formatCurrency(paymentsRollup.lastPaymentAmount) : '-', color: 'text-slate-700' }
-              ].map((item) => (
-                <div key={item.label} className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-500">{item.label}</span>
-                  <span className={cn('font-mono font-bold', item.color)}>{item.value}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
+              <div className="space-y-3.5">
+                {[
+                  { label: 'Total Paid (Principal)', value: formatCurrency(paymentsRollup.totalPrincipalPaid), color: 'text-slate-800' },
+                  { label: 'Total Paid (Interest)', value: formatCurrency(paymentsRollup.totalInterestPaid), color: 'text-slate-800' },
+                  { label: 'Total Collected', value: formatCurrency(paymentsRollup.totalCollected), color: 'text-emerald-600 font-extrabold' },
+                  { label: 'Interest Collected (YTD)', value: formatCurrency(paymentsRollup.interestYTD), color: 'text-brand-600' },
+                  { label: 'Last Payment Date', value: paymentsRollup.lastPaymentDate !== 'N/A' ? formatDate(paymentsRollup.lastPaymentDate) : 'N/A', color: 'text-slate-700' },
+                  { label: 'Last Payment Amount', value: paymentsRollup.lastPaymentAmount > 0 ? formatCurrency(paymentsRollup.lastPaymentAmount) : '-', color: 'text-slate-700' }
+                ].map((item) => (
+                  <div key={item.label} className="flex justify-between items-center text-xs">
+                    <span className="font-semibold text-slate-500">{item.label}</span>
+                    <span className={cn('font-mono font-bold', item.color)}>{item.value}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
 
-        </div>
+          </div>
+        )}
 
       </div>
 
@@ -1350,11 +1383,11 @@ function CollectEmiModal({
 
         <div className="flex gap-4 pt-1.5">
           <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input 
-              type="checkbox" 
-              checked={partial} 
-              onChange={(e) => setPartial(e.target.checked)} 
-              className="w-4 h-4 rounded text-brand-600 border-slate-300 focus:ring-brand-500" 
+            <input
+              type="checkbox"
+              checked={partial}
+              onChange={(e) => setPartial(e.target.checked)}
+              className="w-4 h-4 rounded text-brand-600 border-slate-300 focus:ring-brand-500"
             />
             <span className="text-xs font-semibold text-slate-700">Record Partial Payment</span>
           </label>

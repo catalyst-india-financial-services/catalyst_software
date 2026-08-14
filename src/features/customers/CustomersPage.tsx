@@ -248,7 +248,14 @@ export default function CustomersPage() {
   const columns = useMemo(() => [
     columnHelper.accessor('customer_id', {
       header: 'ID',
-      cell: (info) => <span className="text-xs font-mono font-semibold text-slate-500">{info.getValue()}</span>,
+      cell: (info) => (
+        <button
+          onClick={() => navigate(`/customers/${info.row.original.id}`)}
+          className="text-xs font-mono font-semibold text-brand-600 hover:underline hover:text-brand-700 transition-colors cursor-pointer"
+        >
+          {info.getValue()}
+        </button>
+      ),
     }),
     columnHelper.accessor('name', {
       header: 'Customer Name',

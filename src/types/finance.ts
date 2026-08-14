@@ -56,3 +56,55 @@ export interface Expense {
   updated_at: string
   sync_status: 'synced' | 'pending' | 'failed'
 }
+
+// ─── Bank Account ─────────────────────────────────────────────────────────────
+export type BankAccountType = 'cash' | 'bank' | 'current' | 'savings'
+
+export interface BankAccount {
+  id: string
+  name: string
+  account_type: BankAccountType
+  account_number?: string
+  bank_name?: string
+  opening_balance: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  user_id?: string
+}
+
+// ─── Transaction (Accounting Ledger) ─────────────────────────────────────────
+export type TxnType = 'disbursement' | 'repayment' | 'expense' | 'deposit'
+export type TxnDirection = 'debit' | 'credit'
+
+export interface Transaction {
+  id: string
+  txn_id: string
+  txn_type: TxnType
+  direction: TxnDirection
+  amount: number
+  bank_account_id: string
+  customer_id?: string
+  loan_id?: string
+  reference_number?: string
+  description?: string
+  date: string
+  // repayment
+  principal?: number
+  interest?: number
+  other_charges?: number
+  // expense
+  category?: string
+  // deposit
+  deposit_type?: string
+  // metadata
+  created_by: string
+  is_reversed: boolean
+  reversal_of?: string
+  created_at: string
+  updated_at: string
+  // joined fields
+  bank_account_name?: string
+  customer_name?: string
+  loan_number?: string
+}

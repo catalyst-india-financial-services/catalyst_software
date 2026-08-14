@@ -8,8 +8,10 @@ import LoanDetailPage from '@/features/loans/LoanDetailPage'
 import EMICollectionPage from '@/features/emi/EMICollectionPage'
 import LeadsPage from '@/features/leads/LeadsPage'
 import SettingsPage from '@/features/settings/SettingsPage'
+import TransactionsPage from '@/features/transactions/TransactionsPage'
 import LoginPage from '@/features/auth/LoginPage'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { AdminProtectedRoute } from '@/components/AdminProtectedRoute'
 
 export const router = createBrowserRouter([
   {
@@ -29,8 +31,16 @@ export const router = createBrowserRouter([
           { path: '/loans', element: <LoansPage /> },
           { path: '/loans/:id', element: <LoanDetailPage /> },
           { path: '/emi-collection', element: <EMICollectionPage /> },
+          { path: '/transactions', element: <TransactionsPage /> },
           { path: '/leads', element: <LeadsPage /> },
           { path: '/settings', element: <SettingsPage /> },
+          // Admin-only authentication route
+          {
+            element: <AdminProtectedRoute />,
+            children: [
+              { path: '/settings/authentication', element: <SettingsPage initialTab="authentication" /> },
+            ],
+          },
         ],
       },
     ],

@@ -566,6 +566,17 @@ export default function CustomerDetailPage() {
   const [noteForm, setNoteForm] = useState<any>({ content: '', is_pinned: false })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+
+  useEffect(() => {
+    if (activeTab && tabRefs.current[activeTab]) {
+      tabRefs.current[activeTab]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center'
+      })
+    }
+  }, [activeTab])
 
   // --- Check Loading ---
   const isGlobalLoading = isCustLoading || isProjLoading || isQuotsLoading || isInvsLoading || isPaysLoading || isDocsLoading || isCommsLoading || isFupsLoading || isNotesLoading || isActsLoading
@@ -947,13 +958,59 @@ export default function CustomerDetailPage() {
   return (
     <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen text-slate-800">
 
-      {/* Back button */}
-      <button
-        onClick={() => navigate('/customers')}
-        className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors uppercase tracking-wider print:hidden"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to Customers
-      </button>
+      {/* --- TOP NAVIGATION AREA --- */}
+      <div className="flex flex-col md:flex-row md:items-center gap-4 bg-white p-2.5 rounded-2xl border border-slate-100 shadow-3xs print:hidden">
+        {/* Back Button */}
+        <button
+          onClick={() => navigate('/customers')}
+          className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors uppercase tracking-wider rounded-xl whitespace-nowrap flex-shrink-0 cursor-pointer"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to Customers
+        </button>
+
+        {/* Vertical Divider (hidden on mobile) */}
+        <div className="hidden md:block w-px h-6 bg-slate-200" />
+
+        {/* Scrollable Tabs */}
+        <div className="flex-1 overflow-x-auto flex gap-1 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth select-none">
+          {[
+            { id: 'basic', label: 'Basic Info', icon: UserCheck },
+            { id: 'address', label: 'Address', icon: MapPin },
+            { id: 'kyc', label: 'KYC Verification', icon: ShieldCheck },
+            { id: 'company', label: 'Company Details', icon: Building2 },
+            { id: 'financial', label: 'Financial Info', icon: CreditCard },
+            { id: 'projects', label: 'Orders & Projects', icon: Briefcase },
+            { id: 'quotations', label: 'Quotations', icon: FileText },
+            { id: 'invoices', label: 'Invoices', icon: DocIcon },
+            { id: 'payments', label: 'Payments', icon: CreditCard },
+            { id: 'documents', label: 'Documents', icon: Upload },
+            { id: 'communications', label: 'Communication Log', icon: MessageSquare },
+            { id: 'notes', label: 'Notes', icon: Pin },
+            { id: 'followups', label: 'Follow-ups', icon: Clock },
+            { id: 'timeline', label: 'Timeline', icon: Activity },
+            { id: 'risk', label: 'Risk & Compliance', icon: ShieldAlert },
+          ].map((tab) => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                ref={(el) => { tabRefs.current[tab.id] = el }}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 whitespace-nowrap cursor-pointer',
+                  isActive
+                    ? 'bg-brand-600 text-white shadow-xs font-extrabold scale-[1.01]'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 font-medium'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
       {/* --- CUSTOMER HEADER SECTION --- */}
       <Card className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 overflow-hidden relative">
@@ -1314,50 +1371,18 @@ export default function CustomerDetailPage() {
         </div>
       </Card>
 
-      {/* --- HORIZONTAL NAVIGATION TABS --- */}
-      <div className="overflow-x-auto border-b border-slate-200 bg-white p-2 rounded-2xl shadow-2xs flex gap-1.5 scrollbar-thin print:hidden">
-        {[
-          { id: 'basic', label: 'Basic Info', icon: UserCheck },
-          { id: 'address', label: 'Address', icon: MapPin },
-          { id: 'kyc', label: 'KYC Verification', icon: ShieldCheck },
-          { id: 'company', label: 'Company Details', icon: Building2 },
-          { id: 'financial', label: 'Financial Info', icon: CreditCard },
-          { id: 'projects', label: 'Orders & Projects', icon: Briefcase },
-          { id: 'quotations', label: 'Quotations', icon: FileText },
-          { id: 'invoices', label: 'Invoices', icon: DocIcon },
-          { id: 'payments', label: 'Payments', icon: CreditCard },
-          { id: 'documents', label: 'Documents', icon: Upload },
-          { id: 'communications', label: 'Communication Log', icon: MessageSquare },
-          { id: 'notes', label: 'Notes', icon: Pin },
-          { id: 'followups', label: 'Follow-ups', icon: Clock },
-          { id: 'timeline', label: 'Timeline', icon: Activity },
-          { id: 'risk', label: 'Risk & Compliance', icon: ShieldAlert },
-        ].map((tab) => {
-          const Icon = tab.icon
-          const isActive = activeTab === tab.id
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap',
-                isActive
-                  ? 'bg-brand-600 text-white shadow-md shadow-brand-500/20'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-            </button>
-          )
-        })}
-      </div>
 
       {/* --- MAIN PAGE CONTENT GRID --- */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={cn(
+        "grid grid-cols-1 gap-6",
+        activeTab === 'basic' ? "lg:grid-cols-3" : "grid-cols-1"
+      )}>
 
         {/* Dynamic Tab Contents Panel */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className={cn(
+          "space-y-6",
+          activeTab === 'basic' ? "lg:col-span-2" : "w-full"
+        )}>
 
           {/* TAB 1: BASIC INFORMATION */}
           {activeTab === 'basic' && (
@@ -2298,118 +2323,122 @@ export default function CustomerDetailPage() {
 
 
           {/* Widgets dashboard panel */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="p-4">
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Project Status Breakdown</h4>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={outstandingProjectData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={65}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {outstandingProjectData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Legend verticalAlign="bottom" height={36} />
-                    <RechartsTooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
+          {activeTab === 'basic' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="p-4">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Project Status Breakdown</h4>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={outstandingProjectData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={65}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {outstandingProjectData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Legend verticalAlign="bottom" height={36} />
+                      <RechartsTooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
 
-            <Card className="p-4 md:col-span-2">
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Customer Engagement Activity</h4>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={activities.slice(0, 7).map((act, i) => ({ name: `Act ${i + 1}`, Count: i + 1 }))}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} />
-                    <YAxis stroke="#94A3B8" fontSize={10} />
-                    <RechartsTooltip />
-                    <Line type="monotone" dataKey="Count" stroke="#2563EB" strokeWidth={2.5} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-          </div>
+              <Card className="p-4 md:col-span-2">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Customer Engagement Activity</h4>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={activities.slice(0, 7).map((act, i) => ({ name: `Act ${i + 1}`, Count: i + 1 }))}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} />
+                      <YAxis stroke="#94A3B8" fontSize={10} />
+                      <RechartsTooltip />
+                      <Line type="monotone" dataKey="Count" stroke="#2563EB" strokeWidth={2.5} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </div>
+          )}
 
         </div>
 
         {/* --- RIGHT PANEL: RECENT ACTIVITIES PANEL --- */}
-        <div className="space-y-6">
+        {activeTab === 'basic' && (
+          <div className="space-y-6">
 
-          {/* Quick Dashboard Widgets */}
-          <Card className="p-5 space-y-4">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-3">Dashboard Indicators</h3>
+            {/* Quick Dashboard Widgets */}
+            <Card className="p-5 space-y-4">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-3">Dashboard Indicators</h3>
 
-            <div className="space-y-3">
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-slate-500">Invoices Generated</span>
-                <span className="font-bold text-slate-800">{invoices.length}</span>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-500">Invoices Generated</span>
+                  <span className="font-bold text-slate-800">{invoices.length}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-500">Invoices Pending</span>
+                  <span className="font-bold text-slate-800">{invoices.filter(i => Number(i.pending) > 0).length}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-500">Total Collection</span>
+                  <span className="font-bold text-emerald-600 font-mono">{formatCurrency(totalPaid)}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-500">Pending Collection</span>
+                  <span className="font-bold text-red-500 font-mono">{formatCurrency(totalOutstanding)}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-500">Total Logged Comms</span>
+                  <span className="font-bold text-slate-800">{communications.length}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-500">Customer Lifetime Value</span>
+                  <span className="font-bold text-blue-600 font-mono">{formatCurrency(totalPaid + totalOutstanding)}</span>
+                </div>
               </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-slate-500">Invoices Pending</span>
-                <span className="font-bold text-slate-800">{invoices.filter(i => Number(i.pending) > 0).length}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-slate-500">Total Collection</span>
-                <span className="font-bold text-emerald-600 font-mono">{formatCurrency(totalPaid)}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-slate-500">Pending Collection</span>
-                <span className="font-bold text-red-500 font-mono">{formatCurrency(totalOutstanding)}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-slate-500">Total Logged Comms</span>
-                <span className="font-bold text-slate-800">{communications.length}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-slate-500">Customer Lifetime Value</span>
-                <span className="font-bold text-blue-600 font-mono">{formatCurrency(totalPaid + totalOutstanding)}</span>
-              </div>
-            </div>
-          </Card>
+            </Card>
 
-          {/* Recent Activities list */}
-          <Card className="p-5">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-3 mb-4">Recent Activities</h3>
+            {/* Recent Activities list */}
+            <Card className="p-5">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-3 mb-4">Recent Activities</h3>
 
-            <div className="relative border-l border-slate-150 ml-2.5 space-y-4">
-              {recentActivitiesList.length === 0 ? (
-                <p className="text-xs text-slate-400 ml-4">No recent activity logs.</p>
-              ) : (
-                recentActivitiesList.map((act) => (
-                  <div key={act.id} className="relative pl-5">
-                    <div className={cn(
-                      'absolute -left-1.5 top-1 w-3 h-3 rounded-full border border-white',
-                      act.icon_color === 'emerald' || act.icon_color === 'green' ? 'bg-emerald-500' : '',
-                      act.icon_color === 'blue' ? 'bg-blue-500' : '',
-                      act.icon_color === 'amber' ? 'bg-amber-500' : '',
-                      act.icon_color === 'purple' ? 'bg-purple-500' : '',
-                      act.icon_color === 'indigo' ? 'bg-indigo-500' : '',
-                      act.icon_color === 'sky' ? 'bg-sky-500' : '',
-                      act.icon_color === 'rose' ? 'bg-rose-500' : '',
-                    )} />
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-slate-800">{act.activity_type}</span>
-                        <span className="text-[9px] text-slate-400 font-semibold">{dayjs(act.created_at).format('DD MMM')}</span>
+              <div className="relative border-l border-slate-150 ml-2.5 space-y-4">
+                {recentActivitiesList.length === 0 ? (
+                  <p className="text-xs text-slate-400 ml-4">No recent activity logs.</p>
+                ) : (
+                  recentActivitiesList.map((act) => (
+                    <div key={act.id} className="relative pl-5">
+                      <div className={cn(
+                        'absolute -left-1.5 top-1 w-3 h-3 rounded-full border border-white',
+                        act.icon_color === 'emerald' || act.icon_color === 'green' ? 'bg-emerald-500' : '',
+                        act.icon_color === 'blue' ? 'bg-blue-500' : '',
+                        act.icon_color === 'amber' ? 'bg-amber-500' : '',
+                        act.icon_color === 'purple' ? 'bg-purple-500' : '',
+                        act.icon_color === 'indigo' ? 'bg-indigo-500' : '',
+                        act.icon_color === 'sky' ? 'bg-sky-500' : '',
+                        act.icon_color === 'rose' ? 'bg-rose-500' : '',
+                      )} />
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-slate-800">{act.activity_type}</span>
+                          <span className="text-[9px] text-slate-400 font-semibold">{dayjs(act.created_at).format('DD MMM')}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-snug mt-0.5">{act.description}</p>
                       </div>
-                      <p className="text-[11px] text-slate-500 leading-snug mt-0.5">{act.description}</p>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
-        </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
+        )}
 
       </div>
 

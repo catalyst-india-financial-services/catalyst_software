@@ -247,8 +247,40 @@ export function useUpdateLoan() {
   })
 }
 
+export function useDeleteLoan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (loanId: string) => {
+      // Delete EMI schedule first
+      const { error: scheduleError } = await supabase
+        .from('emi_schedule')
+        .delete()
+        .eq('loan_id', loanId)
+      if (scheduleError) throw scheduleError
+
+      // Delete EMI payments
+      const { error: paymentsError } = await supabase
+        .from('emi_payments')
+        .delete()
+        .eq('loan_id', loanId)
+      if (paymentsError) throw paymentsError
+
+      // Delete the loan record
+      const { error } = await supabase
+        .from('loans')
+        .delete()
+        .eq('id', loanId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loans'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
+    },
+  })
+}
 
 // ─── EMI Payment Hooks ─────────────────────────────────────────────────────────
+
 
 export function usePayments(loanId?: string) {
   return useQuery({
@@ -617,9 +649,8 @@ export function useDashboardData() {
         action: 'EMI Collected',
         module: 'EMI',
         user: p.collected_by || 'Admin',
-        details: `₹${Number(p.amount_paid).toLocaleString('en-IN')} from ${
-          p.customers?.name || 'Customer'
-        } (${p.loans?.loan_number})`,
+        details: `₹${Number(p.amount_paid).toLocaleString('en-IN')} from ${p.customers?.name || 'Customer'
+          } (${p.loans?.loan_number})`,
         time: p.created_at || p.payment_date,
         type: 'success',
       }))
@@ -753,8 +784,22 @@ export function useUsers() {
 export function useSignIn() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ email, fullName }: { email: string; fullName: string }) => {
-      // Find the user first
+    mutationFn: async ({ email, password, fullName }: { email: string; password?: string; fullName: string }) => {
+      const usePassword = password || 'password123'
+
+      // 1. Authenticate with Supabase Auth first
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password: usePassword,
+      })
+
+      if (authError) {
+        // Try sign up for first-time admin setup
+        const { error: signUpError } = await supabase.auth.signUp({ email, password: usePassword })
+        if (signUpError) console.warn('Auth sign-up failed:', signUpError.message)
+      }
+
+      // 2. Find the profile in public.users
       let { data: user, error } = await supabase
         .from('users')
         .select('*')
@@ -764,30 +809,47 @@ export function useSignIn() {
       if (error) throw error
 
       if (!user) {
-        // Automatically register default user
+        // Auto-register default admin profile
         const { data: newUser, error: insertError } = await supabase
           .from('users')
-          .insert([
-            {
-              email,
-              full_name: fullName,
-              role: 'admin',
-              is_active: true,
-            },
-          ])
+          .insert([{ email, full_name: fullName, role: 'admin', is_active: true }])
           .select()
           .single()
         if (insertError) throw insertError
         user = newUser
       }
 
-      // Update last login
+      // 3. Check account is active
+      if (!user.is_active) {
+        await supabase.auth.signOut()
+        throw new Error('Your account has been disabled. Please contact your administrator.')
+      }
+
+      // 4. Update last login
       await supabase
         .from('users')
         .update({ last_login: new Date().toISOString() })
         .eq('id', user.id)
 
-      return user as User
+      // 5. Record login session in employee_sessions
+      const authUser = authData?.user || (await supabase.auth.getUser()).data.user
+      let sessionId: string | null = null
+      if (authUser) {
+        const { data: sessionRow } = await supabase
+          .from('employee_sessions')
+          .insert({
+            user_id: authUser.id,
+            employee_id: user.employee_id || null,
+            login_at: new Date().toISOString(),
+            status: 'active',
+            user_agent: navigator.userAgent,
+          })
+          .select('id')
+          .single()
+        sessionId = sessionRow?.id || null
+      }
+
+      return { user: user as User, sessionId }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
@@ -842,11 +904,11 @@ export function useLeads() {
 
 // ─── Product → LoanType map ───────────────────────────────────────────────────
 const PRODUCT_TO_LOAN_TYPE: Record<string, string> = {
-  'Business Loan':  'business',
-  'Personal Loan':  'personal',
-  'Gold Loan':      'gold',
-  'Home Loan':      'home',
-  'Vehicle Loan':   'vehicle',
+  'Business Loan': 'business',
+  'Personal Loan': 'personal',
+  'Gold Loan': 'gold',
+  'Home Loan': 'home',
+  'Vehicle Loan': 'vehicle',
   'Education Loan': 'education',
 }
 
@@ -854,13 +916,13 @@ export function useConvertLead() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (lead: Lead) => {
-      const loanAmount   = isNaN(Number(lead.amount)) ? 50_000 : Math.max(1000, Number(lead.amount) || 50_000)
+      const loanAmount = isNaN(Number(lead.amount)) ? 50_000 : Math.max(1000, Number(lead.amount) || 50_000)
       const interestRate = 12
-      const durationMo   = 12
-      const intType      = 'reducing' as const
-      const procFee      = 0
-      const loanType     = (PRODUCT_TO_LOAN_TYPE[lead.product] || 'personal') as Loan['loan_type']
-      const loanDate     = dayjs().format('YYYY-MM-DD')
+      const durationMo = 12
+      const intType = 'reducing' as const
+      const procFee = 0
+      const loanType = (PRODUCT_TO_LOAN_TYPE[lead.product] || 'personal') as Loan['loan_type']
+      const loanDate = dayjs().format('YYYY-MM-DD')
 
       // ── 1. Mark application as Converted ─────────────────────────────────────
       const { error: appErr } = await supabase
@@ -886,30 +948,30 @@ export function useConvertLead() {
         .from('customers')
         .insert([{
           customer_id,
-          name:           lead.name,
-          mobile:         lead.phone,
-          whatsapp:       lead.phone,
-          address:        'Address not provided (Converted Lead)',
-          city:           'Chennai',
-          state:          'Tamil Nadu',
-          pincode:        '600001',
-          occupation:     'Service',
-          company:        'N/A',
+          name: lead.name,
+          mobile: lead.phone,
+          whatsapp: lead.phone,
+          address: 'Address not provided (Converted Lead)',
+          city: 'Chennai',
+          state: 'Tamil Nadu',
+          pincode: '600001',
+          occupation: 'Service',
+          company: 'N/A',
           monthly_income: loanAmount,
-          aadhaar:        '',
-          pan:            '',
-          status:         'active',
-          kyc_status:     'verified',
-          sync_status:    'synced',
+          aadhaar: '',
+          pan: '',
+          status: 'active',
+          kyc_status: 'verified',
+          sync_status: 'synced',
         }])
         .select()
         .single()
       if (custErr) throw custErr
 
       // ── 3. Insert loan ────────────────────────────────────────────────────────
-      const emiAmount      = calculateEMI(loanAmount, interestRate, durationMo, intType)
-      const totalInterest  = Math.round(emiAmount * durationMo - loanAmount)
-      const disbursed      = loanAmount - procFee
+      const emiAmount = calculateEMI(loanAmount, interestRate, durationMo, intType)
+      const totalInterest = Math.round(emiAmount * durationMo - loanAmount)
+      const disbursed = loanAmount - procFee
 
       const { count: loanCount } = await supabase
         .from('loans')
@@ -920,22 +982,22 @@ export function useConvertLead() {
         .from('loans')
         .insert([{
           loan_number,
-          customer_id:      customer.id,
-          loan_type:        loanType,
-          loan_amount:      loanAmount,
-          interest_rate:    interestRate,
-          interest_type:    intType,
-          duration_months:  durationMo,
-          processing_fee:   procFee,
-          loan_date:        loanDate,
-          emi_amount:       emiAmount,
-          emi_count:        durationMo,
-          remaining_emi:    durationMo,
+          customer_id: customer.id,
+          loan_type: loanType,
+          loan_amount: loanAmount,
+          interest_rate: interestRate,
+          interest_type: intType,
+          duration_months: durationMo,
+          processing_fee: procFee,
+          loan_date: loanDate,
+          emi_amount: emiAmount,
+          emi_count: durationMo,
+          remaining_emi: durationMo,
           remaining_balance: loanAmount,
-          total_interest:   totalInterest,
+          total_interest: totalInterest,
           disbursed_amount: disbursed,
-          status:           'active',
-          sync_status:      'synced',
+          status: 'active',
+          sync_status: 'synced',
         }])
         .select()
         .single()
@@ -944,15 +1006,15 @@ export function useConvertLead() {
       // ── 4. Insert EMI schedule ────────────────────────────────────────────────
       const schedule = generateEMISchedule(loanAmount, interestRate, durationMo, loanDate, intType)
       const scheduleRows = schedule.map(s => ({
-        loan_id:             loan.id,
-        emi_number:          s.emi_number,
-        due_date:            s.due_date,
-        emi_amount:          s.emi_amount,
-        principal:           s.principal,
-        interest:            s.interest,
+        loan_id: loan.id,
+        emi_number: s.emi_number,
+        due_date: s.due_date,
+        emi_amount: s.emi_amount,
+        principal: s.principal,
+        interest: s.interest,
         outstanding_balance: s.outstanding_balance,
-        status:              'pending' as const,
-        paid_amount:         0,
+        status: 'pending' as const,
+        paid_amount: 0,
       }))
 
       const { error: schedErr } = await supabase
@@ -979,7 +1041,7 @@ export function useRejectLead() {
       const { data, error } = await supabase
         .from('applications')
         .update({
-          status:           'Rejected',
+          status: 'Rejected',
           rejection_reason: reason || null,
         })
         .eq('id', lead.id)
@@ -992,9 +1054,9 @@ export function useRejectLead() {
           .from('applications')
           .update({
             message: JSON.stringify({
-              status:           'Rejected',
+              status: 'Rejected',
               rejection_reason: reason || '',
-              text:             lead.message || '',
+              text: lead.message || '',
             }),
           })
           .eq('id', lead.id)
@@ -1063,11 +1125,11 @@ export function useUpsertFollowup() {
         .from('lead_followups')
         .upsert(
           {
-            lead_id:                payload.lead_id,
+            lead_id: payload.lead_id,
             last_conversation_note: payload.last_conversation_note ?? null,
-            next_followup_date:     payload.next_followup_date ?? null,
-            next_followup_time:     payload.next_followup_time ?? null,
-            reminder_status:        payload.reminder_status ?? 'pending',
+            next_followup_date: payload.next_followup_date ?? null,
+            next_followup_time: payload.next_followup_time ?? null,
+            reminder_status: payload.reminder_status ?? 'pending',
           },
           { onConflict: 'lead_id' }
         )
@@ -1089,7 +1151,7 @@ export function useCompleteReminder() {
       const { error } = await supabase
         .from('lead_followups')
         .update({
-          reminder_status:    'completed',
+          reminder_status: 'completed',
           next_followup_date: null,
           next_followup_time: null,
         })
@@ -1408,5 +1470,212 @@ export function useCustomerIncomeRecords(customerId?: string, loanId?: string) {
       return data as any[]
     },
     enabled: !!customerId,
+  })
+}
+
+// ─── Bank Account Hooks ───────────────────────────────────────────────────────
+
+export function useBankAccounts() {
+  return useQuery({
+    queryKey: ['bank_accounts'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('bank_accounts')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+      if (error) throw error
+      return data as import('@/types').BankAccount[]
+    },
+  })
+}
+
+export function useCreateBankAccount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (acct: Omit<import('@/types').BankAccount, 'id' | 'created_at' | 'updated_at' | 'user_id'>) => {
+      // 1. Get the currently authenticated Supabase user
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        throw new Error('No authenticated user session found. Please log out and sign in again.')
+      }
+
+      // 2. Include the user ID in the INSERT payload
+      const payload = {
+        ...acct,
+        user_id: user.id,
+      }
+
+      const { data, error } = await supabase
+        .from('bank_accounts')
+        .insert(payload)
+        .select()
+        .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bank_accounts'] })
+    },
+  })
+}
+
+// ─── Transaction (Ledger) Hooks ───────────────────────────────────────────────
+
+export function useTransactions(filters?: {
+  txn_type?: string
+  bank_account_id?: string
+  date_from?: string
+  date_to?: string
+}) {
+  return useQuery({
+    queryKey: ['transactions', filters],
+    queryFn: async () => {
+      let query = supabase
+        .from('transactions')
+        .select('*, bank_accounts(name), customers(name), loans(loan_number)')
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
+      if (filters?.txn_type) query = (query as any).eq('txn_type', filters.txn_type)
+      if (filters?.bank_account_id) query = (query as any).eq('bank_account_id', filters.bank_account_id)
+      if (filters?.date_from) query = (query as any).gte('date', filters.date_from)
+      if (filters?.date_to) query = (query as any).lte('date', filters.date_to)
+      const { data, error } = await query
+      if (error) throw error
+      return data.map((t: any) => ({
+        ...t,
+        bank_account_name: t.bank_accounts?.name || '',
+        customer_name: t.customers?.name || '',
+        loan_number: t.loans?.loan_number || '',
+      })) as import('@/types').Transaction[]
+    },
+  })
+}
+
+export function useCreateTransaction() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (txn: Omit<import('@/types').Transaction, 'id' | 'txn_id' | 'created_at' | 'updated_at' | 'bank_account_name' | 'customer_name' | 'loan_number'>) => {
+      // Auto-generate txn_id
+      const { count } = await supabase.from('transactions').select('*', { count: 'exact', head: true })
+      const txn_id = `TXN${String((count || 0) + 1).padStart(4, '0')}`
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert({ ...txn, txn_id })
+        .select()
+        .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    },
+  })
+}
+
+// ─── Employee Management Hooks ────────────────────────────────────────────────
+
+export function useEmployees() {
+  return useQuery({
+    queryKey: ['employees'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: true })
+      if (error) throw error
+      return data as User[]
+    },
+  })
+}
+
+export function useCreateEmployee() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: {
+      email: string
+      full_name: string
+      employee_id: string
+      role: string
+      password: string
+    }) => {
+      const { data, error } = await supabase.rpc('create_employee_user', {
+        p_email: payload.email,
+        p_full_name: payload.full_name,
+        p_employee_id: payload.employee_id,
+        p_role: payload.role,
+        p_password: payload.password,
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] })
+    },
+  })
+}
+
+export function useUpdateEmployee() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: {
+      user_id: string
+      full_name?: string
+      role?: string
+      is_active?: boolean
+    }) => {
+      const { data, error } = await supabase.rpc('update_employee_user', {
+        p_user_id: payload.user_id,
+        p_full_name: payload.full_name ?? null,
+        p_role: payload.role ?? null,
+        p_is_active: payload.is_active ?? null,
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] })
+    },
+  })
+}
+
+export function useEmployeeSessions(userId?: string) {
+  return useQuery({
+    queryKey: ['employee_sessions', userId],
+    queryFn: async () => {
+      let query = supabase
+        .from('employee_sessions')
+        .select('*')
+        .order('login_at', { ascending: false })
+        .limit(50)
+      if (userId) query = (query as any).eq('user_id', userId)
+      const { data, error } = await query
+      if (error) throw error
+      return data as any[]
+    },
+    enabled: true,
+    refetchInterval: 30000, // refresh every 30s
+  })
+}
+
+export function useAdminPasswordChange() {
+  return useMutation({
+    mutationFn: async (newPassword: string) => {
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      if (error) throw error
+      return { success: true }
+    },
+  })
+}
+
+export function useSendPasswordReset() {
+  return useMutation({
+    mutationFn: async (email: string) => {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/settings/authentication`,
+      })
+      if (error) throw error
+      return { success: true }
+    },
   })
 }

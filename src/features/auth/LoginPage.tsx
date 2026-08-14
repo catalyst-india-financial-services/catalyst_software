@@ -9,6 +9,7 @@ import { useSignIn } from '@/hooks/useDb'
 export default function LoginPage() {
   const navigate = useNavigate()
   const setUser = useAuthStore((s) => s.setUser)
+  const setActiveSessionId = useAuthStore((s) => s.setActiveSessionId)
   const [email, setEmail] = useState('admin@financeApp.com')
   const [password, setPassword] = useState('password123')
 
@@ -18,10 +19,11 @@ export default function LoginPage() {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
     signInMutation.mutate(
-      { email, fullName: 'Admin User' },
+      { email, password, fullName: 'Admin User' },
       {
         onSuccess: (data) => {
-          setUser(data)
+          setUser(data.user)
+          setActiveSessionId(data.sessionId)
           navigate('/dashboard')
         },
       }

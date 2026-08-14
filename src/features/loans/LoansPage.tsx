@@ -5,8 +5,8 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, createColumnHelper, type SortingState
 } from '@tanstack/react-table'
-import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle } from 'lucide-react'
-import { useLoans, useCustomers, useCreateLoan } from '@/hooks/useDb'
+import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react'
+import { useLoans, useCustomers, useCreateLoan, useDeleteLoan } from '@/hooks/useDb'
 import type { Loan } from '@/types'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
 import {
@@ -178,7 +178,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
           }}
           loading={loading}
         >
-          {loan ? 'Update Loan' : 'Disburse Loan & Build Schedule'}
+          {loan ? 'Update Loan' : 'Create Account'}
         </Button>
       </div>
     </div>
@@ -194,6 +194,16 @@ export default function LoansPage() {
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('loans_status_filter', 'all')
 
   const { data: loans = [], isLoading } = useLoans()
+  const deleteLoan = useDeleteLoan()
+
+  const handleDeleteLoan = async (id: string, loanNumber: string) => {
+    if (!window.confirm(`Delete loan account ${loanNumber}? This will also remove the EMI schedule and payment history. This action cannot be undone.`)) return
+    try {
+      await deleteLoan.mutateAsync(id)
+    } catch {
+      alert('Failed to delete account. Please try again.')
+    }
+  }
 
   const filteredData = useMemo(() =>
     loans.filter((l) => statusFilter === 'all' || l.status === statusFilter),
@@ -203,7 +213,14 @@ export default function LoansPage() {
   const columns = useMemo(() => [
     columnHelper.accessor('loan_number', {
       header: 'Loan No.',
-      cell: (info) => <span className="text-xs font-mono text-brand-600 font-bold">{info.getValue()}</span>,
+      cell: (info) => (
+        <button
+          onClick={() => navigate(`/loans/${info.row.original.id}`)}
+          className="text-xs font-mono text-brand-600 font-bold hover:underline hover:text-brand-700 transition-colors cursor-pointer"
+        >
+          {info.getValue()}
+        </button>
+      ),
     }),
     columnHelper.accessor('customer_name', {
       header: 'Customer Name',
@@ -255,10 +272,7 @@ export default function LoansPage() {
       header: 'Outstanding',
       cell: (info) => <span className="text-xs font-bold amount-display text-slate-800">{formatCurrency(info.getValue())}</span>,
     }),
-    columnHelper.accessor('status', {
-      header: 'Status',
-      cell: (info) => <StatusBadge status={info.getValue()} />,
-    }),
+
     columnHelper.accessor('loan_date', {
       header: 'Date',
       cell: (info) => <span className="text-xs text-slate-400 font-medium">{formatDate(info.getValue())}</span>,
@@ -275,9 +289,10 @@ export default function LoansPage() {
             </button>
           }
           items={[
-            { label: 'View Schedule', icon: <Eye className="h-4 w-4" />, onClick: () => navigate(`/loans/${info.row.original.id}`) },
+            { label: 'View Loan', icon: <Eye className="h-4 w-4" />, onClick: () => navigate(`/loans/${info.row.original.id}`) },
             { label: 'Edit Loan', icon: <SquarePen className="h-4 w-4" />, onClick: () => { setEditLoan(info.row.original); setShowModal(true) } },
             { label: 'View Agreement', icon: <FileText className="h-4 w-4" />, onClick: () => {} },
+            { label: 'Delete Account', icon: <Trash2 className="h-4 w-4 text-red-500" />, onClick: () => handleDeleteLoan(info.row.original.id, info.row.original.loan_number), variant: 'danger' as const, separator: true },
           ]}
         />
       ),
@@ -310,7 +325,7 @@ export default function LoansPage() {
             </Button>
             <Button onClick={() => { setEditLoan(undefined); setShowModal(true) }}>
               <Plus className="h-4 w-4" />
-              Disburse Loan
+              Create Account
             </Button>
           </div>
         }
@@ -403,7 +418,7 @@ export default function LoansPage() {
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title={editLoan ? 'Edit Loan Account' : 'Disburse New Loan Account'}
+        title={editLoan ? 'Edit Loan Account' : 'Create Account'}
         size="lg"
       >
         <LoanForm loan={editLoan} onClose={() => setShowModal(false)} />

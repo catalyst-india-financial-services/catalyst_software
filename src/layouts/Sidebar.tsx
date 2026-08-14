@@ -5,7 +5,7 @@ import { useUIStore } from '@/store/uiStore'
 import { useAuthStore } from '@/store/authStore'
 import { Avatar, Tooltip } from '@/components/ui'
 import {
-  LayoutDashboard, Users, WalletCards, CalendarClock, Settings2,
+  LayoutDashboard, Users, WalletCards, ArrowLeftRight, Settings2,
   LogOut, PanelLeftClose, PanelLeftOpen, DollarSign, X, UserPlus
 } from 'lucide-react'
 
@@ -20,7 +20,7 @@ const navItems: NavItem[] = [
   { path: '/leads', label: 'Leads', icon: UserPlus },
   { path: '/customers', label: 'Customer Profile', icon: Users },
   { path: '/loans', label: 'Accounts', icon: WalletCards },
-  { path: '/emi-collection', label: 'Transactions', icon: CalendarClock },
+  { path: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { path: '/settings', label: 'Settings', icon: Settings2 },
 ]
 
@@ -122,7 +122,7 @@ function SidebarContent({ collapsed }: { collapsed: boolean }) {
           )}
           {!collapsed && (
             <button
-              onClick={signOut}
+              onClick={() => { signOut() }}
               className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors ml-auto"
               title="Logout"
             >
