@@ -319,8 +319,9 @@ interface ModalProps {
   isOpen: boolean
   onClose: () => void
   title?: string
+  subtitle?: string
   children: React.ReactNode
-  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | 'full'
   footer?: React.ReactNode
 }
 
@@ -330,9 +331,11 @@ const modalSizes = {
   lg: 'max-w-2xl',
   xl: 'max-w-4xl',
   '2xl': 'max-w-6xl',
+  '3xl': 'max-w-7xl',
+  full: 'w-[95vw] max-w-[1400px]',
 }
 
-export function Modal({ isOpen, onClose, title, children, size = 'md', footer }: ModalProps) {
+export function Modal({ isOpen, onClose, title, subtitle, children, size = 'md', footer }: ModalProps) {
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     if (isOpen) document.addEventListener('keydown', handler)
@@ -341,33 +344,39 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', footer }:
 
   if (!isOpen) return null
 
+  const isFullSize = size === 'full' || size === '3xl' || size === '2xl'
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
             onClick={onClose}
           />
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            initial={{ opacity: 0, scale: 0.97, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
+            exit={{ opacity: 0, scale: 0.97, y: 12 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
             className={cn(
-              'relative w-full bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] z-10 border border-slate-200',
+              'relative w-full bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 border border-slate-200/80',
+              isFullSize ? 'h-[92vh]' : 'max-h-[90vh]',
               modalSizes[size]
             )}
           >
             {title && (
-              <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100">
-                <h2 className="text-lg font-bold text-slate-900 tracking-tight">{title}</h2>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0 bg-white">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 tracking-tight">{title}</h2>
+                  {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+                </div>
                 <button
                   onClick={onClose}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                  className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors ml-4 flex-shrink-0"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -375,7 +384,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', footer }:
             )}
             <div className="flex-1 overflow-y-auto p-6">{children}</div>
             {footer && (
-              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3 rounded-b-2xl">
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3 rounded-b-2xl flex-shrink-0">
                 {footer}
               </div>
             )}
@@ -560,6 +569,7 @@ const statusConfig: Record<string, { bg: string; text: string; dot: string; labe
   closed: { bg: 'bg-slate-100 border-slate-200', text: 'text-slate-600', dot: 'bg-slate-400', label: 'Closed' },
   overdue: { bg: 'bg-red-50 border-red-100', text: 'text-red-700', dot: 'bg-red-500', label: 'Overdue' },
   pending: { bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700', dot: 'bg-amber-500', label: 'Pending' },
+  draft: { bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700', dot: 'bg-amber-400 animate-pulse', label: 'Draft' },
   paid: { bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Paid' },
   partial: { bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700', dot: 'bg-blue-500', label: 'Partial' },
   verified: { bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Verified' },

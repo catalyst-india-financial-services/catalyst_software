@@ -45,18 +45,30 @@ export function calculateEMI(
   principal: number,
   annualRate: number,
   months: number,
-  type: 'flat' | 'reducing'
+  type: 'flat' | 'reducing',
+  frequency: 'monthly' | 'weekly' | 'fortnightly' = 'monthly'
 ): number {
+  let N = months
+  let ratePerPeriod = annualRate / (12 * 100)
+
+  if (frequency === 'weekly') {
+    N = months * 4
+    ratePerPeriod = annualRate / (52 * 100)
+  } else if (frequency === 'fortnightly') {
+    N = months * 2
+    ratePerPeriod = annualRate / (26 * 100)
+  }
+
   if (type === 'flat') {
     const totalInterest = (principal * annualRate * months) / (12 * 100)
-    return Math.ceil((principal + totalInterest) / months)
+    return Math.ceil((principal + totalInterest) / N)
   }
+
   // Reducing balance
-  const monthlyRate = annualRate / (12 * 100)
-  if (monthlyRate === 0) return Math.ceil(principal / months)
+  if (ratePerPeriod === 0) return Math.ceil(principal / N)
   const emi =
-    (principal * monthlyRate * Math.pow(1 + monthlyRate, months)) /
-    (Math.pow(1 + monthlyRate, months) - 1)
+    (principal * ratePerPeriod * Math.pow(1 + ratePerPeriod, N)) /
+    (Math.pow(1 + ratePerPeriod, N) - 1)
   return Math.ceil(emi)
 }
 
@@ -65,23 +77,43 @@ export function generateEMISchedule(
   annualRate: number,
   months: number,
   startDate: string,
-  type: 'flat' | 'reducing'
+  type: 'flat' | 'reducing',
+  frequency: 'monthly' | 'weekly' | 'fortnightly' = 'monthly'
 ) {
   const schedule = []
-  const emi = calculateEMI(principal, annualRate, months, type)
+  const emi = calculateEMI(principal, annualRate, months, type, frequency)
   let balance = principal
 
-  for (let i = 1; i <= months; i++) {
-    const dueDate = dayjs(startDate).add(i, 'month').format('YYYY-MM-DD')
+  let N = months
+  let ratePerPeriod = annualRate / (12 * 100)
+
+  if (frequency === 'weekly') {
+    N = months * 4
+    ratePerPeriod = annualRate / (52 * 100)
+  } else if (frequency === 'fortnightly') {
+    N = months * 2
+    ratePerPeriod = annualRate / (26 * 100)
+  }
+
+  for (let i = 1; i <= N; i++) {
+    let dueDate: string
+    if (frequency === 'weekly') {
+      dueDate = dayjs(startDate).add(i, 'week').format('YYYY-MM-DD')
+    } else if (frequency === 'fortnightly') {
+      dueDate = dayjs(startDate).add(i * 2, 'week').format('YYYY-MM-DD')
+    } else {
+      dueDate = dayjs(startDate).add(i, 'month').format('YYYY-MM-DD')
+    }
+
     let interest: number
     let principalPart: number
 
     if (type === 'flat') {
-      interest = (principal * annualRate) / (12 * 100)
-      principalPart = principal / months
+      interest = (principal * annualRate) / (12 * 100 * (frequency === 'weekly' ? 4.33 : frequency === 'fortnightly' ? 2.16 : 1)) // roughly distribute interest
+      interest = (principal * annualRate * months) / (12 * 100 * N)
+      principalPart = principal / N
     } else {
-      const monthlyRate = annualRate / (12 * 100)
-      interest = balance * monthlyRate
+      interest = balance * ratePerPeriod
       principalPart = emi - interest
     }
 

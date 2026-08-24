@@ -49,56 +49,62 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const [activeChartTab, setActiveChartTab] = useState<'collection' | 'disbursement' | 'outstanding' | 'cashflow' | 'revenue' | 'customers' | 'distribution' | 'emi_success' | 'top_types'>('collection')
 
-  // Fetch all required tables in parallel for maximum performance
+  // Fetch all required tables in parallel — each query is resilient and falls back
+  // to an empty array on error so a single RLS/schema issue never crashes the entire dashboard.
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['extendedDashboardData'],
     queryFn: async () => {
-      const [
-        customersRes,
-        loansRes,
-        emiScheduleRes,
-        paymentsRes,
-        incomeRes,
-        expensesRes,
-        usersRes,
-        leadsRes
-      ] = await Promise.all([
-        supabase.from('customers').select('*'),
-        supabase.from('loans').select('*, customers(name)').order('created_at', { ascending: false }),
-        supabase.from('emi_schedule').select('*').order('due_date', { ascending: true }),
-        supabase.from('emi_payments').select('*, customers(name), loans(loan_number)').order('created_at', { ascending: false }),
-        supabase.from('income').select('*').order('date', { ascending: false }),
-        supabase.from('expenses').select('*').order('date', { ascending: false }),
-        supabase.from('users').select('*').order('created_at', { ascending: false }),
-        supabase.from('applications').select('*').order('created_at', { ascending: false })
+      // Helper: run a Supabase query and return data or [] on any error (with console warning)
+      const safe = async <T,>(label: string, query: Promise<{ data: T[] | null; error: any }>): Promise<T[]> => {
+        const res = await query
+        if (res.error) {
+          console.warn(`[Dashboard] Query failed for "${label}":`, res.error.message, res.error)
+          return []
+        }
+        return res.data || []
+      }
+
+      // Critical queries — customers, loans, emi_schedule, emi_payments MUST succeed for core data
+      const customersRes = await supabase.from('customers').select('*')
+      if (customersRes.error) {
+        console.error('[Dashboard] CRITICAL: customers query failed', customersRes.error)
+        throw new Error(`Failed to load customer data: ${customersRes.error.message}`)
+      }
+
+      const loansRes = await supabase.from('loans').select('*, customer:customers!loans_customer_id_fkey(name)').order('created_at', { ascending: false })
+      if (loansRes.error) {
+        console.error('[Dashboard] CRITICAL: loans query failed', loansRes.error)
+        throw new Error(`Failed to load loan data: ${loansRes.error.message}`)
+      }
+
+      // Non-critical queries — gracefully fall back to [] if they fail
+      const [emiSchedule, payments, income, expenses, users, leads] = await Promise.all([
+        safe('emi_schedule', supabase.from('emi_schedule').select('*').order('due_date', { ascending: true })),
+        safe('emi_payments', supabase.from('emi_payments').select('*, customers(name), loans(loan_number)').order('created_at', { ascending: false })),
+        safe('income', supabase.from('income').select('*').order('date', { ascending: false })),
+        safe('expenses', supabase.from('expenses').select('*').order('date', { ascending: false })),
+        safe('users', supabase.from('users').select('*').order('created_at', { ascending: false })),
+        safe('applications', supabase.from('applications').select('*').order('created_at', { ascending: false })),
       ])
 
-      if (customersRes.error) throw customersRes.error
-      if (loansRes.error) throw loansRes.error
-      if (emiScheduleRes.error) throw emiScheduleRes.error
-      if (paymentsRes.error) throw paymentsRes.error
-      if (incomeRes.error) throw incomeRes.error
-      if (expensesRes.error) throw expensesRes.error
-      if (usersRes.error) throw usersRes.error
-      if (leadsRes.error) throw leadsRes.error
-
-      const rawLoans = loansRes.data || []
-      const processedLoans = rawLoans.map((l: any) => ({
+      const processedLoans = (loansRes.data || []).map((l: any) => ({
         ...l,
-        customer_name: l.customers?.name || 'Unknown',
+        customer_name: l.customer?.name || 'Unknown',
       }))
 
       return {
         customers: customersRes.data || [],
         loans: processedLoans,
-        emiSchedule: emiScheduleRes.data || [],
-        payments: paymentsRes.data || [],
-        income: incomeRes.data || [],
-        expenses: expensesRes.data || [],
-        users: usersRes.data || [],
-        leads: leadsRes.data || []
+        emiSchedule,
+        payments,
+        income,
+        expenses,
+        users,
+        leads,
       }
-    }
+    },
+    retry: 1,
+    staleTime: 30_000,
   })
 
   const dashboardData = useMemo(() => {

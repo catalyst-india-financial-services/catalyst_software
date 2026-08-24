@@ -1,5 +1,5 @@
 // Loan types
-export type LoanStatus = 'active' | 'closed' | 'overdue' | 'pending'
+export type LoanStatus = 'draft' | 'active' | 'closed' | 'overdue' | 'pending'
 export type InterestType = 'flat' | 'reducing'
 export type LoanType = 'personal' | 'business' | 'home' | 'vehicle' | 'gold' | 'education' | 'agriculture'
 
@@ -25,6 +25,44 @@ export interface Loan {
   created_at: string
   updated_at: string
   sync_status: 'synced' | 'pending' | 'failed'
+
+  // Wizard fields from migration 00009
+  sanctioned_amount?: number
+  loan_product?: string
+  loan_category?: string
+  loan_purpose?: string
+  branch?: string
+  account_opening_date?: string
+  repayment_frequency?: 'monthly' | 'weekly' | 'fortnightly'
+  repayment_method?: string
+  repayment_start_date?: string
+  first_demand_date?: string
+  emi_due_day?: number
+  grace_period?: number
+  penal_interest_rate?: number
+  late_payment_charges?: number
+
+  // Guarantor
+  guarantor_customer_id?: string | null
+  guarantor_relationship?: string
+  guarantor_type?: string
+  guarantor_amount?: number
+
+  // Collateral
+  security_type?: string
+  security_description?: string
+  security_owner_id?: string | null
+  security_ownership_type?: string
+  security_market_value?: number
+  security_valuation_date?: string
+  security_ltv?: number
+  security_doc_number?: string
+  security_doc_status?: string
+  security_insurance_required?: boolean
+  security_insurance_details?: string
+
+  // Auditing
+  created_by?: string
 }
 
 export interface EMISchedule {

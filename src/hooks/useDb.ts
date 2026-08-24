@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
-import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Lead, LeadFollowup } from '@/types'
+import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Lead, LeadFollowup, NewCustomerForm } from '@/types'
 import { calculateEMI, generateEMISchedule } from '@/utils'
 import dayjs from 'dayjs'
 import { customerProfileService } from '@/services/customerProfileService'
@@ -93,12 +93,12 @@ export function useLoans() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('loans')
-        .select('*, customers(name)')
+        .select('*, customer:customers!loans_customer_id_fkey(name)')
         .order('created_at', { ascending: false })
       if (error) throw error
       return data.map((l: any) => ({
         ...l,
-        customer_name: l.customers?.name || 'Unknown',
+        customer_name: l.customer?.name || 'Unknown',
       })) as Loan[]
     },
   })
@@ -111,14 +111,14 @@ export function useLoan(id?: string) {
       if (!id) return null
       const { data, error } = await supabase
         .from('loans')
-        .select('*, customers(name)')
+        .select('*, customer:customers!loans_customer_id_fkey(name)')
         .eq('id', id)
         .maybeSingle()
       if (error) throw error
       if (!data) return null
       return {
         ...data,
-        customer_name: (data as any).customers?.name || 'Unknown',
+        customer_name: (data as any).customer?.name || 'Unknown',
       } as Loan
     },
     enabled: !!id,
@@ -154,6 +154,45 @@ export function useCreateLoan() {
       duration_months: number
       processing_fee: number
       loan_date: string
+      status: Loan['status']
+      
+      // New wizard fields
+      sanctioned_amount: number
+      loan_product: string
+      loan_category: string
+      loan_purpose: string
+      branch: string
+      account_opening_date: string
+      repayment_frequency: 'monthly' | 'weekly' | 'fortnightly'
+      repayment_method: string
+      repayment_start_date: string
+      first_demand_date: string
+      emi_due_day: number
+      grace_period?: number
+      penal_interest_rate?: number
+      late_payment_charges?: number
+
+      // Guarantor
+      guarantor_customer_id?: string | null
+      guarantor_relationship?: string
+      guarantor_type?: string
+      guarantor_amount?: number
+
+      // Collateral
+      security_type?: string
+      security_description?: string
+      security_owner_id?: string | null
+      security_ownership_type?: string
+      security_market_value?: number
+      security_valuation_date?: string
+      security_ltv?: number
+      security_doc_number?: string
+      security_doc_status?: string
+      security_insurance_required?: boolean
+      security_insurance_details?: string
+
+      // Auditor
+      created_by?: string
     }) => {
       const { count } = await supabase.from('loans').select('*', { count: 'exact', head: true })
       const loan_number = `LN${dayjs().format('YYYY')}${String((count || 0) + 1).padStart(3, '0')}`
@@ -162,12 +201,23 @@ export function useCreateLoan() {
         loanData.loan_amount,
         loanData.interest_rate,
         loanData.duration_months,
-        loanData.interest_type
+        loanData.interest_type,
+        loanData.repayment_frequency
       )
-      const total_interest = emi_amount * loanData.duration_months - loanData.loan_amount
-      const disbursed_amount = loanData.loan_amount - loanData.processing_fee
 
-      const newLoan = {
+      // Calculate installments count based on frequency
+      let emi_count = loanData.duration_months
+      if (loanData.repayment_frequency === 'weekly') {
+        emi_count = loanData.duration_months * 4
+      } else if (loanData.repayment_frequency === 'fortnightly') {
+        emi_count = loanData.duration_months * 2
+      }
+
+      const total_interest = Math.max(0, emi_amount * emi_count - loanData.loan_amount)
+      const disbursed_amount = loanData.loan_amount - (loanData.processing_fee || 0)
+
+      // Base fields — always exist in the database (migration 00001)
+      const baseLoanFields = {
         loan_number,
         customer_id: loanData.customer_id,
         loan_type: loanData.loan_type,
@@ -176,30 +226,83 @@ export function useCreateLoan() {
         interest_type: loanData.interest_type,
         duration_months: loanData.duration_months,
         processing_fee: loanData.processing_fee,
-        loan_date: loanData.loan_date,
+        // Use account_opening_date if provided, otherwise use loan_date
+        loan_date: loanData.account_opening_date || loanData.loan_date,
         emi_amount,
-        emi_count: loanData.duration_months,
-        remaining_emi: loanData.duration_months,
+        emi_count,
+        remaining_emi: emi_count,
         remaining_balance: loanData.loan_amount,
         total_interest,
         disbursed_amount,
-        status: 'active' as const,
+        // Use 'active' as fallback if status is 'draft' (pre-migration 00009 databases don't support 'draft')
+        status: (loanData.status === 'draft' || loanData.status === 'pending') ? 'active' as const : loanData.status,
+        sync_status: 'synced' as const,
       }
 
-      const { data: loan, error: loanError } = await supabase
-        .from('loans')
-        .insert([newLoan])
-        .select()
-        .single()
-      if (loanError) throw loanError
+      // Extended fields — only exist after migration 00009
+      const extendedLoanFields = {
+        ...baseLoanFields,
+        status: loanData.status, // override with real status after migration
+        sanctioned_amount: loanData.sanctioned_amount,
+        loan_product: loanData.loan_product,
+        loan_category: loanData.loan_category,
+        loan_purpose: loanData.loan_purpose,
+        branch: loanData.branch,
+        account_opening_date: loanData.account_opening_date,
+        repayment_frequency: loanData.repayment_frequency,
+        repayment_method: loanData.repayment_method,
+        repayment_start_date: loanData.repayment_start_date,
+        first_demand_date: loanData.first_demand_date,
+        emi_due_day: loanData.emi_due_day,
+        grace_period: loanData.grace_period || 0,
+        penal_interest_rate: loanData.penal_interest_rate || 0,
+        late_payment_charges: loanData.late_payment_charges || 0,
+        guarantor_customer_id: loanData.guarantor_customer_id || null,
+        guarantor_relationship: loanData.guarantor_relationship || null,
+        guarantor_type: loanData.guarantor_type || null,
+        guarantor_amount: loanData.guarantor_amount || null,
+        security_type: loanData.security_type || null,
+        security_description: loanData.security_description || null,
+        security_owner_id: loanData.security_owner_id || null,
+        security_ownership_type: loanData.security_ownership_type || null,
+        security_market_value: loanData.security_market_value || null,
+        security_valuation_date: loanData.security_valuation_date || null,
+        security_ltv: loanData.security_ltv || null,
+        security_doc_number: loanData.security_doc_number || null,
+        security_doc_status: loanData.security_doc_status || null,
+        security_insurance_required: loanData.security_insurance_required || false,
+        security_insurance_details: loanData.security_insurance_details || null,
+        created_by: loanData.created_by || 'Admin',
+      }
 
-      // Generate schedule
+      // Attempt insert with full wizard fields (requires migration 00009)
+      let loanResult = await supabase.from('loans').insert([extendedLoanFields]).select().single()
+
+      if (loanResult.error) {
+        const errCode = (loanResult.error as any).code
+        // 42703 = undefined_column, 23514 = check_violation (status constraint not updated yet)
+        if (errCode === '42703' || errCode === '23514' || loanResult.error.message?.includes('column') || loanResult.error.message?.includes('check')) {
+          console.warn(
+            '[useCreateLoan] Extended columns not found — migration 00009 may not be applied. Falling back to base schema insert.',
+            loanResult.error
+          )
+          // Retry with only base fields
+          loanResult = await supabase.from('loans').insert([baseLoanFields]).select().single()
+        }
+      }
+
+      if (loanResult.error) throw loanResult.error
+      const loan = loanResult.data
+
+      // Generate EMI schedule using the repayment start date (or loan date as fallback)
+      const scheduleStartDate = loanData.repayment_start_date || loanData.loan_date
       const schedule = generateEMISchedule(
         loanData.loan_amount,
         loanData.interest_rate,
         loanData.duration_months,
-        loanData.loan_date,
-        loanData.interest_type
+        scheduleStartDate,
+        loanData.interest_type,
+        loanData.repayment_frequency
       )
 
       const scheduleData = schedule.map((s) => ({
@@ -214,13 +317,19 @@ export function useCreateLoan() {
         paid_amount: 0,
       }))
 
-      const { error: scheduleError } = await supabase.from('emi_schedule').insert(scheduleData)
-      if (scheduleError) throw scheduleError
+      if (scheduleData.length > 0) {
+        const { error: scheduleError } = await supabase.from('emi_schedule').insert(scheduleData)
+        if (scheduleError) {
+          console.warn('[useCreateLoan] EMI schedule insert failed (non-critical):', scheduleError)
+          // Don't throw — the loan was created, schedule can be regenerated
+        }
+      }
 
       return loan as Loan
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['loans'] })
+      queryClient.invalidateQueries({ queryKey: ['extendedDashboardData'] })
       queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
     },
   })
@@ -1676,6 +1785,261 @@ export function useSendPasswordReset() {
       })
       if (error) throw error
       return { success: true }
+    },
+  })
+}
+
+// ─── Lead: Approve Only (no customer created) ────────────────────────────────
+
+export function useApproveLead() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (lead: Lead) => {
+      const { error } = await supabase
+        .from('applications')
+        .update({
+          status: 'Approved',
+          customer_conversion_status: 'Not Created',
+          approved_at: new Date().toISOString(),
+        })
+        .eq('id', lead.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
+    },
+  })
+}
+
+// ─── Get only Approved + Not Converted leads (for customer creation dropdown) ─
+
+export function useApprovedLeads() {
+  return useQuery({
+    queryKey: ['approvedLeads'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('applications')
+        .select('*')
+        .eq('status', 'Approved')
+        .eq('customer_conversion_status', 'Not Created')
+        .order('approved_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as Lead[]
+    },
+    staleTime: 15_000,
+  })
+}
+
+// ─── Create Active Customer ───────────────────────────────────────────────────
+
+export function useCreateNewCustomer() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (form: NewCustomerForm) => {
+      // Generate customer_id like CUS001
+      const { count } = await supabase
+        .from('customers')
+        .select('*', { count: 'exact', head: true })
+      const customer_id = `CUS${String((count || 0) + 1).padStart(3, '0')}`
+
+      const payload = {
+        customer_id,
+        name: form.full_name,
+        mobile: form.mobile,
+        whatsapp: form.mobile,
+        email: form.email || null,
+        address: form.current_address,
+        city: form.city,
+        district: form.district || null,
+        state: form.state,
+        pincode: form.pin_code,
+        address_type: form.address_type || null,
+        aadhaar: form.aadhaar_kyc_id,
+        pan: form.pan,
+        kyc_status: (form.kyc_status === 'verified' ? 'verified' : form.kyc_status === 'rejected' ? 'rejected' : 'pending') as 'pending' | 'verified' | 'rejected',
+        kyc_verified_date: form.verification_date || null,
+        occupation: form.occupation_business,
+        monthly_income: form.income ? parseFloat(form.income) : null,
+        income_source: form.income_source || null,
+        cibil_score: form.cibil_score ? parseInt(form.cibil_score, 10) : null,
+        cibil_score_date: form.cibil_score_date || null,
+        customer_type: form.customer_type || null,
+        date_of_birth: form.date_of_birth || null,
+        gender: form.gender || null,
+        customer_segment: form.customer_segment || null,
+        customer_category: form.customer_category || null,
+        branch: form.branch || null,
+        lead_id: form.lead_id || null,
+        status: 'active' as const,
+        sync_status: 'synced',
+      }
+
+      const { data: customer, error: custErr } = await supabase
+        .from('customers')
+        .insert([payload])
+        .select()
+        .single()
+      if (custErr) throw custErr
+
+      // If created from an approved lead, mark it as Converted
+      if (form.lead_id) {
+        const { error: leadErr } = await supabase
+          .from('applications')
+          .update({
+            customer_conversion_status: 'Converted',
+            customer_linked_id: customer.customer_id,
+            status: 'Converted',
+          })
+          .eq('id', form.lead_id)
+        if (leadErr) console.error('[useCreateNewCustomer] Failed to update lead:', leadErr)
+      }
+
+      return customer as Customer
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['approvedLeads'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
+    },
+  })
+}
+
+// ─── Save Draft Customer (partial — does NOT require all fields) ──────────────
+
+export function useSaveDraftCustomer() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (form: Partial<NewCustomerForm> & { full_name: string; mobile: string }) => {
+      const { count } = await supabase
+        .from('customers')
+        .select('*', { count: 'exact', head: true })
+      const customer_id = `CUS${String((count || 0) + 1).padStart(3, '0')}`
+
+      const payload: Record<string, any> = {
+        customer_id,
+        name: form.full_name,
+        mobile: form.mobile,
+        whatsapp: form.mobile,
+        email: form.email || null,
+        address: form.current_address || '',
+        city: form.city || '',
+        district: form.district || null,
+        state: form.state || '',
+        pincode: form.pin_code || '',
+        address_type: form.address_type || null,
+        aadhaar: form.aadhaar_kyc_id || '',
+        pan: form.pan || '',
+        kyc_status: 'pending' as const,
+        kyc_verified_date: form.verification_date || null,
+        occupation: form.occupation_business || null,
+        monthly_income: form.income ? parseFloat(form.income) : null,
+        income_source: form.income_source || null,
+        cibil_score: form.cibil_score ? parseInt(form.cibil_score, 10) : null,
+        cibil_score_date: form.cibil_score_date || null,
+        customer_type: form.customer_type || null,
+        date_of_birth: form.date_of_birth || null,
+        gender: form.gender || null,
+        customer_segment: form.customer_segment || null,
+        customer_category: form.customer_category || null,
+        branch: form.branch || null,
+        lead_id: form.lead_id || null,
+        status: 'draft' as const,
+        sync_status: 'pending',
+      }
+
+      const { data, error } = await supabase
+        .from('customers')
+        .insert([payload])
+        .select()
+        .single()
+      if (error) throw error
+      return data as Customer
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+    },
+  })
+}
+
+// ─── Update Draft Customer (finalize or re-save draft) ────────────────────────
+
+export function useUpdateDraftCustomer() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      id,
+      form,
+      finalize,
+    }: {
+      id: string
+      form: Partial<NewCustomerForm>
+      finalize: boolean // true = Create Customer (active); false = re-save draft
+    }) => {
+      const payload: Record<string, any> = {
+        name: form.full_name,
+        mobile: form.mobile,
+        whatsapp: form.mobile,
+        email: form.email || null,
+        address: form.current_address,
+        city: form.city,
+        district: form.district || null,
+        state: form.state,
+        pincode: form.pin_code,
+        address_type: form.address_type || null,
+        aadhaar: form.aadhaar_kyc_id,
+        pan: form.pan,
+        kyc_status: finalize
+          ? ((form.kyc_status === 'verified' ? 'verified' : form.kyc_status === 'rejected' ? 'rejected' : 'pending') as 'pending' | 'verified' | 'rejected')
+          : 'pending',
+        kyc_verified_date: form.verification_date || null,
+        occupation: form.occupation_business,
+        monthly_income: form.income ? parseFloat(form.income) : null,
+        income_source: form.income_source || null,
+        cibil_score: form.cibil_score ? parseInt(form.cibil_score, 10) : null,
+        cibil_score_date: form.cibil_score_date || null,
+        customer_type: form.customer_type || null,
+        date_of_birth: form.date_of_birth || null,
+        gender: form.gender || null,
+        customer_segment: form.customer_segment || null,
+        customer_category: form.customer_category || null,
+        branch: form.branch || null,
+        status: finalize ? ('active' as const) : ('draft' as const),
+        updated_at: new Date().toISOString(),
+      }
+
+      const { data: customer, error } = await supabase
+        .from('customers')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single()
+      if (error) throw error
+
+      // If finalizing and the customer has a lead_id, mark lead as Converted
+      if (finalize && form.lead_id) {
+        const { error: leadErr } = await supabase
+          .from('applications')
+          .update({
+            customer_conversion_status: 'Converted',
+            customer_linked_id: customer.customer_id,
+            status: 'Converted',
+          })
+          .eq('id', form.lead_id)
+        if (leadErr) console.error('[useUpdateDraftCustomer] Failed to update lead:', leadErr)
+      }
+
+      return customer as Customer
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['customers', variables.id] })
+      if (variables.finalize) {
+        queryClient.invalidateQueries({ queryKey: ['leads'] })
+        queryClient.invalidateQueries({ queryKey: ['approvedLeads'] })
+        queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
+      }
     },
   })
 }

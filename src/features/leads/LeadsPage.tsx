@@ -11,7 +11,7 @@ import {
   Check, RotateCcw, AlertCircle, Pencil, Sparkles, X
 } from 'lucide-react'
 import {
-  useLeads, useConvertLead, useRejectLead,
+  useLeads, useApproveLead, useRejectLead,
   useMarkLeadInterested, useFollowups, useUpsertFollowup, useCompleteReminder
 } from '@/hooks/useDb'
 import { Card, CardHeader, CardTitle, CardBody, Avatar, Button, Modal, Textarea, PageHeader } from '@/components/ui'
@@ -25,12 +25,12 @@ dayjs.extend(relativeTime)
 // ─── Config ─────────────────────────────────────────────────────────────────
 
 const PRODUCT_CONFIG: Record<string, { bg: string; text: string; dot: string }> = {
-  'Business Loan':  { bg: 'bg-blue-50 border-blue-100',    text: 'text-blue-700',   dot: 'bg-blue-500'   },
-  'Personal Loan':  { bg: 'bg-violet-50 border-violet-100', text: 'text-violet-700', dot: 'bg-violet-500' },
-  'Gold Loan':      { bg: 'bg-amber-50 border-amber-100',   text: 'text-amber-700',  dot: 'bg-amber-500'  },
-  'Home Loan':      { bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
-  'Vehicle Loan':   { bg: 'bg-orange-50 border-orange-100', text: 'text-orange-700', dot: 'bg-orange-500' },
-  'Education Loan': { bg: 'bg-cyan-50 border-cyan-100',     text: 'text-cyan-700',   dot: 'bg-cyan-500'   },
+  'Business Loan': { bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+  'Personal Loan': { bg: 'bg-violet-50 border-violet-100', text: 'text-violet-700', dot: 'bg-violet-500' },
+  'Gold Loan': { bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
+  'Home Loan': { bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
+  'Vehicle Loan': { bg: 'bg-orange-50 border-orange-100', text: 'text-orange-700', dot: 'bg-orange-500' },
+  'Education Loan': { bg: 'bg-cyan-50 border-cyan-100', text: 'text-cyan-700', dot: 'bg-cyan-500' },
 }
 const DEFAULT_CONFIG = { bg: 'bg-slate-50 border-slate-200', text: 'text-slate-700', dot: 'bg-slate-400' }
 const getProductConfig = (product: string) => PRODUCT_CONFIG[product] ?? DEFAULT_CONFIG
@@ -46,10 +46,22 @@ function StatBadge({ count, label, color }: { count: number; label: string; colo
 
 // ─── Status Badge Helper ──────────────────────────────────────────────────────
 
-function LeadStatusBadge({ status }: { status?: string }) {
+function LeadStatusBadge({ status, conversionStatus }: { status?: string; conversionStatus?: string }) {
+  if (status === 'Approved') {
+    const isConverted = conversionStatus === 'Converted'
+    return (
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${isConverted
+          ? 'bg-slate-100 text-slate-500 border-slate-200/60'
+          : 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
+        }`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${isConverted ? 'bg-slate-400' : 'bg-emerald-500'}`} />
+        {isConverted ? 'Converted' : 'Approved'}
+      </span>
+    )
+  }
   if (status === 'Converted') return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Approved
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-500 border border-slate-200/60">
+      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> Converted
     </span>
   )
   if (status === 'Rejected') return (
@@ -231,7 +243,12 @@ function LeadCard({
 
       {/* Status badge */}
       <div className="flex justify-between items-center">
-        <LeadStatusBadge status={lead.status} />
+        <LeadStatusBadge status={lead.status} conversionStatus={lead.customer_conversion_status} />
+        {lead.status === 'Approved' && lead.customer_conversion_status !== 'Converted' && (
+          <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
+            Ready for Customer
+          </span>
+        )}
       </div>
 
       {/* Contact */}
@@ -312,9 +329,26 @@ function LeadCard({
               Approval
             </button>
           </>
+        ) : lead.status === 'Approved' ? (
+          <div className="w-full flex flex-col gap-1.5">
+            {lead.customer_conversion_status === 'Converted' ? (
+              <div className="flex items-center justify-center gap-1.5 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl border border-slate-200">
+                <CheckCircle2 className="h-4 w-4" /> Customer Created
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-center gap-1.5 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-200/60">
+                  <CheckCircle2 className="h-4 w-4" /> Lead Approved
+                </div>
+                <p className="text-[10px] text-center text-slate-400 font-medium">
+                  Go to Customers → Add Customer to create
+                </p>
+              </div>
+            )}
+          </div>
         ) : lead.status === 'Converted' ? (
-          <div className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-200/60">
-            <CheckCircle2 className="h-4 w-4" /> Approved Borrower Account
+          <div className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl border border-slate-200">
+            <CheckCircle2 className="h-4 w-4" /> Customer Created
           </div>
         ) : (
           <div className="w-full flex flex-col gap-1.5">
@@ -416,7 +450,7 @@ function LeadTableRow({
           {formatDate(lead.created_at, 'DD MMM YYYY')}
         </td>
         <td className="px-5 py-3.5 whitespace-nowrap">
-          <LeadStatusBadge status={lead.status} />
+          <LeadStatusBadge status={lead.status} conversionStatus={lead.customer_conversion_status} />
         </td>
         <td className="px-5 py-3.5">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -472,16 +506,24 @@ function LeadTableRow({
                   onClick={() => onApprove(lead)}
                   disabled={!!processingLeadId}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-colors disabled:opacity-50"
-                  title="Approval"
+                  title="Approve Lead"
                 >
                   {processingLeadId === lead.id ? (
                     <RefreshCw className="h-3 w-3 animate-spin" />
                   ) : (
                     <UserPlus className="h-3 w-3" />
                   )}
-                  Approval
+                  Approve
                 </button>
               </>
+            )}
+            {lead.status === 'Approved' && (
+              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${lead.customer_conversion_status === 'Converted'
+                  ? 'bg-slate-100 text-slate-500 border-slate-200'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                }`}>
+                {lead.customer_conversion_status === 'Converted' ? 'Customer Created' : 'Awaiting Customer'}
+              </span>
             )}
           </div>
         </td>
@@ -673,7 +715,7 @@ type SortKey = 'created_at' | 'name' | 'amount'
 export default function LeadsPage() {
   const { data: leads = [], isLoading, isError, error, refetch, isFetching } = useLeads()
   const { data: followups = [] } = useFollowups()
-  const convertLead = useConvertLead()
+  const approveLead = useApproveLead()
   const rejectLeadMutation = useRejectLead()
   const markInterested = useMarkLeadInterested()
   const upsertFollowup = useUpsertFollowup()
@@ -735,6 +777,7 @@ export default function LeadsPage() {
     [leads]
   )
 
+  const approvedCount = leads.filter(l => l.status === 'Approved').length
   const totalCount = leads.length
   const pendingCount = leads.filter(l => l.status === 'Pending').length
   const convertedCount = leads.filter(l => l.status === 'Converted').length
@@ -773,7 +816,7 @@ export default function LeadsPage() {
   const thisWeekLeads = leads.filter(l => dayjs(l.created_at).isSame(dayjs(), 'week')).length
 
   const processingLeadId =
-    (convertLead.isPending && convertLead.variables ? convertLead.variables.id : null) ||
+    (approveLead.isPending && approveLead.variables ? approveLead.variables.id : null) ||
     (rejectLeadMutation.isPending && rejectLeadMutation.variables ? rejectLeadMutation.variables.lead.id : null) ||
     (markInterested.isPending && markInterested.variables ? markInterested.variables.id : null) ||
     null
@@ -781,9 +824,9 @@ export default function LeadsPage() {
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleApproveDirect = async (lead: Lead) => {
     try {
-      toast.promise(convertLead.mutateAsync(lead), {
-        loading: `Converting ${lead.name} to borrower account...`,
-        success: `Lead ${lead.name} successfully approved as customer!`,
+      toast.promise(approveLead.mutateAsync(lead), {
+        loading: `Approving ${lead.name}...`,
+        success: `Lead ${lead.name} approved! Go to Customers → Add Customer to create the customer.`,
         error: (err: any) => `Failed to approve: ${err.message || 'Unknown error'}`
       })
     } catch (err) { console.error(err) }
@@ -873,9 +916,9 @@ export default function LeadsPage() {
             </p>
           </div>
           <div className="hidden sm:flex items-center gap-2">
-            <StatBadge count={leads.length}    label="Total Leads" color="bg-white/10 text-white" />
-            <StatBadge count={todayLeads}       label="Today"       color="bg-white/10 text-white" />
-            <StatBadge count={thisWeekLeads}    label="This Week"   color="bg-white/10 text-white" />
+            <StatBadge count={leads.length} label="Total Leads" color="bg-white/10 text-white" />
+            <StatBadge count={todayLeads} label="Today" color="bg-white/10 text-white" />
+            <StatBadge count={thisWeekLeads} label="This Week" color="bg-white/10 text-white" />
           </div>
         </div>
       </div>
@@ -891,11 +934,12 @@ export default function LeadsPage() {
       {/* Status Filter Tabs */}
       <div className="flex gap-2 bg-slate-100 rounded-2xl p-2 w-fit border border-slate-200/60 shadow-xs flex-wrap items-center">
         {[
-          { id: 'all',        label: 'All Leads',  count: totalCount,     activeColor: 'bg-white text-slate-900 shadow-sm border border-slate-200/30' },
-          { id: 'Pending',    label: 'Pending',    count: pendingCount,   activeColor: 'bg-amber-500 text-white shadow-sm shadow-amber-500/25 border border-amber-600/10' },
+          { id: 'all', label: 'All Leads', count: totalCount, activeColor: 'bg-white text-slate-900 shadow-sm border border-slate-200/30' },
+          { id: 'Pending', label: 'Pending', count: pendingCount, activeColor: 'bg-amber-500 text-white shadow-sm shadow-amber-500/25 border border-amber-600/10' },
           { id: 'Interested', label: 'Interested', count: interestedCount, activeColor: 'bg-blue-600 text-white shadow-sm shadow-blue-600/25 border border-blue-700/10' },
-          { id: 'Converted',  label: 'Approved',   count: convertedCount, activeColor: 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25 border border-emerald-700/10' },
-          { id: 'Rejected',   label: 'Rejected',   count: rejectedCount,  activeColor: 'bg-red-500 text-white shadow-sm shadow-red-500/25 border border-red-600/10' },
+          { id: 'Approved', label: 'Approved', count: approvedCount, activeColor: 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25 border border-emerald-700/10' },
+          { id: 'Converted', label: 'Converted', count: convertedCount, activeColor: 'bg-slate-700 text-white shadow-sm shadow-slate-700/25 border border-slate-800/10' },
+          { id: 'Rejected', label: 'Rejected', count: rejectedCount, activeColor: 'bg-red-500 text-white shadow-sm shadow-red-500/25 border border-red-600/10' },
         ].map((s) => (
           <button
             key={s.id}
