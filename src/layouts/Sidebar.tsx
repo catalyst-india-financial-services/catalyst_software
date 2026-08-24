@@ -131,6 +131,21 @@ function SidebarContent({ collapsed }: { collapsed: boolean }) {
           )}
         </div>
       </div>
+
+      {/* Developer Attribution */}
+      <div className="px-3 py-2 border-t border-slate-800/60 bg-slate-950/60 text-center flex items-center justify-center">
+        {!collapsed ? (
+          <p className="text-[10px] text-slate-400 font-medium tracking-wide">
+            Design and developed by <span className="font-semibold text-slate-300">DIC</span>
+          </p>
+        ) : (
+          <Tooltip content="Design and developed by DIC" side="right">
+            <span className="text-[9px] font-bold text-slate-500 hover:text-slate-300 transition-colors cursor-default tracking-wider">
+              DIC
+            </span>
+          </Tooltip>
+        )}
+      </div>
     </div>
   )
 }
