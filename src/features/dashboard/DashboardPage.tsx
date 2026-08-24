@@ -55,13 +55,13 @@ export default function DashboardPage() {
     queryKey: ['extendedDashboardData'],
     queryFn: async () => {
       // Helper: run a Supabase query and return data or [] on any error (with console warning)
-      const safe = async <T,>(label: string, query: Promise<{ data: T[] | null; error: any }>): Promise<T[]> => {
+      const safe = async (label: string, query: PromiseLike<{ data: any | null; error: any }>): Promise<any[]> => {
         const res = await query
         if (res.error) {
           console.warn(`[Dashboard] Query failed for "${label}":`, res.error.message, res.error)
           return []
         }
-        return res.data || []
+        return (res.data as any[]) || []
       }
 
       // Critical queries — customers, loans, emi_schedule, emi_payments MUST succeed for core data

@@ -55,9 +55,9 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
     sanctioned_amount: loan?.sanctioned_amount?.toString() ?? '',
     loan_amount: loan?.loan_amount?.toString() ?? '', // Principal
     interest_rate: loan?.interest_rate?.toString() ?? '12',
-    interest_type: loan?.interest_type ?? 'reducing',
+    interest_type: (loan?.interest_type ?? 'reducing') as 'flat' | 'reducing',
     duration_months: loan?.duration_months?.toString() ?? '12',
-    repayment_frequency: loan?.repayment_frequency ?? 'monthly',
+    repayment_frequency: (loan?.repayment_frequency ?? 'monthly') as 'monthly' | 'weekly' | 'fortnightly',
     repayment_method: loan?.repayment_method ?? 'NACH',
     processing_fee: loan?.processing_fee?.toString() ?? '0',
     loan_date: loan?.loan_date ?? new Date().toISOString().split('T')[0],
@@ -515,7 +515,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
                 <Select
                   label="Interest Method *"
                   value={formData.interest_type}
-                  onChange={e => setFormData({ ...formData, interest_type: e.target.value })}
+                  onChange={e => setFormData({ ...formData, interest_type: e.target.value as 'flat' | 'reducing' })}
                   options={[
                     { value: 'flat', label: 'Flat Interest Rate' },
                     { value: 'reducing', label: 'Reducing Balance Interest' }
@@ -568,7 +568,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
                 <Select
                   label="Repayment Frequency *"
                   value={formData.repayment_frequency}
-                  onChange={e => setFormData({ ...formData, repayment_frequency: e.target.value })}
+                  onChange={e => setFormData({ ...formData, repayment_frequency: e.target.value as 'monthly' | 'weekly' | 'fortnightly' })}
                   options={[
                     { value: 'monthly', label: 'Monthly Repayments' },
                     { value: 'weekly', label: 'Weekly Repayments' },
