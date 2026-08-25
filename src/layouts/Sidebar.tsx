@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/authStore'
 import { Avatar, Tooltip } from '@/components/ui'
 import {
   LayoutDashboard, Users, WalletCards, ArrowLeftRight, Settings2,
-  LogOut, PanelLeftClose, PanelLeftOpen, DollarSign, X, UserPlus
+  LogOut, PanelLeftClose, PanelLeftOpen, DollarSign, X, UserPlus, Building2
 } from 'lucide-react'
 
 interface NavItem {
@@ -25,17 +25,28 @@ const navItems: NavItem[] = [
 ]
 
 function SidebarContent({ collapsed }: { collapsed: boolean }) {
-  const { user, signOut } = useAuthStore()
+  const { user, signOut, isBranchUser, userBranch } = useAuthStore()
   const location = useLocation()
   const { toggleSidebar } = useUIStore()
+
+  // Branch color theming
+  const branchColors: Record<string, { accent: string; badge: string }> = {
+    Aniyapuram: { accent: 'from-emerald-600 to-teal-500', badge: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+    Vallipuram: { accent: 'from-violet-600 to-purple-500', badge: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
+  }
+  const branchTheme = userBranch ? (branchColors[userBranch] ?? branchColors['Aniyapuram']) : null
 
   return (
     <div className="flex flex-col h-full bg-slate-900 text-slate-300">
       {/* Brand Header */}
       <div className={cn('px-4 py-4.5 border-b border-slate-800/80 flex items-center justify-between', collapsed && 'px-3 justify-center')}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-blue-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-brand-500/30 text-white font-bold">
-            <DollarSign className="h-5 w-5 stroke-[2.5]" />
+          <div className={cn(
+            'w-9 h-9 rounded-xl bg-gradient-to-tr flex items-center justify-center flex-shrink-0 shadow-lg text-white font-bold',
+            isBranchUser && branchTheme ? branchTheme.accent : 'from-brand-600 to-blue-500',
+            'shadow-brand-500/30'
+          )}>
+            {isBranchUser ? <Building2 className="h-5 w-5" /> : <DollarSign className="h-5 w-5 stroke-[2.5]" />}
           </div>
           {!collapsed && (
             <motion.div
@@ -45,10 +56,18 @@ function SidebarContent({ collapsed }: { collapsed: boolean }) {
               className="overflow-hidden"
             >
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-extrabold text-white tracking-tight">FinanceERP</span>
-                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-brand-500/20 text-brand-400 border border-brand-500/30">PRO</span>
+                <span className="text-sm font-extrabold text-white tracking-tight">
+                  {isBranchUser ? `${userBranch} Branch` : 'FinanceERP'}
+                </span>
+                {isBranchUser ? (
+                  <span className={cn('px-1.5 py-0.2 rounded text-[10px] font-bold border', branchTheme?.badge)}>BRANCH</span>
+                ) : (
+                  <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-brand-500/20 text-brand-400 border border-brand-500/30">PRO</span>
+                )}
               </div>
-              <p className="text-[11px] text-slate-400 font-medium truncate">Enterprise SaaS 2026</p>
+              <p className="text-[11px] text-slate-400 font-medium truncate">
+                {isBranchUser ? 'Branch-level access only' : 'Enterprise SaaS 2026'}
+              </p>
             </motion.div>
           )}
         </div>
@@ -113,11 +132,24 @@ function SidebarContent({ collapsed }: { collapsed: boolean }) {
       {/* User Card */}
       <div className="p-3 border-t border-slate-800/80 bg-slate-950/40">
         <div className={cn('flex items-center gap-2.5', collapsed && 'justify-center')}>
-          <Avatar name={user?.full_name ?? 'Admin User'} size="sm" className="ring-2 ring-brand-500/30" />
+          <Avatar name={user?.full_name ?? 'Admin User'} size="sm" className={cn(
+            'ring-2',
+            isBranchUser ? 'ring-emerald-500/30' : 'ring-brand-500/30'
+          )} />
           {!collapsed && (
             <div className="flex-1 min-w-0">
               <p className="text-xs font-bold text-white truncate">{user?.full_name ?? 'Admin User'}</p>
-              <p className="text-[10px] text-slate-400 capitalize truncate">{user?.role ?? 'admin'}</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <p className="text-[10px] text-slate-400 capitalize truncate">
+                  {isBranchUser ? `Branch — ${userBranch}` : (user?.role ?? 'admin')}
+                </p>
+                {isBranchUser && (
+                  <span className={cn(
+                    'px-1.5 py-0.2 rounded text-[9px] font-bold border leading-none',
+                    branchTheme?.badge
+                  )}>BRANCH</span>
+                )}
+              </div>
             </div>
           )}
           {!collapsed && (

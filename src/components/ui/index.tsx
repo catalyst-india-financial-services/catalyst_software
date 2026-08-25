@@ -141,7 +141,7 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, label, error, options, placeholder, id, ...props }, ref) => {
+  ({ className, label, error, options, placeholder, id, disabled, ...props }, ref) => {
     const selectId = id ?? label?.toLowerCase().replace(/\s+/g, '-')
     return (
       <div className="w-full">
@@ -153,9 +153,11 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         <select
           ref={ref}
           id={selectId}
+          disabled={disabled}
           className={cn(
             'form-input appearance-none bg-white cursor-pointer pr-8',
             error && 'border-red-400',
+            disabled && 'bg-slate-100 text-slate-500 cursor-not-allowed opacity-80',
             className
           )}
           {...props}
@@ -323,6 +325,8 @@ interface ModalProps {
   children: React.ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | 'full'
   footer?: React.ReactNode
+  headerContent?: React.ReactNode
+  noScroll?: boolean
 }
 
 const modalSizes = {
@@ -335,12 +339,22 @@ const modalSizes = {
   full: 'w-[95vw] max-w-[1400px]',
 }
 
-export function Modal({ isOpen, onClose, title, subtitle, children, size = 'md', footer }: ModalProps) {
+export function Modal({ isOpen, onClose, title, subtitle, children, size = 'md', footer, headerContent, noScroll }: ModalProps) {
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    if (isOpen) document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [isOpen, onClose])
+    if (isOpen) {
+      document.addEventListener('keydown', handler)
+      if (noScroll) {
+        document.body.style.overflow = 'hidden'
+      }
+    }
+    return () => {
+      document.removeEventListener('keydown', handler)
+      if (noScroll) {
+        document.body.style.overflow = ''
+      }
+    }
+  }, [isOpen, onClose, noScroll])
 
   if (!isOpen) return null
 
@@ -363,8 +377,8 @@ export function Modal({ isOpen, onClose, title, subtitle, children, size = 'md',
             exit={{ opacity: 0, scale: 0.97, y: 12 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
             className={cn(
-              'relative w-full bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 border border-slate-200/80',
-              isFullSize ? 'h-[92vh]' : 'max-h-[90vh]',
+              'relative w-full bg-white rounded-2xl shadow-2xl flex flex-col z-10 border border-slate-200/80',
+              noScroll ? 'max-h-[90vh] overflow-hidden' : 'max-h-[90vh]',
               modalSizes[size]
             )}
           >
@@ -374,15 +388,18 @@ export function Modal({ isOpen, onClose, title, subtitle, children, size = 'md',
                   <h2 className="text-lg font-bold text-slate-900 tracking-tight">{title}</h2>
                   {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
                 </div>
-                <button
-                  onClick={onClose}
-                  className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors ml-4 flex-shrink-0"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+                <div className="flex items-center gap-3 ml-4 flex-shrink-0">
+                  {headerContent}
+                  <button
+                    onClick={onClose}
+                    className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
             )}
-            <div className="flex-1 overflow-y-auto p-6">{children}</div>
+            <div className={cn('flex-1 min-h-0', noScroll ? 'overflow-hidden' : 'p-6 overflow-y-auto')}>{children}</div>
             {footer && (
               <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3 rounded-b-2xl flex-shrink-0">
                 {footer}

@@ -8,11 +8,12 @@ import {
 import {
   Plus, Download, Eye, SquarePen, Trash2, Phone, SlidersHorizontal,
   UserPlus, ChevronDown, CheckCircle2, ClipboardList, X, AlertCircle,
-  RefreshCw, ArrowRight
+  RefreshCw, ArrowRight, Lock
 } from 'lucide-react'
 import {
   useCustomers, useUpdateCustomer,
-  useApprovedLeads, useCreateNewCustomer, useSaveDraftCustomer, useUpdateDraftCustomer
+  useApprovedLeads, useCreateNewCustomer, useSaveDraftCustomer, useUpdateDraftCustomer,
+  useCustomerSegmentOptions, useAddCustomerSegmentOption
 } from '@/hooks/useDb'
 import type { Customer, Lead, NewCustomerForm } from '@/types'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui'
 import { formatDate, cn } from '@/utils'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/store/authStore'
 
 const columnHelper = createColumnHelper<Customer>()
 
@@ -151,20 +153,65 @@ const EMPTY_FORM: Partial<NewCustomerForm> = {
   customer_segment: '', customer_category: '', branch: ''
 }
 
+const SECTION_REQUIRED_FIELDS: Record<number, Array<keyof NewCustomerForm>> = {
+  1: ['full_name', 'customer_type', 'date_of_birth', 'gender', 'mobile'],
+  2: ['current_address', 'city', 'district', 'state', 'pin_code', 'address_type'],
+  3: ['pan', 'aadhaar_kyc_id', 'kyc_status', 'verification_date'],
+  4: ['occupation_business', 'income', 'income_source'],
+  5: ['customer_segment', 'customer_category', 'branch'],
+}
+
+const SECTION_TICK_FIELDS: Record<number, Array<keyof NewCustomerForm>> = {
+  1: ['full_name', 'customer_type', 'date_of_birth', 'gender', 'mobile'],
+  2: ['current_address', 'city', 'district', 'state', 'pin_code', 'address_type'],
+  3: ['pan', 'aadhaar_kyc_id', 'kyc_status'],
+  4: ['occupation_business', 'income', 'income_source'],
+  5: ['customer_segment', 'customer_category', 'branch'],
+}
+
+function isMandatoryFieldFilled(value: NewCustomerForm[keyof NewCustomerForm] | null | undefined) {
+  if (typeof value === 'string') return value.trim().length > 0
+  return value !== null && value !== undefined
+}
+
 export function CreateCustomerModal({
   customer,
   onClose,
   onSuccess,
+  onCompletionChange,
 }: {
   customer?: Customer
   onClose: () => void
   onSuccess?: (c: Customer) => void
+  onCompletionChange?: (completion: number) => void
 }) {
   const isDraft = customer?.status === 'draft'
   const { data: approvedLeads = [] } = useApprovedLeads()
   const createNewCustomer = useCreateNewCustomer()
   const saveDraft = useSaveDraftCustomer()
   const updateDraft = useUpdateDraftCustomer()
+  const { data: segmentOptions = [] } = useCustomerSegmentOptions()
+  const addSegmentOption = useAddCustomerSegmentOption()
+  const { isBranchUser, userBranch } = useAuthStore()
+
+  // Default built-in segments always available (fallback if DB table is empty)
+  const DEFAULT_SEGMENTS = ['Retail', 'Business', 'Agriculture', 'Gold Loan', 'Micro Finance', 'Premium', 'Corporate']
+  // Merge DB options with defaults, dedup by name
+  const allSegments = useMemo(() => {
+    const dbNames = segmentOptions.map(o => o.name)
+    const extras = DEFAULT_SEGMENTS.filter(s => !dbNames.includes(s))
+    return [
+      ...segmentOptions.map(o => o.name),
+      ...extras,
+    ]
+  }, [segmentOptions])
+
+  // Branch list for Operating Branch dropdown
+  const BRANCH_OPTIONS = [
+    { value: 'Head Office', label: 'Head Office' },
+    { value: 'Aniyapuram', label: 'Aniyapuram Branch' },
+    { value: 'Vallipuram', label: 'Vallipuram Branch' },
+  ]
 
   const [form, setForm] = useState<Partial<NewCustomerForm>>(() => {
     if (customer) {
@@ -194,15 +241,53 @@ export function CreateCustomerModal({
         cibil_score_date: customer.cibil_score_date ?? '',
         customer_segment: customer.customer_segment ?? '',
         customer_category: customer.customer_category ?? '',
-        branch: customer.branch ?? '',
+        // If branch user, always lock to their branch
+        branch: isBranchUser && userBranch ? userBranch : (customer.branch ?? ''),
       }
     }
-    return { ...EMPTY_FORM }
+    return {
+      ...EMPTY_FORM,
+      // Auto-fill branch for branch-level users
+      branch: isBranchUser && userBranch ? userBranch : '',
+    }
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState<'draft' | 'create' | null>(null)
   const [activeSection, setActiveSection] = useState(1)
+  const [newSegmentName, setNewSegmentName] = useState('')
+  const [isAddingSegment, setIsAddingSegment] = useState(false)
+
+  const sectionCompletion = useMemo(() => {
+    return Object.fromEntries(
+      Object.entries(SECTION_REQUIRED_FIELDS).map(([sectionId, fields]) => {
+        const filledCount = fields.filter((field) => isMandatoryFieldFilled(form[field])).length
+        const completion = fields.length === 0 ? 0 : Math.round((filledCount / fields.length) * 100)
+        return [Number(sectionId), completion]
+      })
+    ) as Record<number, number>
+  }, [form])
+
+  const sectionTickCompletion = useMemo(() => {
+    return Object.fromEntries(
+      Object.entries(SECTION_TICK_FIELDS).map(([sectionId, fields]) => {
+        const filledCount = fields.filter((field) => isMandatoryFieldFilled(form[field])).length
+        const completion = fields.length === 0 ? 0 : Math.round((filledCount / fields.length) * 100)
+        return [Number(sectionId), completion]
+      })
+    ) as Record<number, number>
+  }, [form])
+
+  const activeSectionCompletion = sectionCompletion[activeSection] ?? 0
+  const overallCompletion = useMemo(() => {
+    const allRequiredFields = Object.values(SECTION_REQUIRED_FIELDS).flat()
+    const filledCount = allRequiredFields.filter((field) => isMandatoryFieldFilled(form[field])).length
+    return allRequiredFields.length === 0 ? 0 : Math.round((filledCount / allRequiredFields.length) * 100)
+  }, [form])
+
+  useEffect(() => {
+    onCompletionChange?.(overallCompletion)
+  }, [onCompletionChange, overallCompletion])
 
   // When an approved lead is selected, pre-fill available fields
   const handleLeadSelect = (leadId: string) => {
@@ -335,19 +420,20 @@ export function CreateCustomerModal({
   }
 
   return (
-    <div className="flex flex-col md:flex-row h-full min-h-[500px]">
+    <div className="flex flex-col md:flex-row h-full min-h-0 overflow-hidden">
       {/* ── Left Sidebar: Step Indicators ── */}
-      <div className="w-full md:w-80 bg-slate-50/80 border-r border-slate-200/60 p-6 flex flex-col justify-between flex-shrink-0">
-        <div className="space-y-6">
+      <div className="w-full md:w-56 bg-slate-50/80 border-r border-slate-200/60 p-3 flex flex-col justify-between flex-shrink-0">
+        <div className="space-y-3">
           <div className="pb-4 border-b border-slate-200/50">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Registration Wizard</h4>
-            <p className="text-[11px] text-slate-500 mt-1">Complete all sections to register the customer profile.</p>
+            <p className="text-[9px] text-slate-500 mt-1">Complete all sections to register the customer profile.</p>
           </div>
 
           <nav className="space-y-2">
             {sections.map((sec) => {
               const isActive = activeSection === sec.id
               const isDone = activeSection > sec.id
+              const isSectionComplete = (sectionTickCompletion[sec.id] ?? 0) === 100
               return (
                 <button
                   key={sec.id}
@@ -356,22 +442,22 @@ export function CreateCustomerModal({
                     setActiveSection(sec.id)
                   }}
                   className={cn(
-                    'w-full flex items-start gap-3 p-3.5 rounded-2xl text-left transition-all border outline-none',
+                    'w-full flex items-start gap-2 p-2.5 rounded-2xl text-left transition-all border outline-none',
                     isActive
                       ? 'bg-white border-slate-200/80 shadow-md shadow-slate-100/50 text-slate-800'
                       : 'bg-transparent border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100/40'
                   )}
                 >
                   <span className={cn(
-                    'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all mt-0.5',
+                    'w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all mt-0.5',
                     isActive && 'bg-brand-600 text-white shadow-xs',
-                    isDone && 'bg-emerald-100 text-emerald-700 border-none',
+                    isDone && (isSectionComplete ? 'bg-emerald-100 text-emerald-700 border-none' : 'bg-red-100 text-red-700 border-none'),
                     !isActive && !isDone && 'bg-slate-200/60 text-slate-500'
                   )}>
                     {isDone ? <CheckCircle2 className="h-4.5 w-4.5" /> : sec.id}
                   </span>
                   <div>
-                    <p className={cn('text-xs font-bold', isActive ? 'text-slate-800' : 'text-slate-600')}>{sec.label}</p>
+                    <p className={cn('text-[10px] font-bold', isActive ? 'text-slate-800' : 'text-slate-600')}>{sec.label}</p>
                     <p className="text-[10px] text-slate-400 font-medium mt-0.5">{sec.desc}</p>
                   </div>
                 </button>
@@ -382,8 +468,8 @@ export function CreateCustomerModal({
 
         {/* Lead select placed nicely at the bottom of sidebar if manual creation */}
         {!isDraft && (
-          <div className="pt-4 border-t border-slate-200/50 mt-6">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+          <div className="pt-3 border-t border-slate-200/50 mt-4">
+            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">
               <ClipboardList className="h-3 w-3" />
               Approved Lead Selection
             </label>
@@ -391,7 +477,7 @@ export function CreateCustomerModal({
               <select
                 value={form.lead_id ?? ''}
                 onChange={e => handleLeadSelect(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500/20 pr-8 appearance-none"
+                className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[10px] font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500/20 pr-8 appearance-none"
               >
                 <option value="">— Manual / Select Lead —</option>
                 {approvedLeads.map(l => (
@@ -405,25 +491,20 @@ export function CreateCustomerModal({
       </div>
 
       {/* ── Right Content: Form Fields ── */}
-      <div className="flex-1 flex flex-col justify-between bg-white">
-        <div className="p-8 overflow-y-auto max-h-[64vh]">
+      <div className="flex-1 flex flex-col justify-between bg-white min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 p-4 overflow-y-auto">
           {/* STEP 1: BASIC DETAILS */}
           {activeSection === 1 && (
-            <div className="space-y-5">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">Basic Details</h3>
-                <p className="text-xs text-slate-400">Onboard the customer with their primary identity parameters.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Full Name *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Full Name *</label>
                   <input
                     value={form.full_name ?? ''}
                     onChange={set('full_name')}
                     placeholder="Enter borrower's full name"
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                      'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
                       errors.full_name ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -431,13 +512,13 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Customer Type *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Customer Type *</label>
                   <div className="relative">
                     <select
                       value={form.customer_type ?? ''}
                       onChange={set('customer_type')}
                       className={cn(
-                        'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
+                        'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
                         errors.customer_type ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                       )}
                     >
@@ -452,13 +533,13 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Gender *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Gender *</label>
                   <div className="relative">
                     <select
                       value={form.gender ?? ''}
                       onChange={set('gender')}
                       className={cn(
-                        'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
+                        'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
                         errors.gender ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                       )}
                     >
@@ -473,14 +554,14 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Date of Birth *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Date of Birth *</label>
                   <input
                     type="date"
                     value={form.date_of_birth ?? ''}
                     max={new Date().toISOString().split('T')[0]}
                     onChange={set('date_of_birth')}
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                      'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
                       errors.date_of_birth ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -488,14 +569,14 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Mobile Number *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Mobile Number *</label>
                   <input
                     value={form.mobile ?? ''}
                     onChange={set('mobile')}
                     placeholder="10-digit mobile number"
                     maxLength={10}
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                      'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
                       errors.mobile ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -503,14 +584,14 @@ export function CreateCustomerModal({
                 </div>
 
                 <div className="col-span-2">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Email Address</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Email Address</label>
                   <input
                     type="email"
                     value={form.email ?? ''}
                     onChange={set('email')}
                     placeholder="e.g., mail@example.com (Optional)"
                     className={cn(
-                      'w-full border border-slate-200 rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 hover:border-slate-300',
+                      'w-full border border-slate-200 rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 hover:border-slate-300',
                       errors.email && 'border-red-300'
                     )}
                   />
@@ -522,22 +603,17 @@ export function CreateCustomerModal({
 
           {/* STEP 2: CONTACT & ADDRESS */}
           {activeSection === 2 && (
-            <div className="space-y-5">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">Residential Address</h3>
-                <p className="text-xs text-slate-400">Primary residential address details and house ownership type.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Current Address *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Current Address *</label>
                   <textarea
                     value={form.current_address ?? ''}
                     onChange={set('current_address')}
                     placeholder="House/Door No, Street Name, Landmark, Area"
                     rows={3}
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 resize-none',
+                      'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 resize-none',
                       errors.current_address ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -545,13 +621,13 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">City *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">City *</label>
                   <input
                     value={form.city ?? ''}
                     onChange={set('city')}
                     placeholder="City / Town"
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                      'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
                       errors.city ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -559,13 +635,13 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">District *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">District *</label>
                   <input
                     value={form.district ?? ''}
                     onChange={set('district')}
                     placeholder="District name"
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                      'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
                       errors.district ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -573,13 +649,13 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">State *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">State *</label>
                   <div className="relative">
                     <select
                       value={form.state ?? ''}
                       onChange={set('state')}
                       className={cn(
-                        'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
+                        'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
                         errors.state ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                       )}
                     >
@@ -592,14 +668,14 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">PIN Code *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">PIN Code *</label>
                   <input
                     value={form.pin_code ?? ''}
                     onChange={set('pin_code')}
                     placeholder="6-digit postal PIN"
                     maxLength={6}
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                      'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
                       errors.pin_code ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -607,13 +683,13 @@ export function CreateCustomerModal({
                 </div>
 
                 <div className="col-span-2">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Address Type *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Address Type *</label>
                   <div className="relative">
                     <select
                       value={form.address_type ?? ''}
                       onChange={set('address_type')}
                       className={cn(
-                        'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
+                        'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
                         errors.address_type ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                       )}
                     >
@@ -633,22 +709,17 @@ export function CreateCustomerModal({
 
           {/* STEP 3: KYC VERIFICATION */}
           {activeSection === 3 && (
-            <div className="space-y-5">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">KYC & Verification</h3>
-                <p className="text-xs text-slate-400">Verify Government ID coordinates (Aadhaar & PAN).</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">PAN Card *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">PAN Card *</label>
                   <input
                     value={form.pan ?? ''}
                     onChange={e => { set('pan')({ ...e, target: { ...e.target, value: e.target.value.toUpperCase() } } as any) }}
                     placeholder="e.g. ABCDE1234F"
                     maxLength={10}
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm uppercase tracking-widest transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                      'w-full border rounded-lg px-3 py-2 text-xs uppercase tracking-widest transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
                       errors.pan ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -656,14 +727,14 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Aadhaar / KYC ID *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Aadhaar / KYC ID *</label>
                   <input
                     value={form.aadhaar_kyc_id ?? ''}
                     onChange={set('aadhaar_kyc_id')}
                     placeholder="12-digit Aadhaar number"
                     maxLength={12}
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                      'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
                       errors.aadhaar_kyc_id ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -671,13 +742,13 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">KYC Status *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">KYC Status *</label>
                   <div className="relative">
                     <select
                       value={form.kyc_status ?? ''}
                       onChange={set('kyc_status')}
                       className={cn(
-                        'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
+                        'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
                         errors.kyc_status ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                       )}
                     >
@@ -692,13 +763,13 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Verification Date</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Verification Date</label>
                   <input
                     type="date"
                     value={form.verification_date ?? ''}
                     onChange={set('verification_date')}
                     className={cn(
-                      'w-full border border-slate-200 rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 hover:border-slate-300',
+                      'w-full border border-slate-200 rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 hover:border-slate-300',
                       errors.verification_date && 'border-red-300'
                     )}
                   />
@@ -710,21 +781,16 @@ export function CreateCustomerModal({
 
           {/* STEP 4: FINANCIAL PROFILE */}
           {activeSection === 4 && (
-            <div className="space-y-5">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">Financial Profile</h3>
-                <p className="text-xs text-slate-400">Add client occupational background & primary income values.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Occupation / Business *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Occupation / Business *</label>
                   <input
                     value={form.occupation_business ?? ''}
                     onChange={set('occupation_business')}
                     placeholder="e.g. Proprietor, Senior Consultant, Business Owner"
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                      'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
                       errors.occupation_business ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -732,7 +798,7 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Monthly Income (₹) *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Monthly Income (₹) *</label>
                   <input
                     type="number"
                     min="0"
@@ -740,7 +806,7 @@ export function CreateCustomerModal({
                     onChange={set('income')}
                     placeholder="Estimated monthly earnings"
                     className={cn(
-                      'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                      'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
                       errors.income ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
@@ -748,13 +814,13 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Income Source *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Income Source *</label>
                   <div className="relative">
                     <select
                       value={form.income_source ?? ''}
                       onChange={set('income_source')}
                       className={cn(
-                        'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
+                        'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
                         errors.income_source ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                       )}
                     >
@@ -772,7 +838,7 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">CIBIL Bureau Score</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">CIBIL Bureau Score</label>
                   <input
                     type="number"
                     min="300"
@@ -781,7 +847,7 @@ export function CreateCustomerModal({
                     onChange={set('cibil_score')}
                     placeholder="300 to 900 (Optional)"
                     className={cn(
-                      'w-full border border-slate-200 rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 hover:border-slate-300',
+                      'w-full border border-slate-200 rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 hover:border-slate-300',
                       errors.cibil_score && 'border-red-300'
                     )}
                   />
@@ -789,12 +855,12 @@ export function CreateCustomerModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Bureau Score Date</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Bureau Score Date</label>
                   <input
                     type="date"
                     value={form.cibil_score_date ?? ''}
                     onChange={set('cibil_score_date')}
-                    className="w-full border border-slate-200 bg-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all"
+                    className="w-full border border-slate-200 bg-white rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all"
                   />
                 </div>
               </div>
@@ -803,44 +869,99 @@ export function CreateCustomerModal({
 
           {/* STEP 5: CLASSIFICATION */}
           {activeSection === 5 && (
-            <div className="space-y-5">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">Classification & Branch</h3>
-                <p className="text-xs text-slate-400">Associate the client profile to target business units.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Customer Segment *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Customer Segment *</label>
                   <div className="relative">
                     <select
                       value={form.customer_segment ?? ''}
                       onChange={set('customer_segment')}
                       className={cn(
-                        'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
+                        'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
                         errors.customer_segment ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                       )}
                     >
                       <option value="">Select segment</option>
-                      <option value="Retail">Retail Banking</option>
-                      <option value="SME">SME Sector</option>
-                      <option value="Corporate">Corporate Lending</option>
-                      <option value="Priority">Priority Sector</option>
-                      <option value="Gold">Gold Club Member</option>
+                      {allSegments.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
                     </select>
                     <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                   </div>
                   <FieldError msg={errors.customer_segment} />
+                  {!isAddingSegment ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingSegment(true)}
+                      className="text-[10px] font-bold text-brand-600 hover:text-brand-700 mt-1"
+                    >
+                      + Add new segment
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <input
+                        type="text"
+                        value={newSegmentName}
+                        onChange={e => setNewSegmentName(e.target.value)}
+                        placeholder="New segment name"
+                        className="flex-1 border rounded-lg px-2.5 py-1.5 text-[10px] focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            if (!newSegmentName.trim()) return
+                            addSegmentOption.mutate(newSegmentName.trim(), {
+                              onSuccess: () => {
+                                setForm(prev => ({ ...prev, customer_segment: newSegmentName.trim() }))
+                                setNewSegmentName('')
+                                setIsAddingSegment(false)
+                                toast.success('Segment added')
+                              },
+                              onError: (err: any) => toast.error(err.message || 'Failed to add segment'),
+                            })
+                          } else if (e.key === 'Escape') {
+                            setIsAddingSegment(false)
+                            setNewSegmentName('')
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newSegmentName.trim()) return
+                          addSegmentOption.mutate(newSegmentName.trim(), {
+                            onSuccess: () => {
+                              setForm(prev => ({ ...prev, customer_segment: newSegmentName.trim() }))
+                              setNewSegmentName('')
+                              setIsAddingSegment(false)
+                              toast.success('Segment added')
+                            },
+                            onError: (err: any) => toast.error(err.message || 'Failed to add segment'),
+                          })
+                        }}
+                        className="px-2.5 py-1.5 text-[10px] font-bold bg-brand-600 text-white rounded-lg hover:bg-brand-700"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setIsAddingSegment(false); setNewSegmentName('') }}
+                        className="px-2.5 py-1.5 text-[10px] font-bold border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Customer Category *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Customer Category *</label>
                   <div className="relative">
                     <select
                       value={form.customer_category ?? ''}
                       onChange={set('customer_category')}
                       className={cn(
-                        'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
+                        'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
                         errors.customer_category ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                       )}
                     >
@@ -855,27 +976,39 @@ export function CreateCustomerModal({
                   <FieldError msg={errors.customer_category} />
                 </div>
 
+                {/* Operating Branch — disabled for branch users, free dropdown for admin */}
                 <div className="col-span-2">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Operating Branch *</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Operating Branch *
+                  </label>
                   <div className="relative">
                     <select
                       value={form.branch ?? ''}
                       onChange={set('branch')}
+                      disabled={isBranchUser}
                       className={cn(
-                        'w-full border rounded-xl px-4 py-3 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
-                        errors.branch ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
+                        'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none font-medium text-slate-700',
+                        isBranchUser
+                          ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 opacity-80'
+                          : 'bg-white hover:border-slate-300',
+                        errors.branch ? 'border-red-300 bg-red-50/20' : 'border-slate-200'
                       )}
                     >
                       <option value="">Select operating branch</option>
-                      <option value="Head Office">Head Office (Chennai)</option>
-                      <option value="Chennai">Chennai City Branch</option>
-                      <option value="Coimbatore">Coimbatore Central</option>
-                      <option value="Madurai">Madurai Regional Unit</option>
-                      <option value="Salem">Salem Local Branch</option>
-                      <option value="Trichy">Trichy Hub</option>
+                      {BRANCH_OPTIONS.map(b => (
+                        <option key={b.value} value={b.value}>{b.label}</option>
+                      ))}
                     </select>
-                    <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                    <ChevronDown className={cn(
+                      'absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none',
+                      isBranchUser ? 'text-slate-300' : 'text-slate-400'
+                    )} />
                   </div>
+                  {isBranchUser && (
+                    <p className="text-[10px] text-amber-600 font-medium mt-1 flex items-center gap-1">
+                      <Lock className="h-3 w-3" /> Auto-set to your branch. Cannot be changed.
+                    </p>
+                  )}
                   <FieldError msg={errors.branch} />
                 </div>
               </div>
@@ -884,13 +1017,13 @@ export function CreateCustomerModal({
         </div>
 
         {/* ── Action Buttons Footer ── */}
-        <div className="flex justify-between items-center px-8 py-5 border-t border-slate-100 bg-slate-50/60 rounded-br-2xl flex-shrink-0">
+        <div className="flex justify-between items-center px-4 py-3 border-t border-slate-100 bg-slate-50/60 rounded-br-2xl flex-shrink-0">
           <div>
             {activeSection > 1 && (
               <button
                 type="button"
                 onClick={() => setActiveSection(prev => Math.max(1, prev - 1))}
-                className="px-4 py-2.5 text-sm font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 rounded-xl transition-all"
+                className="px-3 py-2 text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 rounded-lg transition-all"
               >
                 Previous Step
               </button>
@@ -901,7 +1034,7 @@ export function CreateCustomerModal({
             <button
               onClick={onClose}
               disabled={!!loading}
-              className="px-4 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-50"
+              className="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -909,7 +1042,7 @@ export function CreateCustomerModal({
             <button
               onClick={handleSaveDraft}
               disabled={!!loading}
-              className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 rounded-xl transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 rounded-lg transition-colors disabled:opacity-50"
             >
               {loading === 'draft' ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4 text-slate-400" />}
               {isDraft ? 'Update Draft' : 'Save Draft'}
@@ -919,7 +1052,7 @@ export function CreateCustomerModal({
               <button
                 type="button"
                 onClick={handleNextStep}
-                className="px-5 py-2.5 text-sm font-bold bg-brand-600 text-white hover:bg-brand-700 rounded-xl transition-colors shadow-sm"
+                className="px-3.5 py-2 text-xs font-bold bg-brand-600 text-white hover:bg-brand-700 rounded-lg transition-colors shadow-sm"
               >
                 Next Step
               </button>
@@ -927,7 +1060,7 @@ export function CreateCustomerModal({
               <button
                 onClick={handleCreateCustomer}
                 disabled={!!loading}
-                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-brand-600 text-white hover:bg-brand-700 rounded-xl transition-colors shadow-sm disabled:opacity-50"
+                className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold bg-brand-600 text-white hover:bg-brand-700 rounded-lg transition-colors shadow-sm disabled:opacity-50"
               >
                 {loading === 'create' ? <RefreshCw className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
                 {isDraft ? 'Finalize & Create' : 'Create Customer'}
@@ -949,6 +1082,7 @@ export default function CustomersPage() {
   const [globalFilter, setGlobalFilter] = useLocalStorage<string>('customers_search', '')
   const [showModal, setShowModal] = useState(false)
   const [editCustomer, setEditCustomer] = useState<Customer | undefined>()
+  const [customerFormCompletion, setCustomerFormCompletion] = useState(0)
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('customers_status_filter', 'all')
 
   const prefillLeadId = searchParams.get('leadId')
@@ -1139,7 +1273,7 @@ export default function CustomersPage() {
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
           />
-          <div className="flex gap-1.5 ml-auto bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+          <div className="flex gap-1.5 ml-auto bg-slate-100 p-1 rounded-lg border border-slate-200/50">
             {[
               { id: 'all', label: 'All' },
               { id: 'active', label: 'Active' },
@@ -1226,7 +1360,7 @@ export default function CustomersPage() {
       {/* Add/Edit Modal */}
       <Modal
         isOpen={showModal}
-        onClose={() => { setShowModal(false); setEditCustomer(undefined) }}
+        onClose={() => { setShowModal(false); setEditCustomer(undefined); setCustomerFormCompletion(0) }}
         title={
           editCustomer
             ? editCustomer.status === 'draft'
@@ -1234,11 +1368,25 @@ export default function CustomersPage() {
               : `Edit Customer — ${editCustomer.name}`
             : 'Create Customer'
         }
-        size="full"
+        size="xl"
+        headerContent={
+          <div className="flex items-center gap-2 min-w-[130px]">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
+              <div
+                className="h-full rounded-full bg-brand-600 transition-all"
+                style={{ width: `${customerFormCompletion}%` }}
+              />
+            </div>
+            <span className="text-[11px] font-semibold text-slate-500 min-w-[34px] text-right">
+              {customerFormCompletion}%
+            </span>
+          </div>
+        }
       >
         <CreateCustomerModal
           customer={editCustomer}
-          onClose={() => { setShowModal(false); setEditCustomer(undefined) }}
+          onClose={() => { setShowModal(false); setEditCustomer(undefined); setCustomerFormCompletion(0) }}
+          onCompletionChange={setCustomerFormCompletion}
         />
       </Modal>
     </div>

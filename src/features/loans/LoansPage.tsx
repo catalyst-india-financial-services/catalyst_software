@@ -5,8 +5,8 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, createColumnHelper, type SortingState
 } from '@tanstack/react-table'
-import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react'
-import { useLoans, useCustomers, useCreateLoan, useDeleteLoan, useUpdateLoan } from '@/hooks/useDb'
+import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2, ChevronDown } from 'lucide-react'
+import { useLoans, useCustomers, useCreateLoan, useDeleteLoan, useUpdateLoan, useLoanPurposeOptions, useAddLoanPurposeOption } from '@/hooks/useDb'
 import { useAuthStore } from '@/store/authStore'
 import type { Loan } from '@/types'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
@@ -32,16 +32,49 @@ const loanTypes = [
 
 import { CreateCustomerModal } from '../customers/CustomersPage'
 
-function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
+const LOAN_SECTION_REQUIRED_FIELDS = {
+  1: ['customer_id', 'loan_product', 'loan_category', 'loan_purpose', 'branch', 'account_opening_date'],
+  2: ['sanctioned_amount', 'loan_amount', 'interest_rate', 'interest_type', 'duration_months', 'loan_date'],
+  3: ['repayment_frequency', 'repayment_method', 'repayment_start_date', 'first_demand_date', 'emi_due_day'],
+  4: ['guarantor_customer_id', 'guarantor_relationship', 'guarantor_type'],
+  5: ['security_type', 'security_owner_id', 'security_ownership_type', 'security_market_value', 'security_valuation_date', 'security_doc_status'],
+  6: [],
+} as const
+
+const LOAN_SECTION_TICK_FIELDS = {
+  1: ['customer_id', 'loan_purpose', 'account_opening_date'],
+  2: ['sanctioned_amount', 'loan_amount', 'interest_rate', 'duration_months'],
+  3: ['repayment_start_date', 'first_demand_date', 'emi_due_day'],
+  4: ['guarantor_customer_id', 'guarantor_relationship'],
+  5: ['security_type', 'security_owner_id', 'security_market_value'],
+  6: [],
+} as const
+
+function isLoanFieldFilled(value: unknown) {
+  if (typeof value === 'string') return value.trim().length > 0
+  return value !== null && value !== undefined
+}
+
+function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose: () => void; onCompletionChange?: (completion: number) => void }) {
   const { data: customers = [] } = useCustomers()
+  const activeCustomers = customers.filter(c => c.status === 'active')
   const createLoan = useCreateLoan()
   const updateLoan = useUpdateLoan()
-  const { user } = useAuthStore()
+  const { user, isBranchUser, userBranch } = useAuthStore()
 
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState<'draft' | 'create' | null>(null)
   const [showCustModal, setShowCustModal] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const steps = [
+    { id: 1, label: 'Customer Details', desc: 'Borrower & product selection' },
+    { id: 2, label: 'Loan Details', desc: 'Sanctioned amount & rates' },
+    { id: 3, label: 'Repayment Setup', desc: 'Frequency, start date & cycles' },
+    { id: 4, label: 'Guarantor Setup', desc: 'Add guarantor customer' },
+    { id: 5, label: 'Collateral Assets', desc: 'Pledge physical assets' },
+    { id: 6, label: 'Review & Verify', desc: 'Audit final amortization schedule' }
+  ]
+  const stepsForCompletion = steps.map((sec) => sec.id)
 
   // Form State
   const [formData, setFormData] = useState({
@@ -49,7 +82,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
     loan_product: loan?.loan_product ?? 'Personal Loan',
     loan_category: loan?.loan_category ?? 'Retail',
     loan_purpose: loan?.loan_purpose ?? '',
-    branch: loan?.branch ?? 'Head Office',
+    branch: loan?.branch ?? (isBranchUser && userBranch ? userBranch : 'Head Office'),
     account_opening_date: loan?.account_opening_date ?? new Date().toISOString().split('T')[0],
 
     sanctioned_amount: loan?.sanctioned_amount?.toString() ?? '',
@@ -88,6 +121,18 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
     security_insurance_details: loan?.security_insurance_details ?? '',
   })
 
+  const getSectionRequiredFields = (sectionId: number) => {
+    if (sectionId === 4 && !formData.guarantor_required) return []
+    if (sectionId === 5 && !formData.security_required) return []
+    return [...LOAN_SECTION_REQUIRED_FIELDS[sectionId as keyof typeof LOAN_SECTION_REQUIRED_FIELDS]]
+  }
+
+  const getSectionTickFields = (sectionId: number) => {
+    if (sectionId === 4 && !formData.guarantor_required) return []
+    if (sectionId === 5 && !formData.security_required) return []
+    return [...LOAN_SECTION_TICK_FIELDS[sectionId as keyof typeof LOAN_SECTION_TICK_FIELDS]]
+  }
+
   // Auto-enable conditional sections based on product selection
   useEffect(() => {
     const isGuarantorProduct = ['Personal Loan', 'Business Loan', 'Vehicle Loan'].includes(formData.loan_product)
@@ -103,6 +148,11 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
   const selectedCustomer = useMemo(() => customers.find(c => c.id === formData.customer_id), [customers, formData.customer_id])
   const selectedGuarantor = useMemo(() => customers.find(c => c.id === formData.guarantor_customer_id), [customers, formData.guarantor_customer_id])
   const selectedSecurityOwner = useMemo(() => customers.find(c => c.id === formData.security_owner_id), [customers, formData.security_owner_id])
+
+  const { data: loanPurposeOptions = [] } = useLoanPurposeOptions()
+  const addLoanPurposeOption = useAddLoanPurposeOption()
+  const [isAddingPurpose, setIsAddingPurpose] = useState(false)
+  const [newPurposeName, setNewPurposeName] = useState('')
 
   // Calculations
   const calculatedInstallments = useMemo(() => {
@@ -143,6 +193,38 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
     if (!principal || !value) return 0
     return Math.round((principal / value) * 100 * 100) / 100
   }, [formData.loan_amount, formData.security_market_value])
+
+  const sectionCompletion = useMemo(() => {
+    return Object.fromEntries(
+      stepsForCompletion.map((sectionId) => {
+        const fields = getSectionRequiredFields(sectionId)
+        const filledCount = fields.filter((field) => isLoanFieldFilled((formData as Record<string, unknown>)[field])).length
+        const completion = fields.length === 0 ? 100 : Math.round((filledCount / fields.length) * 100)
+        return [sectionId, completion]
+      })
+    ) as Record<number, number>
+  }, [formData.guarantor_required, formData.security_required, formData])
+
+  const sectionTickCompletion = useMemo(() => {
+    return Object.fromEntries(
+      stepsForCompletion.map((sectionId) => {
+        const fields = getSectionTickFields(sectionId)
+        const filledCount = fields.filter((field) => isLoanFieldFilled((formData as Record<string, unknown>)[field])).length
+        const completion = fields.length === 0 ? 100 : Math.round((filledCount / fields.length) * 100)
+        return [sectionId, completion]
+      })
+    ) as Record<number, number>
+  }, [formData.guarantor_required, formData.security_required, formData])
+
+  const overallCompletion = useMemo(() => {
+    const allRequiredFields = stepsForCompletion.flatMap((sectionId) => getSectionRequiredFields(sectionId))
+    const filledCount = allRequiredFields.filter((field) => isLoanFieldFilled((formData as Record<string, unknown>)[field])).length
+    return allRequiredFields.length === 0 ? 0 : Math.round((filledCount / allRequiredFields.length) * 100)
+  }, [formData.guarantor_required, formData.security_required, formData])
+
+  useEffect(() => {
+    onCompletionChange?.(overallCompletion)
+  }, [onCompletionChange, overallCompletion])
 
   // Validators
   const validateStep = (currentStep: number): boolean => {
@@ -215,10 +297,12 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
   }
 
   // Final Action: Save Draft or Create Account
+  // Draft: saves with status='draft', account is NOT active — just parked
+  // Create Account: saves with status='pending' (awaiting admin activation/KYC)
+  // Verified: status shown in table when all mandatory fields are complete AND status is pending
   const handleSave = async (isFinalCreate: boolean) => {
-    // Validate current step or whole form
     if (isFinalCreate) {
-      // Validate steps 1 to 5
+      // Must pass all section validations before creating
       let isValid = true
       for (let s = 1; s <= 5; s++) {
         if (!validateStep(s)) isValid = false
@@ -228,32 +312,34 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
         return
       }
     } else {
-      // Minimal validation for draft: must have name and amount
+      // Minimal validation for draft: must have a customer selected
       if (!formData.customer_id) {
         setErrors({ customer_id: 'Customer is required to save a draft' })
-        return
-      }
-      if (!formData.loan_amount || parseFloat(formData.loan_amount) <= 0) {
-        setErrors({ loan_amount: 'Principal amount is required to save a draft' })
+        toast.error('Please select a customer before saving as draft.')
         return
       }
     }
 
     setLoading(isFinalCreate ? 'create' : 'draft')
     try {
+      // Determine status:
+      //   draft  → user clicked "Save Draft" (incomplete, not yet an account)
+      //   pending → user clicked "Create Account" (submitted for activation, KYC pending)
+      const computedStatus: 'draft' | 'pending' = isFinalCreate ? 'pending' : 'draft'
+
       const payload = {
         customer_id: formData.customer_id,
         loan_type: formData.loan_category.toLowerCase() as Loan['loan_type'],
-        loan_amount: parseFloat(formData.loan_amount),
+        loan_amount: parseFloat(formData.loan_amount) || 0,
         interest_rate: parseFloat(formData.interest_rate),
         interest_type: formData.interest_type as 'flat' | 'reducing',
         duration_months: parseInt(formData.duration_months),
         processing_fee: parseFloat(formData.processing_fee) || 0,
         loan_date: formData.loan_date,
-        status: isFinalCreate ? ('pending' as const) : ('draft' as const),
+        status: computedStatus,
 
         // Wizard details
-        sanctioned_amount: parseFloat(formData.sanctioned_amount) || parseFloat(formData.loan_amount),
+        sanctioned_amount: parseFloat(formData.sanctioned_amount) || parseFloat(formData.loan_amount) || 0,
         loan_product: formData.loan_product,
         loan_category: formData.loan_category,
         loan_purpose: formData.loan_purpose,
@@ -263,7 +349,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
         repayment_method: formData.repayment_method,
         repayment_start_date: formData.repayment_start_date,
         first_demand_date: formData.first_demand_date,
-        emi_due_day: parseInt(formData.emi_due_day, 10),
+        emi_due_day: parseInt(formData.emi_due_day, 10) || 5,
         grace_period: parseInt(formData.grace_period, 10) || 0,
         penal_interest_rate: parseFloat(formData.penal_interest_rate) || 0,
         late_payment_charges: parseFloat(formData.late_payment_charges) || 0,
@@ -296,7 +382,11 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
         toast.success('Account successfully updated!')
       } else {
         await createLoan.mutateAsync(payload)
-        toast.success(isFinalCreate ? 'Loan account created and pending activation!' : 'Loan account draft saved successfully!')
+        if (isFinalCreate) {
+          toast.success('Account submitted! Status: Pending — KYC verification in progress.')
+        } else {
+          toast.success('Draft saved. The account will show as Draft until you complete and submit it.')
+        }
       }
       onClose()
     } catch (err: any) {
@@ -307,21 +397,11 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
     }
   }
 
-  // Multi-step headers
-  const steps = [
-    { id: 1, label: 'Customer Details', desc: 'Borrower & product selection' },
-    { id: 2, label: 'Loan Details', desc: 'Sanctioned amount & rates' },
-    { id: 3, label: 'Repayment Setup', desc: 'Frequency, start date & cycles' },
-    { id: 4, label: 'Guarantor Setup', desc: 'Add guarantor customer' },
-    { id: 5, label: 'Collateral Assets', desc: 'Pledge physical assets' },
-    { id: 6, label: 'Review & Verify', desc: 'Audit final amortization schedule' }
-  ]
-
   return (
-    <div className="flex flex-col md:flex-row h-full min-h-[550px]">
+    <div className="flex flex-col md:flex-row h-full min-h-0 overflow-hidden">
       {/* ── Left Sidebar: Step Indicators ── */}
-      <div className="w-full md:w-80 bg-slate-50/80 border-r border-slate-200/60 p-6 flex flex-col justify-between flex-shrink-0">
-        <div className="space-y-6">
+      <div className="w-full md:w-56 bg-slate-50/80 border-r border-slate-200/60 p-3 flex flex-col justify-between flex-shrink-0">
+        <div className="space-y-3">
           <div className="pb-4 border-b border-slate-200/50">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Account Wizard</h4>
             <p className="text-[11px] text-slate-500 mt-1">Configure loan parameters, repayment frequency & collateral checks.</p>
@@ -331,28 +411,29 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
             {steps.map((sec) => {
               const isActive = step === sec.id
               const isDone = step > sec.id
+              const isSectionComplete = (sectionTickCompletion[sec.id] ?? 0) === 100
               return (
                 <button
                   key={sec.id}
                   type="button"
                   onClick={() => setStep(sec.id)}
                   className={cn(
-                    'w-full flex items-start gap-3 p-3.5 rounded-2xl text-left transition-all border outline-none',
+                    'w-full flex items-start gap-2 p-2.5 rounded-2xl text-left transition-all border outline-none',
                     isActive
                       ? 'bg-white border-slate-200/80 shadow-md shadow-slate-100/50 text-slate-800'
                       : 'bg-transparent border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100/40'
                   )}
                 >
                   <span className={cn(
-                    'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all mt-0.5',
+                    'w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all mt-0.5',
                     isActive && 'bg-brand-600 text-white shadow-xs',
-                    isDone && 'bg-emerald-100 text-emerald-700 border-none',
+                    isDone && (isSectionComplete ? 'bg-emerald-100 text-emerald-700 border-none' : 'bg-red-100 text-red-700 border-none'),
                     !isActive && !isDone && 'bg-slate-200/60 text-slate-500'
                   )}>
                     {isDone ? <CheckCircle2 className="h-4.5 w-4.5" /> : sec.id}
                   </span>
                   <div>
-                    <p className={cn('text-xs font-bold', isActive ? 'text-slate-800' : 'text-slate-600')}>{sec.label}</p>
+                    <p className={cn('text-[10px] font-bold', isActive ? 'text-slate-800' : 'text-slate-600')}>{sec.label}</p>
                     <p className="text-[10px] text-slate-400 font-medium mt-0.5">{sec.desc}</p>
                   </div>
                 </button>
@@ -361,54 +442,28 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
           </nav>
         </div>
 
-        {/* Informative stats panel at the bottom of the sidebar */}
-        <div className="p-4 bg-brand-50/50 rounded-2xl border border-brand-100 text-xs">
-          <p className="font-bold text-brand-800 mb-1 flex items-center gap-1.5">
-            <Calculator className="h-4 w-4" />
-            Amortization Preview
-          </p>
-          <div className="space-y-1 mt-2 text-slate-600 font-semibold">
-            <div className="flex justify-between">
-              <span>EMI Amount:</span>
-              <span className="text-slate-900">{formatCurrency(calculatedEmi)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Installments:</span>
-              <span className="text-slate-900">{calculatedInstallments}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Total Interest:</span>
-              <span className="text-slate-900">{formatCurrency(calculatedTotalInterest)}</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* ── Right Content: Form Fields ── */}
-      <div className="flex-1 flex flex-col justify-between bg-white">
-        <div className="p-8 overflow-y-auto max-h-[64vh]">
+      <div className="flex-1 flex flex-col justify-between bg-white min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 p-3 overflow-y-auto">
 
           {/* ── STEP 1: CUSTOMER & ACCOUNT INFORMATION ── */}
           {step === 1 && (
-            <div className="space-y-5">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">Customer Details</h3>
-                <p className="text-xs text-slate-400">Onboard the borrower and select branch segment classifications.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
-                <div className="col-span-2">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <Select
                     label="Customer ID *"
                     value={formData.customer_id}
                     onChange={e => setFormData({ ...formData, customer_id: e.target.value })}
-                    options={customers.map(c => ({ value: c.id, label: `${c.customer_id} — ${c.name}` }))}
+                     options={activeCustomers.map(c => ({ value: c.id, label: `${c.customer_id} — ${c.name}` }))}
                     placeholder="Select borrower customer"
                   />
                   <FieldError msg={errors.customer_id} />
                 </div>
                 
-                <div className="col-span-2">
+                <div>
                   <Input
                     label="Customer Name"
                     value={selectedCustomer?.name ?? 'No customer selected'}
@@ -445,26 +500,106 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
                 />
 
                 <div className="col-span-2">
-                  <Input
-                    label="Loan Purpose *"
-                    value={formData.loan_purpose}
-                    onChange={e => setFormData({ ...formData, loan_purpose: e.target.value })}
-                    placeholder="e.g. Purchase of equipment, home construction"
-                  />
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Loan Purpose *</label>
+                  <div className="relative">
+                    <select
+                      value={formData.loan_purpose}
+                      onChange={e => setFormData({ ...formData, loan_purpose: e.target.value })}
+                      className={cn(
+                        'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
+                        errors.loan_purpose ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
+                      )}
+                    >
+                      <option value="">Select loan purpose</option>
+                      {loanPurposeOptions.map(opt => (
+                        <option key={opt.id} value={opt.name}>{opt.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  </div>
                   <FieldError msg={errors.loan_purpose} />
+                  {!isAddingPurpose ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingPurpose(true)}
+                      className="text-[10px] font-bold text-brand-600 hover:text-brand-700 mt-1"
+                    >
+                      + Add new loan purpose
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <input
+                        type="text"
+                        value={newPurposeName}
+                        onChange={e => setNewPurposeName(e.target.value)}
+                        placeholder="New loan purpose name"
+                        className="flex-1 border rounded-lg px-2.5 py-1.5 text-[10px] focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            if (!newPurposeName.trim()) return
+                            addLoanPurposeOption.mutate(newPurposeName.trim(), {
+                              onSuccess: () => {
+                                setFormData(prev => ({ ...prev, loan_purpose: newPurposeName.trim() }))
+                                setNewPurposeName('')
+                                setIsAddingPurpose(false)
+                                toast.success('Loan purpose added')
+                              },
+                              onError: (err: any) => toast.error(err.message || 'Failed to add loan purpose'),
+                            })
+                          } else if (e.key === 'Escape') {
+                            setIsAddingPurpose(false)
+                            setNewPurposeName('')
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newPurposeName.trim()) return
+                          addLoanPurposeOption.mutate(newPurposeName.trim(), {
+                            onSuccess: () => {
+                              setFormData(prev => ({ ...prev, loan_purpose: newPurposeName.trim() }))
+                              setNewPurposeName('')
+                              setIsAddingPurpose(false)
+                              toast.success('Loan purpose added')
+                            },
+                            onError: (err: any) => toast.error(err.message || 'Failed to add loan purpose'),
+                          })
+                        }}
+                        className="px-2.5 py-1.5 text-[10px] font-bold bg-brand-600 text-white rounded-lg hover:bg-brand-700"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setIsAddingPurpose(false); setNewPurposeName('') }}
+                        className="px-2.5 py-1.5 text-[10px] font-bold border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                <Select
-                  label="Branch *"
-                  value={formData.branch}
-                  onChange={e => setFormData({ ...formData, branch: e.target.value })}
-                  options={[
-                    { value: 'Head Office', label: 'Head Office' },
-                    { value: 'Chennai', label: 'Chennai Branch' },
-                    { value: 'Coimbatore', label: 'Coimbatore Branch' },
-                    { value: 'Madurai', label: 'Madurai Branch' }
-                  ]}
-                />
+                <div>
+                  <Select
+                    label="Branch *"
+                    value={formData.branch}
+                    onChange={e => setFormData({ ...formData, branch: e.target.value })}
+                    disabled={isBranchUser}
+                    options={[
+                      { value: 'Head Office', label: 'Head Office' },
+                      { value: 'Aniyapuram', label: 'Aniyapuram Branch' },
+                      { value: 'Vallipuram', label: 'Vallipuram Branch' }
+                    ]}
+                  />
+                  {isBranchUser && (
+                    <p className="text-[10px] text-amber-600 font-medium mt-1 flex items-center gap-1">
+                      Auto-set to your branch. Cannot be changed.
+                    </p>
+                  )}
+                </div>
 
                 <Input
                   label="Account Opening Date *"
@@ -478,13 +613,8 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
 
           {/* ── STEP 2: LOAN DETAILS ── */}
           {step === 2 && (
-            <div className="space-y-5">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">Loan Details</h3>
-                <p className="text-xs text-slate-400">Configure sanctioned principal, processing fees and interest calculation model.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
                 <Input
                   label="Sanctioned Amount (₹) *"
                   type="number"
@@ -558,13 +688,8 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
 
           {/* ── STEP 3: REPAYMENT SETUP ── */}
           {step === 3 && (
-            <div className="space-y-5">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">Repayment Setup</h3>
-                <p className="text-xs text-slate-400">Establish the installment frequency and grace period bounds.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
                 <Select
                   label="Repayment Frequency *"
                   value={formData.repayment_frequency}
@@ -645,13 +770,8 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
 
           {/* ── STEP 4: GUARANTOR (CONDITIONAL) ── */}
           {step === 4 && (
-            <div className="space-y-5">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">Guarantor Details</h3>
-                <p className="text-xs text-slate-400">Configure financial or personal guarantors associated with this account.</p>
-              </div>
-
-              <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4">
+            <div className="space-y-3">
+              <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200 mb-3">
                 <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
                   <input
                     type="checkbox"
@@ -664,32 +784,32 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
               </div>
 
               {!formData.guarantor_required ? (
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-center">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-center">
                   <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-2" />
                   <p className="text-xs font-bold text-slate-700">Guarantor Not Required</p>
                   <p className="text-[11px] text-slate-400 mt-1">Guarantors are usually required for Personal, Business, and Vehicle loans. You selected: <strong className="text-slate-600">{formData.loan_product}</strong>.</p>
-                  <div className="mt-4">
+                  <div className="mt-3">
                     <Button variant="outline" size="sm" type="button" onClick={() => setFormData({ ...formData, guarantor_required: true })}>
                       Enable Guarantor Manually
                     </Button>
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200/60">
                     <span className="text-xs font-semibold text-slate-600">Borrower requires a registered guarantor.</span>
                     <Button variant="outline" size="sm" className="h-7 text-[10px]" type="button" onClick={() => setShowCustModal(true)}>
                       <Plus className="h-3 w-3" /> Register New Guarantor
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-5">
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="col-span-2">
                       <Select
                         label="Guarantor Customer ID *"
                         value={formData.guarantor_customer_id}
                         onChange={e => setFormData({ ...formData, guarantor_customer_id: e.target.value })}
-                        options={customers.filter(c => c.id !== formData.customer_id).map(c => ({ value: c.id, label: `${c.customer_id} — ${c.name}` }))}
+                        options={activeCustomers.filter(c => c.id !== formData.customer_id).map(c => ({ value: c.id, label: `${c.customer_id} — ${c.name}` }))}
                         placeholder="Select guarantor customer profile"
                       />
                       <FieldError msg={errors.guarantor_customer_id} />
@@ -742,13 +862,8 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
 
           {/* ── STEP 5: SECURITY / COLLATERAL (CONDITIONAL) ── */}
           {step === 5 && (
-            <div className="space-y-5">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">Security & Collateral</h3>
-                <p className="text-xs text-slate-400">Pledge properties, vehicles or physical gold assets as security.</p>
-              </div>
-
-              <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4">
+            <div className="space-y-3">
+              <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200 mb-3">
                 <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
                   <input
                     type="checkbox"
@@ -761,19 +876,19 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
               </div>
 
               {!formData.security_required ? (
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-center">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-center">
                   <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-2" />
                   <p className="text-xs font-bold text-slate-700">Security Collateral Not Required</p>
                   <p className="text-[11px] text-slate-400 mt-1">Collateral checks apply to Home, Vehicle, and Gold products. Product chosen: <strong className="text-slate-600">{formData.loan_product}</strong>.</p>
-                  <div className="mt-4">
+                  <div className="mt-3">
                     <Button variant="outline" size="sm" type="button" onClick={() => setFormData({ ...formData, security_required: true })}>
                       Enable Security Manually
                     </Button>
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-5">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <Select
                       label="Security / Collateral Type *"
                       value={formData.security_type}
@@ -792,7 +907,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
                       label="Asset Owner (Customer) *"
                       value={formData.security_owner_id}
                       onChange={e => setFormData({ ...formData, security_owner_id: e.target.value })}
-                      options={customers.map(c => ({ value: c.id, label: `${c.customer_id} — ${c.name}` }))}
+                      options={activeCustomers.map(c => ({ value: c.id, label: `${c.customer_id} — ${c.name}` }))}
                       placeholder="Select asset owner profile"
                     />
                     <FieldError msg={errors.security_owner_id} />
@@ -870,7 +985,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
                       ]}
                     />
 
-                    <div className="col-span-2 flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/60 mt-2">
+                    <div className="col-span-2 flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200/60 mt-2">
                       <input
                         type="checkbox"
                         id="insurance_req"
@@ -901,16 +1016,11 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
 
           {/* ── STEP 6: REVIEW & VERIFY ── */}
           {step === 6 && (
-            <div className="space-y-6">
-              <div className="pb-3 border-b border-slate-100 mb-2">
-                <h3 className="text-sm font-extrabold text-slate-800">Final Review & Verification</h3>
-                <p className="text-xs text-slate-400">Verify all loan account configurations, collateral levels, and schedules.</p>
-              </div>
-
+            <div className="space-y-3">
               {/* Grid sections for review */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 {/* Borrower parameters */}
-                <div className="bg-slate-50/80 border border-slate-200/60 p-4.5 rounded-2xl space-y-2">
+                <div className="bg-slate-50/80 border border-slate-200/60 p-3.5 rounded-2xl space-y-2">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Borrower details</h4>
                   <div className="text-xs font-semibold space-y-1 mt-2">
                     <p><strong>Name:</strong> {selectedCustomer?.name || '—'}</p>
@@ -921,7 +1031,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
                 </div>
 
                 {/* Financial calculations */}
-                <div className="bg-slate-50/80 border border-slate-200/60 p-4.5 rounded-2xl space-y-2">
+                <div className="bg-slate-50/80 border border-slate-200/60 p-3.5 rounded-2xl space-y-2">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Loan & Repayment Parameters</h4>
                   <div className="text-xs font-semibold space-y-1 mt-2">
                     <p><strong>Sanctioned principal:</strong> {formatCurrency(parseFloat(formData.sanctioned_amount) || 0)}</p>
@@ -932,9 +1042,9 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
                 </div>
 
                 {/* Amortization parameters */}
-                <div className="col-span-2 bg-emerald-50/40 border border-emerald-100 p-4.5 rounded-2xl">
+                <div className="col-span-2 bg-emerald-50/40 border border-emerald-100 p-3.5 rounded-2xl">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-800">Repayment & Amortization Estimates</h4>
-                  <div className="grid grid-cols-3 gap-4 text-xs font-bold text-emerald-900 mt-3">
+                  <div className="grid grid-cols-3 gap-3 text-xs font-bold text-emerald-900 mt-3">
                     <div>
                       <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Estimated EMI Amount</p>
                       <p className="text-base font-extrabold amount-display mt-0.5">{formatCurrency(calculatedEmi)}</p>
@@ -951,7 +1061,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
                 </div>
 
                 {/* Guarantor Details */}
-                <div className="bg-slate-50/80 border border-slate-200/60 p-4.5 rounded-2xl">
+                <div className="bg-slate-50/80 border border-slate-200/60 p-3.5 rounded-2xl">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Guarantor references</h4>
                   <div className="text-xs font-semibold space-y-1 mt-2">
                     {formData.guarantor_required && selectedGuarantor ? (
@@ -966,7 +1076,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
                 </div>
 
                 {/* Collateral details */}
-                <div className="bg-slate-50/80 border border-slate-200/60 p-4.5 rounded-2xl">
+                <div className="bg-slate-50/80 border border-slate-200/60 p-3.5 rounded-2xl">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Collateral details</h4>
                   <div className="text-xs font-semibold space-y-1 mt-2">
                     {formData.security_required && formData.security_type ? (
@@ -981,17 +1091,53 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
                 </div>
               </div>
 
-              {/* Audit Logs */}
-              <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl grid grid-cols-2 gap-4 text-xs font-semibold text-slate-500">
-                <p><strong>Created By:</strong> {user?.full_name || 'Admin'}</p>
-                <p><strong>Status Preview:</strong> Pending Activation</p>
+              {/* Audit Logs & Status Preview */}
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl space-y-3">
+                <div className="grid grid-cols-2 gap-3 text-xs font-semibold text-slate-500">
+                  <p><strong>Created By:</strong> {user?.full_name || 'Admin'}</p>
+                  <div className="flex items-center gap-2">
+                    <strong className="text-slate-500">Account Status:</strong>
+                    {overallCompletion === 100 ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-amber-50 border-amber-100 text-amber-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                        Pending (KYC Required)
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-slate-100 border-slate-200 text-slate-500">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse flex-shrink-0" />
+                        Draft ({overallCompletion}% complete)
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs font-semibold text-slate-500">
+                  <div className="flex items-center gap-2">
+                    <strong className="text-slate-500">KYC Status:</strong>
+                    {overallCompletion === 100 ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-blue-50 border-blue-100 text-blue-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
+                        KYC Pending
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-slate-100 border-slate-200 text-slate-500">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse flex-shrink-0" />
+                        Incomplete — Fill all fields
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 italic">
+                    {overallCompletion < 100
+                      ? `Complete remaining ${100 - overallCompletion}% of fields to enable account creation.`
+                      : 'All fields complete. Click "Create Account" to submit for activation.'}
+                  </p>
+                </div>
               </div>
             </div>
           )}
         </div>
 
         {/* ── Wizard Controls footer ── */}
-        <div className="flex justify-between items-center px-8 py-5 border-t border-slate-100 bg-slate-50/60 rounded-br-2xl flex-shrink-0">
+        <div className="flex justify-between items-center px-4 py-3 border-t border-slate-100 bg-slate-50/60 rounded-br-2xl flex-shrink-0">
           <div>
             {step > 1 && (
               <Button variant="outline" type="button" onClick={handlePrev}>
@@ -1000,7 +1146,7 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Button variant="outline" onClick={onClose} disabled={!!loading}>Cancel</Button>
 
             {/* Save Draft Action always visible to park state */}
@@ -1021,6 +1167,8 @@ function LoanForm({ loan, onClose }: { loan?: Loan; onClose: () => void }) {
               <Button
                 onClick={() => handleSave(true)}
                 loading={loading === 'create'}
+                disabled={overallCompletion < 100}
+                title={overallCompletion < 100 ? `Fill all mandatory fields first (${overallCompletion}% complete)` : 'Create account and submit for KYC verification'}
               >
                 Create Account
               </Button>
@@ -1063,6 +1211,7 @@ export default function LoansPage() {
   const [globalFilter, setGlobalFilter] = useLocalStorage<string>('loans_search', '')
   const [showModal, setShowModal] = useState(false)
   const [editLoan, setEditLoan] = useState<Loan | undefined>()
+  const [loanFormCompletion, setLoanFormCompletion] = useState(0)
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('loans_status_filter', 'all')
 
   const { data: loans = [], isLoading } = useLoans()
@@ -1149,6 +1298,42 @@ export default function LoansPage() {
       header: 'Date',
       cell: (info) => <span className="text-xs text-slate-400 font-medium">{formatDate(info.getValue())}</span>,
     }),
+    columnHelper.accessor('status', {
+      header: 'Status',
+      cell: (info) => {
+        const status = info.getValue()
+        return <StatusBadge status={status} />
+      },
+    }),
+    columnHelper.display({
+      id: 'kyc_status',
+      header: 'KYC',
+      cell: (info) => {
+        const loan = info.row.original
+        // KYC is considered verified if the loan has all key fields and is at least pending
+        const hasAllCoreFields =
+          !!loan.customer_id &&
+          !!loan.loan_amount &&
+          !!loan.interest_rate &&
+          !!loan.duration_months &&
+          !!loan.loan_date
+        const isSubmitted = loan.status !== 'draft'
+        const kycStatus = isSubmitted && hasAllCoreFields ? 'verified' : 'pending'
+        const kycLabel = isSubmitted && hasAllCoreFields ? 'Verified' : 'Pending'
+        return (
+          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+            kycStatus === 'verified'
+              ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
+              : 'bg-amber-50 border-amber-100 text-amber-700'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+              kycStatus === 'verified' ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'
+            }`} />
+            {kycLabel}
+          </span>
+        )
+      },
+    }),
     columnHelper.display({
       id: 'actions',
       header: 'Actions',
@@ -1204,11 +1389,11 @@ export default function LoansPage() {
       />
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: 'Total Loan Portfolio', value: loans.length, icon: <WalletCards className="h-5 w-5" />, bg: 'kpi-blue', iconBg: 'bg-brand-600' },
           { label: 'Active Disbursals', value: loans.filter((l) => l.status === 'active').length, icon: <TrendingUp className="h-5 w-5" />, bg: 'kpi-green', iconBg: 'bg-emerald-600' },
-          { label: 'Closed Accounts', value: loans.filter((l) => l.status === 'closed').length, icon: <CheckCircle2 className="h-5 w-5" />, bg: 'kpi-purple', iconBg: 'bg-violet-600' },
+          { label: 'Pending / Draft', value: loans.filter((l) => l.status === 'pending' || l.status === 'draft').length, icon: <FileText className="h-5 w-5" />, bg: 'kpi-purple', iconBg: 'bg-amber-500' },
           { label: 'Overdue Loans', value: loans.filter((l) => l.status === 'overdue').length, icon: <AlertTriangle className="h-5 w-5" />, bg: 'kpi-red', iconBg: 'bg-red-600' },
         ].map((s) => (
           <StatsCard key={s.label} title={s.label} value={s.value.toString()} icon={s.icon} bgClass={s.bg} iconBg={s.iconBg} />
@@ -1223,17 +1408,24 @@ export default function LoansPage() {
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
           />
-          <div className="flex gap-1.5 ml-auto bg-slate-100 p-1 rounded-xl border border-slate-200/50">
-            {['all', 'active', 'overdue', 'closed', 'pending'].map((s) => (
+          <div className="flex gap-1.5 ml-auto bg-slate-100 p-1 rounded-lg border border-slate-200/50">
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'active', label: 'Active' },
+              { key: 'pending', label: 'Pending' },
+              { key: 'draft', label: 'Draft' },
+              { key: 'overdue', label: 'Overdue' },
+              { key: 'closed', label: 'Closed' },
+            ].map((s) => (
               <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
+                key={s.key}
+                onClick={() => setStatusFilter(s.key)}
                 className={cn(
                   'px-3 py-1.5 text-xs font-bold rounded-lg capitalize transition-all',
-                  statusFilter === s ? 'bg-brand-600 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                  statusFilter === s.key ? 'bg-brand-600 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
                 )}
               >
-                {s}
+                {s.label}
               </button>
             ))}
           </div>
@@ -1289,11 +1481,25 @@ export default function LoansPage() {
 
       <Modal
         isOpen={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={() => { setShowModal(false); setLoanFormCompletion(0) }}
         title={editLoan ? 'Edit Loan Account' : 'Create Account'}
-        size="full"
+        size="xl"
+        noScroll
+        headerContent={
+          <div className="flex items-center gap-2 min-w-[130px]">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
+              <div
+                className="h-full rounded-full bg-brand-600 transition-all"
+                style={{ width: `${loanFormCompletion}%` }}
+              />
+            </div>
+            <span className="text-[11px] font-semibold text-slate-500 min-w-[34px] text-right">
+              {loanFormCompletion}%
+            </span>
+          </div>
+        }
       >
-        <LoanForm loan={editLoan} onClose={() => setShowModal(false)} />
+        <LoanForm loan={editLoan} onClose={() => { setShowModal(false); setLoanFormCompletion(0) }} onCompletionChange={setLoanFormCompletion} />
       </Modal>
     </div>
   )

@@ -447,6 +447,8 @@ export default function LoanDetailPage() {
               <div>Borrower: <span className="text-slate-800 font-bold hover:underline cursor-pointer" onClick={() => navigate(`/customers/${customer.id}`)}>{customer.name}</span></div>
               <div>Customer ID: <span className="font-mono text-slate-800 font-bold">{customer.customer_id}</span></div>
               <div>Product: <span className="text-slate-800 font-bold capitalize">{loan.loan_type} Loan</span></div>
+              <div>Category: <span className="text-slate-800 font-bold">{loan.loan_category || '-'}</span></div>
+              <div>Purpose: <span className="text-slate-800 font-bold">{loan.loan_purpose || '-'}</span></div>
               <div>Branch: <span className="text-slate-800 font-bold">{customer.branch || 'Namakkal Branch'}</span></div>
               <div className="col-span-2 sm:col-span-4">Opening Date: <span className="text-slate-800 font-bold">{formatDate(loan.loan_date)}</span></div>
             </div>

@@ -5,17 +5,32 @@ import { calculateEMI, generateEMISchedule } from '@/utils'
 import dayjs from 'dayjs'
 import { customerProfileService } from '@/services/customerProfileService'
 import type { CustomerSegmentOption } from '@/services/customerProfileService'
+import { useAuthStore } from '@/store/authStore'
+
+// ─── Branch Filter Helper ─────────────────────────────────────────────────────
+// Returns the branch name if the current user is a branch-level user, else null (admin sees all)
+function useBranchFilter(): string | null {
+  const user = useAuthStore((s) => s.user)
+  if (!user) return null
+  if (user.role === 'branch' && user.branch) return user.branch
+  return null
+}
 
 // ─── Customer Hooks ───────────────────────────────────────────────────────────
 
 export function useCustomers() {
+  const branchFilter = useBranchFilter()
   return useQuery({
-    queryKey: ['customers'],
+    queryKey: ['customers', branchFilter],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('customers')
         .select('*')
         .order('created_at', { ascending: false })
+      if (branchFilter) {
+        query = query.eq('branch', branchFilter)
+      }
+      const { data, error } = await query
       if (error) throw error
       return data as Customer[]
     },
@@ -88,13 +103,18 @@ export function useUpdateCustomer() {
 // ─── Loan Hooks ───────────────────────────────────────────────────────────────
 
 export function useLoans() {
+  const branchFilter = useBranchFilter()
   return useQuery({
-    queryKey: ['loans'],
+    queryKey: ['loans', branchFilter],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('loans')
         .select('*, customer:customers!loans_customer_id_fkey(name)')
         .order('created_at', { ascending: false })
+      if (branchFilter) {
+        query = query.eq('branch', branchFilter)
+      }
+      const { data, error } = await query
       if (error) throw error
       return data.map((l: any) => ({
         ...l,
@@ -1523,6 +1543,26 @@ export function useAddCustomerSegmentOption() {
     mutationFn: (name: string) => customerProfileService.addSegmentOption(name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customerSegmentOptions'] })
+    },
+  })
+}
+
+// ─── Loan Purpose Options Hooks ────────────────────────────────────────────────
+
+export function useLoanPurposeOptions() {
+  return useQuery({
+    queryKey: ['loanPurposeOptions'],
+    queryFn: () => customerProfileService.getLoanPurposeOptions(),
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
+export function useAddLoanPurposeOption() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => customerProfileService.addLoanPurposeOption(name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['loanPurposeOptions'] })
     },
   })
 }

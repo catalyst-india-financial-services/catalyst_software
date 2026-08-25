@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import type { LoanPurposeOption } from '@/types/loan'
 
 // --- Extended Customer Interface ---
 export interface ExtendedCustomer {
@@ -425,5 +426,28 @@ export const customerProfileService = {
 
     if (error) throw error
     return data as CustomerSegmentOption
+  },
+
+  // 13. Loan Purpose Options
+  async getLoanPurposeOptions(): Promise<LoanPurposeOption[]> {
+    const { data, error } = await supabase
+      .from('loan_purpose_options')
+      .select('*')
+      .eq('is_active', true)
+      .order('name', { ascending: true })
+
+    if (error) throw error
+    return (data ?? []) as LoanPurposeOption[]
+  },
+
+  async addLoanPurposeOption(name: string): Promise<LoanPurposeOption> {
+    const { data, error } = await supabase
+      .from('loan_purpose_options')
+      .insert([{ name: name.trim(), is_active: true }])
+      .select()
+      .single()
+
+    if (error) throw error
+    return data as LoanPurposeOption
   },
 }

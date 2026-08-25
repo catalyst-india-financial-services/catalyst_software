@@ -1,11 +1,12 @@
 // User and Auth types
-export type UserRole = 'admin' | 'manager' | 'staff'
+export type UserRole = 'admin' | 'manager' | 'staff' | 'branch'
 
 export interface User {
   id: string
   email: string
   full_name: string
   role: UserRole | 'employee'
+  branch?: string | null   // branch name for branch-level logins (e.g. 'Aniyapuram', 'Vallipuram')
   avatar_url?: string
   mobile?: string
   employee_id?: string

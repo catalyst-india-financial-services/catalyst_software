@@ -9,6 +9,9 @@ interface AuthState {
   activeSessionId: string | null
   isLoading: boolean
   isAuthenticated: boolean
+  // Computed helpers
+  isBranchUser: boolean
+  userBranch: string | null
   setUser: (user: User | null) => void
   setSession: (session: unknown) => void
   setActiveSessionId: (id: string | null) => void
@@ -24,7 +27,14 @@ export const useAuthStore = create<AuthState>()(
       activeSessionId: null,
       isLoading: false,
       isAuthenticated: false,
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
+      isBranchUser: false,
+      userBranch: null,
+      setUser: (user) => set({
+        user,
+        isAuthenticated: !!user,
+        isBranchUser: user?.role === 'branch',
+        userBranch: user?.branch ?? null,
+      }),
       setSession: (session) => set({ session }),
       setActiveSessionId: (id) => set({ activeSessionId: id }),
       setLoading: (isLoading) => set({ isLoading }),

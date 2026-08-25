@@ -81,6 +81,14 @@ export interface EMISchedule {
   created_at: string
 }
 
+export interface LoanPurposeOption {
+  id: string
+  name: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface LoanDocument {
   id: string
   loan_id: string
