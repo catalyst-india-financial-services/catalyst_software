@@ -50,6 +50,15 @@ export default function LoanDetailPage() {
   const saveDocument = useSaveCustomerDocument()
   const deleteDocument = useDeleteCustomerDocument()
 
+  // --- Branch ownership guard ---
+  const { isBranchUser, userBranch } = useAuthStore()
+  useEffect(() => {
+    if (isBranchUser && userBranch && loan && loan.branch !== userBranch) {
+      toast.error(`Access denied: This account belongs to ${loan.branch || 'another'} branch.`)
+      navigate('/loans', { replace: true })
+    }
+  }, [isBranchUser, userBranch, loan, navigate])
+
   // --- UI States ---
   const [activeTab, setActiveTab] = useState<'overview' | 'loan-details' | 'demand-flow' | 'collections' | 'transactions' | 'security' | 'documents'>('overview')
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})

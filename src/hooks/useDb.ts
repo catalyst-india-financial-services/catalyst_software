@@ -38,8 +38,9 @@ export function useCustomers() {
 }
 
 export function useCustomer(id?: string) {
+  const branchFilter = useBranchFilter()
   return useQuery({
-    queryKey: ['customers', id],
+    queryKey: ['customers', id, branchFilter],
     queryFn: async () => {
       if (!id) return null
       const { data, error } = await supabase
@@ -48,6 +49,8 @@ export function useCustomer(id?: string) {
         .eq('id', id)
         .maybeSingle()
       if (error) throw error
+      // Branch ownership guard: branch user cannot view other branch's customer
+      if (branchFilter && data && data.branch !== branchFilter) return null
       return data as Customer | null
     },
     enabled: !!id,
@@ -125,8 +128,9 @@ export function useLoans() {
 }
 
 export function useLoan(id?: string) {
+  const branchFilter = useBranchFilter()
   return useQuery({
-    queryKey: ['loans', id],
+    queryKey: ['loans', id, branchFilter],
     queryFn: async () => {
       if (!id) return null
       const { data, error } = await supabase
@@ -136,6 +140,8 @@ export function useLoan(id?: string) {
         .maybeSingle()
       if (error) throw error
       if (!data) return null
+      // Branch ownership guard: branch user cannot view other branch's loan
+      if (branchFilter && data.branch !== branchFilter) return null
       return {
         ...data,
         customer_name: (data as any).customer?.name || 'Unknown',
@@ -412,20 +418,27 @@ export function useDeleteLoan() {
 
 
 export function usePayments(loanId?: string) {
+  const branchFilter = useBranchFilter()
   return useQuery({
-    queryKey: ['payments', loanId],
+    queryKey: ['payments', loanId, branchFilter],
     queryFn: async () => {
-      let query = supabase.from('emi_payments').select('*, customers(name), loans(loan_number)')
+      let query = supabase.from('emi_payments').select('*, customers(name, branch), loans(loan_number, branch)')
       if (loanId) {
         query = query.eq('loan_id', loanId)
       }
       const { data, error } = await query.order('created_at', { ascending: false })
       if (error) throw error
-      return data.map((p: any) => ({
+      let results = data.map((p: any) => ({
         ...p,
         customer_name: p.customers?.name || 'Unknown',
         loan_number: p.loans?.loan_number || 'Unknown',
-      })) as (EMIPayment & { customer_name: string; loan_number: string })[]
+        _loan_branch: p.loans?.branch || null,
+      })) as (EMIPayment & { customer_name: string; loan_number: string; _loan_branch?: string | null })[]
+      // Client-side branch filter: only show payments for loans belonging to this branch
+      if (branchFilter) {
+        results = results.filter(p => p._loan_branch === branchFilter)
+      }
+      return results
     },
   })
 }
@@ -560,6 +573,8 @@ export function useCreatePayment() {
 // ─── Expense Hooks ────────────────────────────────────────────────────────────
 
 export function useExpenses() {
+  // Expenses are company-wide (no branch column), so all users see all expenses.
+  // Branch users get read-only view of expenses.
   return useQuery({
     queryKey: ['expenses'],
     queryFn: async () => {
@@ -595,19 +610,27 @@ export function useCreateExpense() {
 // ─── Income Hooks ─────────────────────────────────────────────────────────────
 
 export function useIncome() {
+  const branchFilter = useBranchFilter()
   return useQuery({
-    queryKey: ['income'],
+    queryKey: ['income', branchFilter],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('income')
-        .select('*, customers(name), loans(loan_number)')
+        .select('*, customers(name, branch), loans(loan_number, branch)')
         .order('date', { ascending: false })
       if (error) throw error
-      return data.map((i: any) => ({
+      let results = data.map((i: any) => ({
         ...i,
         customer_name: i.customers?.name || 'System',
         loan_number: i.loans?.loan_number || 'N/A',
-      })) as (Income & { customer_name: string; loan_number: string })[]
+        _loan_branch: i.loans?.branch || null,
+        _customer_branch: i.customers?.branch || null,
+      })) as (Income & { customer_name: string; loan_number: string; _loan_branch?: string | null; _customer_branch?: string | null })[]
+      // Client-side branch filter: filter by loan or customer branch
+      if (branchFilter) {
+        results = results.filter(i => i._loan_branch === branchFilter || i._customer_branch === branchFilter)
+      }
+      return results
     },
   })
 }
@@ -634,19 +657,21 @@ export function useCreateIncome() {
 // ─── Dashboard Data ───────────────────────────────────────────────────────────
 
 export function useDashboardData() {
+  const branchFilter = useBranchFilter()
   return useQuery({
-    queryKey: ['dashboardData'],
+    queryKey: ['dashboardData', branchFilter],
     queryFn: async () => {
-      // 1. Total Customers Count (HEAD request)
-      const { count: total_customers } = await supabase
-        .from('customers')
-        .select('*', { count: 'exact', head: true })
+      // 1. Total Customers Count
+      let custCountQuery = supabase.from('customers').select('*', { count: 'exact', head: true })
+      if (branchFilter) custCountQuery = custCountQuery.eq('branch', branchFilter)
+      const { count: total_customers } = await custCountQuery
 
       // 2. Loans Status & Type (only select required columns)
-      const { data: loansSummary = [] } = await supabase
-        .from('loans')
-        .select('loan_type, status')
+      let loansQuery = supabase.from('loans').select('loan_type, status, id')
+      if (branchFilter) loansQuery = loansQuery.eq('branch', branchFilter)
+      const { data: loansSummary = [] } = await loansQuery
       const safeLoansSummary = loansSummary || []
+      const branchLoanIds = new Set(safeLoansSummary.map(l => l.id))
 
       const active_loans = safeLoansSummary.filter((l) => l.status === 'active').length
       const closed_loans = safeLoansSummary.filter((l) => l.status === 'closed').length
@@ -658,18 +683,25 @@ export function useDashboardData() {
         { data: todaysPayments = [] },
         { data: allPaymentsInterest = [] }
       ] = await Promise.all([
-        supabase.from('emi_payments').select('amount_paid').eq('payment_date', todayStr),
-        supabase.from('emi_payments').select('interest_paid')
+        supabase.from('emi_payments').select('amount_paid, loan_id').eq('payment_date', todayStr),
+        supabase.from('emi_payments').select('interest_paid, loan_id')
       ])
 
-      const todays_collection = (todaysPayments || []).reduce((sum, p) => sum + Number(p.amount_paid), 0)
-      const interest_earned = (allPaymentsInterest || []).reduce((sum, p) => sum + Number(p.interest_paid), 0)
+      // Client-side branch filter for payments (no branch column on emi_payments)
+      const filterByBranch = <T extends { loan_id?: string }>(arr: T[]): T[] =>
+        branchFilter ? arr.filter(p => branchLoanIds.has(p.loan_id)) : arr
 
-      // 4. Pending EMI count (HEAD request)
-      const { count: pending_emi } = await supabase
+      const todays_collection = filterByBranch(todaysPayments || []).reduce((sum, p) => sum + Number(p.amount_paid), 0)
+      const interest_earned = filterByBranch(allPaymentsInterest || []).reduce((sum, p) => sum + Number(p.interest_paid), 0)
+
+      // 4. Pending EMI count — fetch with loan_id for client-side filtering
+      const { data: pendingEMIs = [] } = await supabase
         .from('emi_schedule')
-        .select('*', { count: 'exact', head: true })
+        .select('id, loan_id')
         .eq('status', 'pending')
+      const pending_emi = branchFilter
+        ? (pendingEMIs || []).filter(s => branchLoanIds.has(s.loan_id)).length
+        : (pendingEMIs || []).length
 
       // 5. Monthly Income & Expense (filter by current month)
       const startOfMonthStr = dayjs().startOf('month').format('YYYY-MM-DD')
@@ -677,25 +709,22 @@ export function useDashboardData() {
         { data: thisMonthIncome = [] },
         { data: thisMonthExpense = [] }
       ] = await Promise.all([
-        supabase.from('income').select('amount').gte('date', startOfMonthStr),
+        supabase.from('income').select('amount, loan_id').gte('date', startOfMonthStr),
         supabase.from('expenses').select('amount').gte('date', startOfMonthStr)
       ])
 
-      const monthly_income = (thisMonthIncome || []).reduce((sum, i) => sum + Number(i.amount), 0)
+      const monthly_income = filterByBranch(thisMonthIncome || []).reduce((sum, i) => sum + Number(i.amount), 0)
+      // Expenses are company-wide — show all for admin, all for branch too (no branch column)
       const monthly_expense = (thisMonthExpense || []).reduce((sum, e) => sum + Number(e.amount), 0)
       const net_profit = monthly_income - monthly_expense
 
-      // 6. Collection Rate (HEAD requests)
-      const [
-        { count: totalEMIsCount },
-        { count: paidEMIsCount }
-      ] = await Promise.all([
-        supabase.from('emi_schedule').select('*', { count: 'exact', head: true }),
-        supabase.from('emi_schedule').select('*', { count: 'exact', head: true }).eq('status', 'paid')
-      ])
-
-      const totalEMIs = totalEMIsCount || 0
-      const paidEMIs = paidEMIsCount || 0
+      // 6. Collection Rate
+      const { data: allEMIs = [] } = await supabase.from('emi_schedule').select('id, status, loan_id')
+      const branchEMIs = branchFilter
+        ? (allEMIs || []).filter(s => branchLoanIds.has(s.loan_id))
+        : (allEMIs || [])
+      const totalEMIs = branchEMIs.length
+      const paidEMIs = branchEMIs.filter(s => s.status === 'paid').length
       const collection_rate = totalEMIs > 0 ? Math.round((paidEMIs / totalEMIs) * 1000) / 10 : 100
 
       // 7. Period Payments, Income, & Expenses for Charts (filter by last 7 months)
@@ -705,13 +734,13 @@ export function useDashboardData() {
         { data: periodIncome = [] },
         { data: periodExpenses = [] },
       ] = await Promise.all([
-        supabase.from('emi_payments').select('amount_paid, payment_date').gte('payment_date', startOfPeriodStr),
-        supabase.from('income').select('amount, date').gte('date', startOfPeriodStr),
+        supabase.from('emi_payments').select('amount_paid, payment_date, loan_id').gte('payment_date', startOfPeriodStr),
+        supabase.from('income').select('amount, date, loan_id').gte('date', startOfPeriodStr),
         supabase.from('expenses').select('amount, date').gte('date', startOfPeriodStr),
       ])
 
-      const safePeriodPayments = periodPayments || []
-      const safePeriodIncome = periodIncome || []
+      const safePeriodPayments = filterByBranch(periodPayments || [])
+      const safePeriodIncome = filterByBranch(periodIncome || [])
       const safePeriodExpenses = periodExpenses || []
 
       const months = Array.from({ length: 7 }, (_, i) =>
@@ -749,12 +778,12 @@ export function useDashboardData() {
       // 9. Upcoming Due with selective query & database joins
       const { data: upcomingDueData = [] } = await supabase
         .from('emi_schedule')
-        .select('id, emi_amount, due_date, status, loans(loan_number, customers(name))')
+        .select('id, emi_amount, due_date, status, loan_id, loans(loan_number, branch, customers(name))')
         .or('status.eq.pending,status.eq.overdue')
         .order('due_date', { ascending: true })
-        .limit(5)
+        .limit(branchFilter ? 20 : 5)
 
-      const upcomingDue = (upcomingDueData || []).map((s: any) => {
+      let upcomingDue = (upcomingDueData || []).map((s: any) => {
         const days_overdue = dayjs().diff(dayjs(s.due_date), 'day')
         return {
           id: s.id,
@@ -763,17 +792,21 @@ export function useDashboardData() {
           amount: Number(s.emi_amount),
           due_date: s.due_date,
           days_overdue: days_overdue > 0 ? days_overdue : 0,
+          _loan_branch: s.loans?.branch || null,
         }
       })
+      if (branchFilter) {
+        upcomingDue = upcomingDue.filter(d => d._loan_branch === branchFilter).slice(0, 5)
+      }
 
       // 10. Recent Activity Log with selective query & database joins
       const { data: recentPayments = [] } = await supabase
         .from('emi_payments')
-        .select('id, amount_paid, collected_by, created_at, payment_date, customers(name), loans(loan_number)')
+        .select('id, amount_paid, collected_by, created_at, payment_date, loan_id, customers(name), loans(loan_number, branch)')
         .order('created_at', { ascending: false })
-        .limit(5)
+        .limit(branchFilter ? 20 : 5)
 
-      const activityLog = (recentPayments || []).map((p: any) => ({
+      let activityLog = (recentPayments || []).map((p: any) => ({
         id: `p-${p.id}`,
         action: 'EMI Collected',
         module: 'EMI',
@@ -782,9 +815,14 @@ export function useDashboardData() {
           } (${p.loans?.loan_number})`,
         time: p.created_at || p.payment_date,
         type: 'success',
+        _loan_branch: p.loans?.branch || null,
       }))
 
+      if (branchFilter) {
+        activityLog = activityLog.filter(a => a._loan_branch === branchFilter)
+      }
       activityLog.sort((a, b) => dayjs(b.time).unix() - dayjs(a.time).unix())
+      activityLog = activityLog.slice(0, 5)
 
       return {
         stats: {
@@ -792,7 +830,7 @@ export function useDashboardData() {
           active_loans,
           closed_loans,
           todays_collection,
-          pending_emi: pending_emi || 0,
+          pending_emi,
           overdue_loans,
           interest_earned,
           monthly_income,
@@ -813,27 +851,42 @@ export function useDashboardData() {
 // ─── Notifications Hook ──────────────────────────────────────────────────────
 
 export function useNotificationsData() {
+  const branchFilter = useBranchFilter()
   return useQuery({
-    queryKey: ['notificationsData'],
+    queryKey: ['notificationsData', branchFilter],
     queryFn: async () => {
+      // Build branch-filtered queries for loans and customers
+      let loansQuery = supabase.from('loans').select('*')
+      let customersQuery = supabase.from('customers').select('*')
+      if (branchFilter) {
+        loansQuery = loansQuery.eq('branch', branchFilter)
+        customersQuery = customersQuery.eq('branch', branchFilter)
+      }
+
       const [
         { data: schedule },
         { data: loans },
         { data: customers },
       ] = await Promise.all([
         supabase.from('emi_schedule').select('*').eq('status', 'pending'),
-        supabase.from('loans').select('*'),
-        supabase.from('customers').select('*'),
+        loansQuery,
+        customersQuery,
       ])
 
       const safeSchedule = schedule || []
       const safeLoans = loans || []
       const safeCustomers = customers || []
 
+      // Build a set of branch loan IDs for client-side filtering of schedule items
+      const branchLoanIds = new Set(safeLoans.map(l => l.id))
+
       const today = dayjs()
       const notifications: any[] = []
 
       safeSchedule.forEach((s) => {
+        // Client-side filter: skip EMIs for loans outside this branch
+        if (branchFilter && !branchLoanIds.has(s.loan_id)) return
+
         const loan = safeLoans.find((l) => l.id === s.loan_id)
         const customer = safeCustomers.find((c) => c.id === loan?.customer_id)
         if (!loan || !customer) return
@@ -987,6 +1040,8 @@ export function useSignIn() {
 }
 
 export function useLeads() {
+  // Leads (applications) table has no branch column, so leads are visible to all users.
+  // Branch filtering for leads is not applied since leads are company-wide enquiries.
   return useQuery({
     queryKey: ['leads'],
     queryFn: async () => {
@@ -1549,10 +1604,55 @@ export function useAddCustomerSegmentOption() {
 
 // ─── Loan Purpose Options Hooks ────────────────────────────────────────────────
 
+const DEFAULT_LOAN_PURPOSES = [
+  { id: 'default-1', name: 'Working Capital', is_active: true },
+  { id: 'default-2', name: 'Equipment Purchase', is_active: true },
+  { id: 'default-3', name: 'Business Expansion', is_active: true },
+  { id: 'default-4', name: 'Home Construction', is_active: true },
+  { id: 'default-5', name: 'Property Purchase', is_active: true },
+  { id: 'default-6', name: 'Vehicle Purchase', is_active: true },
+  { id: 'default-7', name: 'Education', is_active: true },
+  { id: 'default-8', name: 'Agriculture', is_active: true },
+  { id: 'default-9', name: 'Personal Use', is_active: true },
+  { id: 'default-10', name: 'Debt Consolidation', is_active: true }
+]
+
 export function useLoanPurposeOptions() {
   return useQuery({
     queryKey: ['loanPurposeOptions'],
-    queryFn: () => customerProfileService.getLoanPurposeOptions(),
+    queryFn: async () => {
+      let dbOptions: any[] = []
+      try {
+        dbOptions = await customerProfileService.getLoanPurposeOptions()
+      } catch (err) {
+        console.warn('Failed to fetch loan purposes from DB, using fallback defaults:', err)
+      }
+
+      // Load custom purposes from local storage
+      let localOptions: any[] = []
+      try {
+        const stored = localStorage.getItem('custom_loan_purposes')
+        if (stored) {
+          localOptions = JSON.parse(stored)
+        }
+      } catch (err) {
+        console.warn('Failed to parse custom loan purposes from local storage:', err)
+      }
+
+      // Merge defaults, DB options and local options
+      const allOptionsMap = new Map()
+
+      // 1. Add defaults
+      DEFAULT_LOAN_PURPOSES.forEach(opt => allOptionsMap.set(opt.name.toLowerCase(), opt))
+
+      // 2. Add local custom options
+      localOptions.forEach(opt => allOptionsMap.set(opt.name.toLowerCase(), opt))
+
+      // 3. Add DB options (overwrite if active status differs)
+      dbOptions.forEach(opt => allOptionsMap.set(opt.name.toLowerCase(), opt))
+
+      return Array.from(allOptionsMap.values()) as typeof DEFAULT_LOAN_PURPOSES
+    },
     staleTime: 1000 * 60 * 5,
   })
 }
@@ -1560,7 +1660,33 @@ export function useLoanPurposeOptions() {
 export function useAddLoanPurposeOption() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (name: string) => customerProfileService.addLoanPurposeOption(name),
+    mutationFn: async (name: string) => {
+      const trimmedName = name.trim()
+      const newOption = { id: `local-${Date.now()}`, name: trimmedName, is_active: true }
+
+      // Try saving to DB first
+      try {
+        return await customerProfileService.addLoanPurposeOption(trimmedName)
+      } catch (err) {
+        console.warn('Failed to save loan purpose to DB, saving locally in localStorage:', err)
+
+        // Save to localStorage
+        let localOptions: any[] = []
+        try {
+          const stored = localStorage.getItem('custom_loan_purposes')
+          if (stored) {
+            localOptions = JSON.parse(stored)
+          }
+        } catch (e) {}
+
+        if (!localOptions.some(opt => opt.name.toLowerCase() === trimmedName.toLowerCase())) {
+          localOptions.push(newOption)
+          localStorage.setItem('custom_loan_purposes', JSON.stringify(localOptions))
+        }
+
+        return newOption
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['loanPurposeOptions'] })
     },
@@ -1677,12 +1803,13 @@ export function useTransactions(filters?: {
   date_from?: string
   date_to?: string
 }) {
+  const branchFilter = useBranchFilter()
   return useQuery({
-    queryKey: ['transactions', filters],
+    queryKey: ['transactions', filters, branchFilter],
     queryFn: async () => {
       let query = supabase
         .from('transactions')
-        .select('*, bank_accounts(name), customers(name), loans(loan_number)')
+        .select('*, bank_accounts(name), customers(name, branch), loans(loan_number, branch)')
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
       if (filters?.txn_type) query = (query as any).eq('txn_type', filters.txn_type)
@@ -1691,12 +1818,19 @@ export function useTransactions(filters?: {
       if (filters?.date_to) query = (query as any).lte('date', filters.date_to)
       const { data, error } = await query
       if (error) throw error
-      return data.map((t: any) => ({
+      let results = data.map((t: any) => ({
         ...t,
         bank_account_name: t.bank_accounts?.name || '',
         customer_name: t.customers?.name || '',
         loan_number: t.loans?.loan_number || '',
-      })) as import('@/types').Transaction[]
+        _loan_branch: t.loans?.branch || null,
+        _customer_branch: t.customers?.branch || null,
+      })) as (import('@/types').Transaction & { _loan_branch?: string | null; _customer_branch?: string | null })[]
+      // Client-side branch filter: show transactions for this branch's loans/customers
+      if (branchFilter) {
+        results = results.filter(t => t._loan_branch === branchFilter || t._customer_branch === branchFilter)
+      }
+      return results
     },
   })
 }

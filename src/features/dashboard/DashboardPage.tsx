@@ -15,6 +15,7 @@ import { StatsCard, Card, CardHeader, CardTitle, CardBody, Avatar, StatusBadge, 
 import { formatCurrency, formatDate, cn } from '@/utils'
 import { supabase } from '@/services/supabase'
 import { useQuery } from '@tanstack/react-query'
+import { useAuthStore } from '@/store/authStore'
 import dayjs from 'dayjs'
 
 // Simple animation variants
@@ -47,12 +48,13 @@ const CustomChartTooltip = ({ active, payload, label }: any) => {
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const { isBranchUser, userBranch } = useAuthStore()
   const [activeChartTab, setActiveChartTab] = useState<'collection' | 'disbursement' | 'outstanding' | 'cashflow' | 'revenue' | 'customers' | 'distribution' | 'emi_success' | 'top_types'>('collection')
 
   // Fetch all required tables in parallel — each query is resilient and falls back
   // to an empty array on error so a single RLS/schema issue never crashes the entire dashboard.
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['extendedDashboardData'],
+    queryKey: ['extendedDashboardData', userBranch],
     queryFn: async () => {
       // Helper: run a Supabase query and return data or [] on any error (with console warning)
       const safe = async (label: string, query: PromiseLike<{ data: any | null; error: any }>): Promise<any[]> => {
@@ -65,20 +67,32 @@ export default function DashboardPage() {
       }
 
       // Critical queries — customers, loans, emi_schedule, emi_payments MUST succeed for core data
-      const customersRes = await supabase.from('customers').select('*')
+      let customersQuery = supabase.from('customers').select('*')
+      if (isBranchUser && userBranch) customersQuery = customersQuery.eq('branch', userBranch)
+      const customersRes = await customersQuery
       if (customersRes.error) {
         console.error('[Dashboard] CRITICAL: customers query failed', customersRes.error)
         throw new Error(`Failed to load customer data: ${customersRes.error.message}`)
       }
 
-      const loansRes = await supabase.from('loans').select('*, customer:customers!loans_customer_id_fkey(name)').order('created_at', { ascending: false })
+      let loansQuery = supabase.from('loans').select('*, customer:customers!loans_customer_id_fkey(name)').order('created_at', { ascending: false })
+      if (isBranchUser && userBranch) loansQuery = loansQuery.eq('branch', userBranch)
+      const loansRes = await loansQuery
       if (loansRes.error) {
         console.error('[Dashboard] CRITICAL: loans query failed', loansRes.error)
         throw new Error(`Failed to load loan data: ${loansRes.error.message}`)
       }
 
+      // Build a set of branch loan IDs for client-side filtering of related tables
+      const branchLoanIds = new Set((loansRes.data || []).map((l: any) => l.id))
+      const branchCustomerIds = new Set((customersRes.data || []).map((c: any) => c.id))
+
+      // Client-side filter helper for tables without a branch column
+      const filterByLoan = <T extends { loan_id?: string }>(arr: T[]): T[] =>
+        isBranchUser && userBranch ? arr.filter(p => branchLoanIds.has(p.loan_id)) : arr
+
       // Non-critical queries — gracefully fall back to [] if they fail
-      const [emiSchedule, payments, income, expenses, users, leads] = await Promise.all([
+      const [emiScheduleRaw, paymentsRaw, incomeRaw, expenses, users, leads] = await Promise.all([
         safe('emi_schedule', supabase.from('emi_schedule').select('*').order('due_date', { ascending: true })),
         safe('emi_payments', supabase.from('emi_payments').select('*, customers(name), loans(loan_number)').order('created_at', { ascending: false })),
         safe('income', supabase.from('income').select('*').order('date', { ascending: false })),
@@ -86,6 +100,11 @@ export default function DashboardPage() {
         safe('users', supabase.from('users').select('*').order('created_at', { ascending: false })),
         safe('applications', supabase.from('applications').select('*').order('created_at', { ascending: false })),
       ])
+
+      // Apply client-side branch filtering for tables without branch column
+      const emiSchedule = filterByLoan(emiScheduleRaw)
+      const payments = filterByLoan(paymentsRaw)
+      const income = filterByLoan(incomeRaw)
 
       const processedLoans = (loansRes.data || []).map((l: any) => ({
         ...l,
@@ -664,12 +683,17 @@ export default function DashboardPage() {
     <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
       {/* Page Header */}
       <PageHeader
-        title="Executive Financial Dashboard"
-        subtitle="Real-time loan portfolio metrics, banking positions, collections, and audit timeline."
+        title={isBranchUser ? `${userBranch} Branch Dashboard` : 'Executive Financial Dashboard'}
+        subtitle={isBranchUser ? `Real-time ${userBranch} branch metrics, collections, and audit timeline.` : 'Real-time loan portfolio metrics, banking positions, collections, and audit timeline.'}
         badge={
-          <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 rounded-full px-3 py-1">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-            Live Sync Verified
+          <div className={cn(
+            'hidden sm:flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1 border',
+            isBranchUser
+              ? 'text-violet-700 bg-violet-50 border-violet-200/80'
+              : 'text-emerald-700 bg-emerald-50 border-emerald-200/80'
+          )}>
+            <span className={cn('w-1.5 h-1.5 rounded-full animate-pulse', isBranchUser ? 'bg-violet-500' : 'bg-emerald-500')} />
+            {isBranchUser ? `${userBranch} Branch` : 'Live Sync Verified'}
           </div>
         }
       />

@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, Search, ChevronDown, Plus, Settings, LogOut } from 'lucide-react'
+import { Menu, Search, ChevronDown, Plus, Settings, LogOut, Building2 } from 'lucide-react'
 import { useUIStore } from '@/store/uiStore'
 import { useAuthStore } from '@/store/authStore'
 import { Avatar, CommandPalette } from '@/components/ui'
 
 export function Header() {
   const { setSidebarOpen } = useUIStore()
-  const { user, signOut } = useAuthStore()
+  const { user, signOut, isBranchUser, userBranch } = useAuthStore()
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const navigate = useNavigate()
@@ -48,6 +48,14 @@ export function Header() {
 
         {/* Right Nav Options */}
         <div className="flex items-center gap-2.5 ml-auto">
+          {/* Operating Branch Badge */}
+          {isBranchUser && userBranch && (
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border shadow-2xs bg-violet-50 text-violet-700 border-violet-200/60">
+              <Building2 className="h-3.5 w-3.5" />
+              {userBranch} Branch
+            </div>
+          )}
+
           {/* Quick Actions Dropdown */}
           <button
             onClick={() => navigate('/emi-collection')}

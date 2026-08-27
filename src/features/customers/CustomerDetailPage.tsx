@@ -163,7 +163,7 @@ export default function CustomerDetailPage() {
   const customerId = id || ''
 
   // --- Auth Store & User Role ---
-  const { user } = useAuthStore()
+  const { user, isBranchUser, userBranch } = useAuthStore()
   const userRole = user?.role || 'staff'
 
   // --- Inline Edit Mode States ---
@@ -199,6 +199,15 @@ export default function CustomerDetailPage() {
   const deleteNote = useDeleteCustomerNote()
   const saveActivity = useSaveCustomerActivity()
   const addSegmentOption = useAddCustomerSegmentOption()
+
+  // --- Branch ownership guard ---
+  // Redirect branch users if they try to access a customer from another branch via URL
+  useEffect(() => {
+    if (isBranchUser && userBranch && customer && customer.branch !== userBranch) {
+      toast.error(`Access denied: This customer belongs to ${customer.branch || 'another'} branch.`)
+      navigate('/customers', { replace: true })
+    }
+  }, [isBranchUser, userBranch, customer, navigate])
 
   // Track changes to prevent leaving with unsaved changes
   const hasChanges = useMemo(() => {
