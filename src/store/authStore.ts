@@ -12,6 +12,8 @@ interface AuthState {
   // Computed helpers
   isBranchUser: boolean
   userBranch: string | null
+  selectedBranch: string | null
+  setSelectedBranch: (branch: string | null) => void
   setUser: (user: User | null) => void
   setSession: (session: unknown) => void
   setActiveSessionId: (id: string | null) => void
@@ -29,6 +31,8 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isBranchUser: false,
       userBranch: null,
+      selectedBranch: null,
+      setSelectedBranch: (selectedBranch) => set({ selectedBranch }),
       setUser: (user) => set({
         user,
         isAuthenticated: !!user,
@@ -77,7 +81,7 @@ export const useAuthStore = create<AuthState>()(
         }
 
         // 4. Clear local state
-        set({ user: null, session: null, isAuthenticated: false, activeSessionId: null })
+        set({ user: null, session: null, isAuthenticated: false, activeSessionId: null, selectedBranch: null })
         window.location.href = '/login'
       },
     }),
@@ -87,6 +91,7 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         isAuthenticated: state.isAuthenticated,
         activeSessionId: state.activeSessionId,
+        selectedBranch: state.selectedBranch,
       }),
     }
   )

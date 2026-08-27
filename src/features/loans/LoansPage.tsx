@@ -1,11 +1,11 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, createColumnHelper, type SortingState
 } from '@tanstack/react-table'
-import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2, ChevronDown } from 'lucide-react'
+import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useLoans, useCustomers, useCreateLoan, useDeleteLoan, useUpdateLoan, useLoanPurposeOptions, useAddLoanPurposeOption } from '@/hooks/useDb'
 import { useAuthStore } from '@/store/authStore'
 import type { Loan } from '@/types'
@@ -1215,6 +1215,7 @@ export default function LoansPage() {
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('loans_status_filter', 'all')
 
   const { data: loans = [], isLoading } = useLoans()
+
   const deleteLoan = useDeleteLoan()
 
   const handleDeleteLoan = async (id: string, loanNumber: string) => {
@@ -1230,6 +1231,48 @@ export default function LoansPage() {
     loans.filter((l) => statusFilter === 'all' || l.status === statusFilter),
     [loans, statusFilter]
   )
+
+  // Horizontal scroll arrows state & handlers
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  const checkScroll = () => {
+    const el = tableContainerRef.current
+    if (el) {
+      setCanScrollLeft(el.scrollLeft > 10)
+      setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 10)
+    }
+  }
+
+  useEffect(() => {
+    const el = tableContainerRef.current
+    if (el) {
+      el.addEventListener('scroll', checkScroll)
+      checkScroll()
+      window.addEventListener('resize', checkScroll)
+
+      const observer = new ResizeObserver(() => checkScroll())
+      observer.observe(el)
+
+      return () => {
+        el.removeEventListener('scroll', checkScroll)
+        window.removeEventListener('resize', checkScroll)
+        observer.disconnect()
+      }
+    }
+  }, [isLoading, filteredData])
+
+  const scrollTable = (direction: 'left' | 'right') => {
+    const el = tableContainerRef.current
+    if (el) {
+      const scrollAmount = el.clientWidth * 0.4
+      el.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      })
+    }
+  }
 
   const columns = useMemo(() => [
     columnHelper.accessor('loan_number', {
@@ -1431,8 +1474,31 @@ export default function LoansPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="data-table">
+        <div className="relative group/table">
+          {/* Scroll Left Button */}
+          {canScrollLeft && (
+            <button
+              onClick={() => scrollTable('left')}
+              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
+              aria-label="Scroll table left"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+          )}
+
+          {/* Scroll Right Button */}
+          {canScrollRight && (
+            <button
+              onClick={() => scrollTable('right')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
+              aria-label="Scroll table right"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          )}
+
+          <div ref={tableContainerRef} className="overflow-x-auto">
+            <table className="data-table">
             <thead>
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
@@ -1470,6 +1536,7 @@ export default function LoansPage() {
             </tbody>
           </table>
         </div>
+      </div>
 
         <Pagination
           page={table.getState().pagination.pageIndex + 1}

@@ -8,12 +8,13 @@ import type { CustomerSegmentOption } from '@/services/customerProfileService'
 import { useAuthStore } from '@/store/authStore'
 
 // ─── Branch Filter Helper ─────────────────────────────────────────────────────
-// Returns the branch name if the current user is a branch-level user, else null (admin sees all)
+// Returns the branch name if the current user is a branch-level user, else null (admin sees all or selected branch)
 function useBranchFilter(): string | null {
   const user = useAuthStore((s) => s.user)
+  const selectedBranch = useAuthStore((s) => s.selectedBranch)
   if (!user) return null
   if (user.role === 'branch' && user.branch) return user.branch
-  return null
+  return selectedBranch
 }
 
 // ─── Customer Hooks ───────────────────────────────────────────────────────────

@@ -446,8 +446,9 @@ function LeadTableRow({
             {lead.message || <span className="text-slate-300">—</span>}
           </p>
         </td>
-        <td className="px-5 py-3.5 whitespace-nowrap text-xs text-slate-400 font-medium">
-          {formatDate(lead.created_at, 'DD MMM YYYY')}
+        <td className="px-5 py-3.5 whitespace-nowrap text-xs text-slate-700 font-semibold">
+          <div>{formatDate(lead.created_at, 'DD MMM YYYY')}</div>
+          <div className="text-[10px] text-slate-400 font-medium mt-0.5">{dayjs(lead.created_at).format('hh:mm A')}</div>
         </td>
         <td className="px-5 py-3.5 whitespace-nowrap">
           <LeadStatusBadge status={lead.status} conversionStatus={lead.customer_conversion_status} />

@@ -5,18 +5,22 @@ import { Menu, Search, ChevronDown, Plus, Settings, LogOut, Building2 } from 'lu
 import { useUIStore } from '@/store/uiStore'
 import { useAuthStore } from '@/store/authStore'
 import { Avatar, CommandPalette } from '@/components/ui'
+import { cn } from '@/utils'
 
 export function Header() {
   const { setSidebarOpen } = useUIStore()
-  const { user, signOut, isBranchUser, userBranch } = useAuthStore()
+  const { user, signOut, isBranchUser, userBranch, selectedBranch, setSelectedBranch } = useAuthStore()
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
+  const [showBranchMenu, setShowBranchMenu] = useState(false)
   const navigate = useNavigate()
   const userRef = useRef<HTMLDivElement>(null)
+  const branchMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (userRef.current && !userRef.current.contains(e.target as Node)) setShowUserMenu(false)
+      if (branchMenuRef.current && !branchMenuRef.current.contains(e.target as Node)) setShowBranchMenu(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -53,6 +57,60 @@ export function Header() {
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border shadow-2xs bg-violet-50 text-violet-700 border-violet-200/60">
               <Building2 className="h-3.5 w-3.5" />
               {userBranch} Branch
+            </div>
+          )}
+
+          {/* Branch Switcher Dropdown for Admin */}
+          {user?.role === 'admin' && (
+            <div ref={branchMenuRef} className="relative">
+              <button
+                onClick={() => setShowBranchMenu(!showBranchMenu)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-violet-600 bg-violet-50 hover:bg-violet-100 rounded-xl border border-violet-200/60 transition-all shadow-2xs cursor-pointer"
+              >
+                <Building2 className="h-3.5 w-3.5" />
+                <span>{selectedBranch ? `${selectedBranch} Branch` : 'All Branches'}</span>
+                <ChevronDown className="h-3 w-3 text-violet-400 transition-transform duration-200" />
+              </button>
+
+              <AnimatePresence>
+                {showBranchMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                    className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden z-50 p-1.5"
+                  >
+                    <div className="px-3 py-2 border-b border-slate-100 mb-1">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Switch Branch Data</p>
+                    </div>
+                    {[
+                      { name: 'All Branches', value: null },
+                      { name: 'Aniyapuram Branch', value: 'Aniyapuram' },
+                      { name: 'Vallipuram Branch', value: 'Vallipuram' },
+                    ].map((b) => (
+                      <button
+                        key={b.name}
+                        onClick={() => {
+                          setSelectedBranch(b.value)
+                          setShowBranchMenu(false)
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition-colors text-left",
+                          selectedBranch === b.value
+                            ? "bg-violet-50 text-violet-700"
+                            : "text-slate-700 hover:bg-slate-50 hover:text-violet-600"
+                        )}
+                      >
+                        <span>{b.name}</span>
+                        {selectedBranch === b.value && (
+                          <div className="h-1.5 w-1.5 rounded-full bg-violet-600" />
+                        )}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
 

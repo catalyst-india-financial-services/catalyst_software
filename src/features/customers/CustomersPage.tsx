@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -8,7 +8,7 @@ import {
 import {
   Plus, Download, Eye, SquarePen, Trash2, Phone, SlidersHorizontal,
   UserPlus, ChevronDown, CheckCircle2, ClipboardList, X, AlertCircle,
-  RefreshCw, ArrowRight, Lock
+  RefreshCw, ArrowRight, Lock, ChevronLeft, ChevronRight
 } from 'lucide-react'
 import {
   useCustomers, useUpdateCustomer,
@@ -1108,6 +1108,48 @@ export default function CustomersPage() {
     })
   }, [customers, statusFilter])
 
+  // Horizontal scroll arrows state & handlers
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  const checkScroll = () => {
+    const el = tableContainerRef.current
+    if (el) {
+      setCanScrollLeft(el.scrollLeft > 10)
+      setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 10)
+    }
+  }
+
+  useEffect(() => {
+    const el = tableContainerRef.current
+    if (el) {
+      el.addEventListener('scroll', checkScroll)
+      checkScroll()
+      window.addEventListener('resize', checkScroll)
+
+      const observer = new ResizeObserver(() => checkScroll())
+      observer.observe(el)
+
+      return () => {
+        el.removeEventListener('scroll', checkScroll)
+        window.removeEventListener('resize', checkScroll)
+        observer.disconnect()
+      }
+    }
+  }, [isLoading, filteredData])
+
+  const scrollTable = (direction: 'left' | 'right') => {
+    const el = tableContainerRef.current
+    if (el) {
+      const scrollAmount = el.clientWidth * 0.4
+      el.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      })
+    }
+  }
+
   const activeCount = customers.filter(c => c.status === 'active').length
   const draftCount = customers.filter(c => c.status === 'draft').length
   const kycVerifiedCount = customers.filter(c => c.kyc_status === 'verified').length
@@ -1298,8 +1340,31 @@ export default function CustomersPage() {
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="data-table">
+        <div className="relative group/table">
+          {/* Scroll Left Button */}
+          {canScrollLeft && (
+            <button
+              onClick={() => scrollTable('left')}
+              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
+              aria-label="Scroll table left"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+          )}
+
+          {/* Scroll Right Button */}
+          {canScrollRight && (
+            <button
+              onClick={() => scrollTable('right')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
+              aria-label="Scroll table right"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          )}
+
+          <div ref={tableContainerRef} className="overflow-x-auto">
+            <table className="data-table">
             <thead>
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
@@ -1348,6 +1413,7 @@ export default function CustomersPage() {
             </tbody>
           </table>
         </div>
+      </div>
 
         <Pagination
           page={table.getState().pagination.pageIndex + 1}
