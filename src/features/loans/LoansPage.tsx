@@ -1240,6 +1240,7 @@ export default function LoansPage() {
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('loans_status_filter', 'all')
 
   const { data: loans = [], isLoading } = useLoans()
+  const { data: customers = [] } = useCustomers()
 
   const deleteLoan = useDeleteLoan()
 
@@ -1379,16 +1380,10 @@ export default function LoansPage() {
       header: 'Status',
       cell: (info) => {
         const loan = info.row.original
-        const hasAllCoreFields =
-          !!loan.customer_id &&
-          !!loan.loan_amount &&
-          !!loan.interest_rate &&
-          !!loan.duration_months &&
-          !!loan.loan_date
+        const customer = customers.find(c => c.id === loan.customer_id)
+        const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
         const isSubmitted = loan.status !== 'draft'
-        const kycStatus = isSubmitted && hasAllCoreFields ? 'verified' : 'pending'
-
-        const status = kycStatus === 'verified' ? 'active' : loan.status
+        const status = isKycVerified && isSubmitted ? 'active' : loan.status
         return <StatusBadge status={status} />
       },
     }),
@@ -1397,16 +1392,10 @@ export default function LoansPage() {
       header: 'KYC',
       cell: (info) => {
         const loan = info.row.original
-        // KYC is considered verified if the loan has all key fields and is at least pending
-        const hasAllCoreFields =
-          !!loan.customer_id &&
-          !!loan.loan_amount &&
-          !!loan.interest_rate &&
-          !!loan.duration_months &&
-          !!loan.loan_date
-        const isSubmitted = loan.status !== 'draft'
-        const kycStatus = isSubmitted && hasAllCoreFields ? 'verified' : 'pending'
-        const kycLabel = isSubmitted && hasAllCoreFields ? 'Verified' : 'Pending'
+        const customer = customers.find(c => c.id === loan.customer_id)
+        const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
+        const kycStatus = isKycVerified ? 'verified' : 'pending'
+        const kycLabel = isKycVerified ? 'Verified' : 'Pending'
         return (
           <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
             kycStatus === 'verified'
@@ -1414,7 +1403,7 @@ export default function LoansPage() {
               : 'bg-amber-50 border-amber-100 text-amber-700'
           }`}>
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-              kycStatus === 'verified' ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'
+              kycStatus === 'verified' ? 'bg-emerald-500' : 'bg-amber-400'
             }`} />
             {kycLabel}
           </span>
@@ -1441,7 +1430,7 @@ export default function LoansPage() {
         />
       ),
     }),
-  ], [navigate])
+  ], [navigate, customers])
 
   const table = useReactTable({
     data: filteredData,

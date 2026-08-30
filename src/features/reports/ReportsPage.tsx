@@ -86,15 +86,10 @@ export default function ReportsPage() {
   // ─────────────────────────────────────────────────────────────────────────────
   const parsedLoans = useMemo(() => {
     return loans.map(l => {
-      const hasAllCoreFields =
-        !!l.customer_id &&
-        !!l.loan_amount &&
-        !!l.interest_rate &&
-        !!l.duration_months &&
-        !!l.loan_date
-      const isSubmitted = l.status !== 'draft'
-      const computedKycStatus = isSubmitted && hasAllCoreFields ? 'verified' : 'pending'
-      const displayStatus = computedKycStatus === 'verified' ? 'active' : l.status
+      const customer = customers.find(c => c.id === l.customer_id)
+      const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
+      const computedKycStatus = isKycVerified ? 'verified' : 'pending'
+      const displayStatus = isKycVerified && l.status !== 'draft' ? 'active' : l.status
 
       return {
         ...l,
@@ -102,7 +97,7 @@ export default function ReportsPage() {
         displayStatus
       }
     })
-  }, [loans])
+  }, [loans, customers])
 
   const filteredLoans = useMemo(() => {
     return parsedLoans.filter((l) => {

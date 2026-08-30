@@ -33,20 +33,13 @@ export default function LoanDetailPage() {
   // --- Dynamic Queries ---
   const { data: loan, isLoading: isLoanLoading, refetch: refetchLoan } = useLoan(loanId)
   
-  // --- Derived Status and KYC ---
-  const hasAllCoreFields = loan ? (
-    !!loan.customer_id &&
-    !!loan.loan_amount &&
-    !!loan.interest_rate &&
-    !!loan.duration_months &&
-    !!loan.loan_date
-  ) : false
-  const isSubmitted = loan ? loan.status !== 'draft' : false
-  const kycStatus = isSubmitted && hasAllCoreFields ? 'verified' : 'pending'
-  const derivedStatus = kycStatus === 'verified' ? 'active' : (loan?.status || 'draft')
-
   const { data: baseCustomer, isLoading: isCustomerLoading } = useCustomer(loan?.customer_id)
   const customer = baseCustomer as ExtendedCustomer | undefined
+
+  // --- Derived Status and KYC ---
+  const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
+  const kycStatus = isKycVerified ? 'verified' : 'pending'
+  const derivedStatus = isKycVerified && loan?.status !== 'draft' ? 'active' : (loan?.status || 'draft')
   const { data: emiSchedule = [], isLoading: isScheduleLoading, refetch: refetchSchedule } = useLoanSchedule(loanId)
 
   const { data: payments = [], isLoading: isPaymentsLoading, refetch: refetchPayments } = usePayments(loanId)

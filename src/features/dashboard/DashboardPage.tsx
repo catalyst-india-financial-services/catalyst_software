@@ -132,17 +132,12 @@ export default function DashboardPage() {
 
     const { customers, loans: rawLoans, emiSchedule, payments, income, expenses, users, leads } = data
 
-    // Map each loan to dynamically resolve status (active if KYC verified, else database status)
+    // Map each loan to dynamically resolve status based on customer profile and account details
     const loans = rawLoans.map((l: any) => {
-      const hasAllCoreFields =
-        !!l.customer_id &&
-        !!l.loan_amount &&
-        !!l.interest_rate &&
-        !!l.duration_months &&
-        !!l.loan_date
+      const customer = customers.find((c: any) => c.id === l.customer_id)
+      const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
       const isSubmitted = l.status !== 'draft'
-      const computedKycStatus = isSubmitted && hasAllCoreFields ? 'verified' : 'pending'
-      const displayStatus = computedKycStatus === 'verified' ? 'active' : l.status
+      const displayStatus = isKycVerified && isSubmitted ? 'active' : l.status
       return {
         ...l,
         status: displayStatus,
