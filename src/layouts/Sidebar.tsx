@@ -6,7 +6,8 @@ import { useAuthStore } from '@/store/authStore'
 import { Avatar, Tooltip } from '@/components/ui'
 import {
   LayoutDashboard, Users, WalletCards, ArrowLeftRight, Settings2,
-  LogOut, PanelLeftClose, PanelLeftOpen, DollarSign, X, UserPlus, Building2
+  LogOut, PanelLeftClose, PanelLeftOpen, DollarSign, X, UserPlus, Building2,
+  FileText
 } from 'lucide-react'
 
 interface NavItem {
@@ -21,6 +22,7 @@ const navItems: NavItem[] = [
   { path: '/customers', label: 'Customer Profile', icon: Users },
   { path: '/loans', label: 'Accounts', icon: WalletCards },
   { path: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
+  { path: '/reports', label: 'Reports', icon: FileText },
   { path: '/settings', label: 'Settings', icon: Settings2 },
 ]
 
