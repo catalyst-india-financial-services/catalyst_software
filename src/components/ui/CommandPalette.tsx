@@ -168,7 +168,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                         <p className="text-sm font-semibold text-slate-800 truncate">{l.loan_number} — {l.customer_name}</p>
                         <p className="text-slate-400 text-[11px] truncate">{l.loan_type.toUpperCase()} LOAN · EMI {formatCurrency(l.emi_amount)}</p>
                       </div>
-                      <span className="text-[11px] font-bold text-slate-800 amount-display">{formatCurrency(l.loan_amount)}</span>
+                      <span className="text-[11px] font-bold text-slate-800 amount-display">{l.loan_amount ? formatCurrency(l.loan_amount) : '—'}</span>
                     </button>
                   ))}
                 </div>

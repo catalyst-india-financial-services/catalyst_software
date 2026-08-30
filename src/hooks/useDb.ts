@@ -87,9 +87,14 @@ export function useUpdateCustomer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ id, ...customerData }: Partial<Customer> & { id: string }) => {
+      const updatedData = { ...customerData }
+      if (updatedData.kyc_status) {
+        updatedData.status = updatedData.kyc_status === 'verified' ? 'active' : 'draft'
+      }
+
       const { data, error } = await supabase
         .from('customers')
-        .update(customerData)
+        .update(updatedData)
         .eq('id', id)
         .select()
         .single()
@@ -175,7 +180,7 @@ export function useCreateLoan() {
     mutationFn: async (loanData: {
       customer_id: string
       loan_type: Loan['loan_type']
-      loan_amount: number
+      loan_amount: number | null
       interest_rate: number
       interest_type: 'flat' | 'reducing'
       duration_months: number
@@ -184,7 +189,7 @@ export function useCreateLoan() {
       status: Loan['status']
       
       // New wizard fields
-      sanctioned_amount: number
+      sanctioned_amount: number | null
       loan_product: string
       loan_category: string
       loan_purpose: string
@@ -225,7 +230,7 @@ export function useCreateLoan() {
       const loan_number = `LN${dayjs().format('YYYY')}${String((count || 0) + 1).padStart(3, '0')}`
 
       const emi_amount = calculateEMI(
-        loanData.loan_amount,
+        loanData.loan_amount || 0,
         loanData.interest_rate,
         loanData.duration_months,
         loanData.interest_type,
@@ -240,8 +245,8 @@ export function useCreateLoan() {
         emi_count = loanData.duration_months * 2
       }
 
-      const total_interest = Math.max(0, emi_amount * emi_count - loanData.loan_amount)
-      const disbursed_amount = loanData.loan_amount - (loanData.processing_fee || 0)
+      const total_interest = Math.max(0, emi_amount * emi_count - (loanData.loan_amount || 0))
+      const disbursed_amount = (loanData.loan_amount || 0) - (loanData.processing_fee || 0)
 
       // Base fields — always exist in the database (migration 00001)
       const baseLoanFields = {
@@ -254,11 +259,11 @@ export function useCreateLoan() {
         duration_months: loanData.duration_months,
         processing_fee: loanData.processing_fee,
         // Use account_opening_date if provided, otherwise use loan_date
-        loan_date: loanData.account_opening_date || loanData.loan_date,
+        loan_date: loanData.account_opening_date || loanData.loan_date || null,
         emi_amount,
         emi_count,
         remaining_emi: emi_count,
-        remaining_balance: loanData.loan_amount,
+        remaining_balance: loanData.loan_amount || 0,
         total_interest,
         disbursed_amount,
         // Use 'active' as fallback if status is 'draft' (pre-migration 00009 databases don't support 'draft')
@@ -275,11 +280,11 @@ export function useCreateLoan() {
         loan_category: loanData.loan_category,
         loan_purpose: loanData.loan_purpose,
         branch: loanData.branch,
-        account_opening_date: loanData.account_opening_date,
+        account_opening_date: loanData.account_opening_date || null,
         repayment_frequency: loanData.repayment_frequency,
         repayment_method: loanData.repayment_method,
-        repayment_start_date: loanData.repayment_start_date,
-        first_demand_date: loanData.first_demand_date,
+        repayment_start_date: loanData.repayment_start_date || null,
+        first_demand_date: loanData.first_demand_date || null,
         emi_due_day: loanData.emi_due_day,
         grace_period: loanData.grace_period || 0,
         penal_interest_rate: loanData.penal_interest_rate || 0,
@@ -324,7 +329,7 @@ export function useCreateLoan() {
       // Generate EMI schedule using the repayment start date (or loan date as fallback)
       const scheduleStartDate = loanData.repayment_start_date || loanData.loan_date
       const schedule = generateEMISchedule(
-        loanData.loan_amount,
+        loanData.loan_amount || 0,
         loanData.interest_rate,
         loanData.duration_months,
         scheduleStartDate,
@@ -366,9 +371,23 @@ export function useUpdateLoan() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ id, ...loanData }: Partial<Loan> & { id: string }) => {
+      const sanitizedData = { ...loanData }
+      const dateFields = [
+        'loan_date',
+        'account_opening_date',
+        'repayment_start_date',
+        'first_demand_date',
+        'security_valuation_date'
+      ]
+      dateFields.forEach((field) => {
+        if ((sanitizedData as any)[field] === '') {
+          ;(sanitizedData as any)[field] = null
+        }
+      })
+
       const { data, error } = await supabase
         .from('loans')
-        .update(loanData)
+        .update(sanitizedData)
         .eq('id', id)
         .select()
         .single()
@@ -1362,8 +1381,13 @@ export function useCustomerProfile(customerId: string) {
 export function useUpdateCustomerProfile() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ customerId, payload }: { customerId: string; payload: any }) =>
-      customerProfileService.updateProfile(customerId, payload),
+    mutationFn: ({ customerId, payload }: { customerId: string; payload: any }) => {
+      const updatedPayload = { ...payload }
+      if (updatedPayload.kyc_status) {
+        updatedPayload.status = updatedPayload.kyc_status === 'verified' ? 'active' : 'draft'
+      }
+      return customerProfileService.updateProfile(customerId, updatedPayload)
+    },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['customerProfile', variables.customerId, 'profile'] })
       queryClient.invalidateQueries({ queryKey: ['customers', variables.customerId] })
@@ -1970,18 +1994,68 @@ export function useApproveLead() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (lead: Lead) => {
-      const { error } = await supabase
+      // 1. Generate customer_id like CUS001
+      const { count } = await supabase
+        .from('customers')
+        .select('*', { count: 'exact', head: true })
+      const customer_id = `CUS${String((count || 0) + 1).padStart(3, '0')}`
+
+      const payload = {
+        customer_id,
+        name: lead.name,
+        mobile: lead.phone,
+        whatsapp: lead.phone,
+        email: lead.email || null,
+        address: '',
+        city: '',
+        district: null,
+        state: '',
+        pincode: '',
+        address_type: null,
+        aadhaar: '',
+        pan: '',
+        kyc_status: 'pending' as const,
+        kyc_verified_date: null,
+        occupation: null,
+        monthly_income: null,
+        income_source: null,
+        cibil_score: null,
+        cibil_score_date: null,
+        customer_type: 'Individual',
+        date_of_birth: null,
+        gender: null,
+        customer_segment: null,
+        customer_category: 'New',
+        branch: null,
+        lead_id: lead.id,
+        status: 'draft' as const,
+        sync_status: 'pending',
+      }
+
+      // 2. Insert customer draft profile
+      const { data: customer, error: custErr } = await supabase
+        .from('customers')
+        .insert([payload])
+        .select()
+        .single()
+      if (custErr) throw custErr
+
+      // 3. Update the lead application to Converted
+      const { error: leadErr } = await supabase
         .from('applications')
         .update({
-          status: 'Approved',
-          customer_conversion_status: 'Not Created',
+          status: 'Converted',
+          customer_conversion_status: 'Converted',
           approved_at: new Date().toISOString(),
+          customer_linked_id: customer.customer_id,
         })
         .eq('id', lead.id)
-      if (error) throw error
+      if (leadErr) throw leadErr
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['approvedLeads'] })
       queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
     },
   })
@@ -2032,8 +2106,8 @@ export function useCreateNewCustomer() {
         address_type: form.address_type || null,
         aadhaar: form.aadhaar_kyc_id,
         pan: form.pan,
-        kyc_status: (form.kyc_status === 'verified' ? 'verified' : form.kyc_status === 'rejected' ? 'rejected' : 'pending') as 'pending' | 'verified' | 'rejected',
-        kyc_verified_date: form.verification_date || null,
+        kyc_status: 'verified' as const,
+        kyc_verified_date: form.verification_date || new Date().toISOString().split('T')[0],
         occupation: form.occupation_business,
         monthly_income: form.income ? parseFloat(form.income) : null,
         income_source: form.income_source || null,
@@ -2152,6 +2226,8 @@ export function useUpdateDraftCustomer() {
       form: Partial<NewCustomerForm>
       finalize: boolean // true = Create Customer (active); false = re-save draft
     }) => {
+      const kycStatusValue = finalize ? ('verified' as const) : ('pending' as const)
+
       const payload: Record<string, any> = {
         name: form.full_name,
         mobile: form.mobile,
@@ -2165,10 +2241,8 @@ export function useUpdateDraftCustomer() {
         address_type: form.address_type || null,
         aadhaar: form.aadhaar_kyc_id,
         pan: form.pan,
-        kyc_status: finalize
-          ? ((form.kyc_status === 'verified' ? 'verified' : form.kyc_status === 'rejected' ? 'rejected' : 'pending') as 'pending' | 'verified' | 'rejected')
-          : 'pending',
-        kyc_verified_date: form.verification_date || null,
+        kyc_status: kycStatusValue,
+        kyc_verified_date: form.verification_date || (finalize ? new Date().toISOString().split('T')[0] : null),
         occupation: form.occupation_business,
         monthly_income: form.income ? parseFloat(form.income) : null,
         income_source: form.income_source || null,

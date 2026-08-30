@@ -32,6 +32,19 @@ export default function LoanDetailPage() {
 
   // --- Dynamic Queries ---
   const { data: loan, isLoading: isLoanLoading, refetch: refetchLoan } = useLoan(loanId)
+  
+  // --- Derived Status and KYC ---
+  const hasAllCoreFields = loan ? (
+    !!loan.customer_id &&
+    !!loan.loan_amount &&
+    !!loan.interest_rate &&
+    !!loan.duration_months &&
+    !!loan.loan_date
+  ) : false
+  const isSubmitted = loan ? loan.status !== 'draft' : false
+  const kycStatus = isSubmitted && hasAllCoreFields ? 'verified' : 'pending'
+  const derivedStatus = kycStatus === 'verified' ? 'active' : (loan?.status || 'draft')
+
   const { data: baseCustomer, isLoading: isCustomerLoading } = useCustomer(loan?.customer_id)
   const customer = baseCustomer as ExtendedCustomer | undefined
   const { data: emiSchedule = [], isLoading: isScheduleLoading, refetch: refetchSchedule } = useLoanSchedule(loanId)
@@ -105,7 +118,7 @@ export default function LoanDetailPage() {
   useEffect(() => {
     if (loan) {
       setEditForm({
-        loan_amount: loan.loan_amount.toString(),
+        loan_amount: loan.loan_amount?.toString() ?? '',
         interest_rate: loan.interest_rate.toString(),
         duration_months: loan.duration_months.toString(),
         processing_fee: loan.processing_fee?.toString() || '0',
@@ -443,12 +456,12 @@ export default function LoanDetailPage() {
               </h1>
               <span className={cn(
                 'px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border',
-                loan.status === 'active' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                loan.status === 'overdue' && 'bg-red-50 text-red-700 border-red-200 animate-pulse',
-                loan.status === 'closed' && 'bg-slate-100 text-slate-600 border-slate-200',
-                loan.status === 'pending' && 'bg-amber-50 text-amber-700 border-amber-250'
+                derivedStatus === 'active' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                derivedStatus === 'overdue' && 'bg-red-50 text-red-700 border-red-200 animate-pulse',
+                derivedStatus === 'closed' && 'bg-slate-100 text-slate-600 border-slate-200',
+                derivedStatus === 'pending' && 'bg-amber-50 text-amber-700 border-amber-250'
               )}>
-                {loan.status}
+                {derivedStatus}
               </span>
             </div>
 
@@ -507,7 +520,7 @@ export default function LoanDetailPage() {
               ================================================== */}
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
             {[
-              { label: 'Loan Amount', value: formatCurrency(loan.loan_amount), subtitle: 'Sanctioned base principal', color: 'text-slate-900', icon: Banknote },
+              { label: 'Loan Amount', value: formatCurrency(loan.loan_amount || 0), subtitle: 'Sanctioned base principal', color: 'text-slate-900', icon: Banknote },
               { label: 'Outstanding Principal', value: formatCurrency(loan.remaining_balance), subtitle: 'Balance base amount', color: 'text-slate-900', icon: Landmark },
               { label: 'Outstanding Interest', value: formatCurrency(outstandingInterest), subtitle: 'Accrued unpaid interest', color: 'text-amber-600', icon: TrendingDown },
               { label: 'EMI (Monthly)', value: formatCurrency(loan.emi_amount), subtitle: `${loan.duration_months} Months tenure`, color: 'text-brand-600', icon: Coins },
@@ -552,9 +565,9 @@ export default function LoanDetailPage() {
               },
               {
                 label: 'Account Status',
-                value: loan.status.toUpperCase(),
-                badgeColor: loan.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                  loan.status === 'overdue' ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' : 'bg-slate-100 text-slate-600 border-slate-200'
+                value: derivedStatus.toUpperCase(),
+                badgeColor: derivedStatus === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  derivedStatus === 'overdue' ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' : 'bg-slate-100 text-slate-600 border-slate-200'
               },
               {
                 label: 'Document Status',
@@ -610,11 +623,12 @@ export default function LoanDetailPage() {
                   <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
                     <div
                       className="bg-brand-600 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(100, Math.max(0, (paymentsRollup.totalPrincipalPaid / loan.loan_amount) * 100))}%` }}
+                      style={{ width: `${Math.min(100, Math.max(0, (paymentsRollup.totalPrincipalPaid / (loan.loan_amount || 1)) * 100))}%` }}
                     />
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-2">
-                    {Math.round((paymentsRollup.totalPrincipalPaid / loan.loan_amount) * 100)}% of loan principal has been recovered.
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {formatCurrency(paymentsRollup.totalPrincipalPaid)} principal collected out of {formatCurrency(loan.loan_amount || 0)}. 
+                    {Math.round((paymentsRollup.totalPrincipalPaid / (loan.loan_amount || 1)) * 100)}% of loan principal has been recovered.
                   </p>
                 </Card>
 
@@ -651,7 +665,7 @@ export default function LoanDetailPage() {
                 <CardBody className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5 p-6 text-sm">
                   {[
                     { label: 'Loan Number / ID', value: loan.loan_number, mono: true },
-                    { label: 'Sanctioned Amount', value: formatCurrency(loan.loan_amount), bold: true },
+                    { label: 'Sanctioned Amount', value: formatCurrency(loan.loan_amount || 0), bold: true },
                     { label: 'Disbursement Date', value: formatDate(loan.loan_date) },
                     { label: 'Processing Fee Paid', value: formatCurrency(loan.processing_fee || 0) },
                     { label: 'Interest Rate Percentage', value: `${loan.interest_rate}% per annum` },
@@ -968,7 +982,7 @@ export default function LoanDetailPage() {
                 </div>
                 <div>
                   <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Sanctioned Amount</p>
-                  <p className="text-slate-800 font-bold">{formatCurrency(loan.loan_amount)}</p>
+                  <p className="text-slate-800 font-bold">{formatCurrency(loan.loan_amount || 0)}</p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase font-bold text-slate-400 mb-0.5">DPD</p>
@@ -1186,7 +1200,7 @@ export default function LoanDetailPage() {
           <div className="grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl text-xs">
             <div>
               <p className="text-slate-400 font-bold uppercase mb-0.5">Principal Sanctioned</p>
-              <p className="text-sm font-bold text-slate-800">{formatCurrency(loan.loan_amount)}</p>
+              <p className="text-sm font-bold text-slate-800">{formatCurrency(loan.loan_amount || 0)}</p>
             </div>
             <div>
               <p className="text-slate-400 font-bold uppercase mb-0.5">Total Recovered</p>

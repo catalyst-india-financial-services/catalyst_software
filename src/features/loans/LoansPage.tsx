@@ -60,7 +60,8 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
   const activeCustomers = customers.filter(c => c.status === 'active')
   const createLoan = useCreateLoan()
   const updateLoan = useUpdateLoan()
-  const { user, isBranchUser, userBranch } = useAuthStore()
+  const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
+  const activeBranch = isBranchUser ? userBranch : selectedBranch
 
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState<'draft' | 'create' | null>(null)
@@ -82,7 +83,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
     loan_product: loan?.loan_product ?? 'Personal Loan',
     loan_category: loan?.loan_category ?? 'Retail',
     loan_purpose: loan?.loan_purpose ?? '',
-    branch: loan?.branch ?? (isBranchUser && userBranch ? userBranch : 'Head Office'),
+    branch: loan?.branch ?? (activeBranch ? activeBranch : 'Head Office'),
     account_opening_date: loan?.account_opening_date ?? new Date().toISOString().split('T')[0],
 
     sanctioned_amount: loan?.sanctioned_amount?.toString() ?? '',
@@ -229,6 +230,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
   // Validators
   const validateStep = (currentStep: number): boolean => {
     const newErrors: Record<string, string> = {}
+    const todayStr = new Date().toISOString().split('T')[0]
 
     if (currentStep === 1) {
       if (!formData.customer_id) newErrors.customer_id = 'Customer selection is required'
@@ -247,11 +249,20 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
       if (principal > sanctioned) newErrors.loan_amount = 'Principal amount cannot exceed sanctioned amount'
       if (rate <= 0) newErrors.interest_rate = 'Interest rate must be greater than 0'
       if (duration <= 0) newErrors.duration_months = 'Tenure must be greater than 0'
+
+      if (!formData.loan_date) {
+        newErrors.loan_date = 'Sanction / Loan date is required'
+      }
     }
 
     if (currentStep === 3) {
-      if (!formData.repayment_start_date) newErrors.repayment_start_date = 'Repayment start date is required'
-      if (!formData.first_demand_date) newErrors.first_demand_date = 'First demand date is required'
+      if (!formData.repayment_start_date) {
+        newErrors.repayment_start_date = 'Repayment start date is required'
+      }
+
+      if (!formData.first_demand_date) {
+        newErrors.first_demand_date = 'First demand date is required'
+      }
 
       const dueDay = parseInt(formData.emi_due_day) || 0
       if (!formData.emi_due_day) {
@@ -277,6 +288,9 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
       if (!formData.security_owner_id) newErrors.security_owner_id = 'Security owner selection is required'
       if (!formData.security_market_value || parseFloat(formData.security_market_value) <= 0) {
         newErrors.security_market_value = 'Market value must be greater than 0'
+      }
+      if (!formData.security_valuation_date) {
+        newErrors.security_valuation_date = 'Valuation date is required'
       }
     }
 
@@ -330,7 +344,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
       const payload = {
         customer_id: formData.customer_id,
         loan_type: formData.loan_category.toLowerCase() as Loan['loan_type'],
-        loan_amount: parseFloat(formData.loan_amount) || 0,
+        loan_amount: formData.loan_amount ? parseFloat(formData.loan_amount) : null,
         interest_rate: parseFloat(formData.interest_rate),
         interest_type: formData.interest_type as 'flat' | 'reducing',
         duration_months: parseInt(formData.duration_months),
@@ -339,7 +353,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
         status: computedStatus,
 
         // Wizard details
-        sanctioned_amount: parseFloat(formData.sanctioned_amount) || parseFloat(formData.loan_amount) || 0,
+        sanctioned_amount: formData.sanctioned_amount ? parseFloat(formData.sanctioned_amount) : (formData.loan_amount ? parseFloat(formData.loan_amount) : null),
         loan_product: formData.loan_product,
         loan_category: formData.loan_category,
         loan_purpose: formData.loan_purpose,
@@ -587,14 +601,14 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                     label="Branch *"
                     value={formData.branch}
                     onChange={e => setFormData({ ...formData, branch: e.target.value })}
-                    disabled={isBranchUser}
+                    disabled={!!activeBranch}
                     options={[
                       { value: 'Head Office', label: 'Head Office' },
                       { value: 'Aniyapuram', label: 'Aniyapuram Branch' },
                       { value: 'Vallipuram', label: 'Vallipuram Branch' }
                     ]}
                   />
-                  {isBranchUser && (
+                  {activeBranch && (
                     <p className="text-[10px] text-amber-600 font-medium mt-1 flex items-center gap-1">
                       Auto-set to your branch. Cannot be changed.
                     </p>
@@ -606,6 +620,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                   type="date"
                   value={formData.account_opening_date}
                   onChange={e => setFormData({ ...formData, account_opening_date: e.target.value })}
+                  error={errors.account_opening_date}
                 />
               </div>
             </div>
@@ -619,14 +634,20 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                   label="Sanctioned Amount (₹) *"
                   type="number"
                   value={formData.sanctioned_amount}
-                  onChange={e => setFormData({ ...formData, sanctioned_amount: e.target.value })}
+                  onChange={e => {
+                    const val = e.target.value.replace(/^0+/, '')
+                    setFormData({ ...formData, sanctioned_amount: val })
+                  }}
                   placeholder="Total sanctioned amount"
                 />
                 <Input
                   label="Loan Principal Amount (₹) *"
                   type="number"
                   value={formData.loan_amount}
-                  onChange={e => setFormData({ ...formData, loan_amount: e.target.value })}
+                  onChange={e => {
+                    const val = e.target.value.replace(/^0+/, '')
+                    setFormData({ ...formData, loan_amount: val })
+                  }}
                   placeholder="Requested principal amount"
                 />
                 <div className="col-span-2">
@@ -680,6 +701,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                     type="date"
                     value={formData.loan_date}
                     onChange={e => setFormData({ ...formData, loan_date: e.target.value })}
+                    error={errors.loan_date}
                   />
                 </div>
               </div>
@@ -718,6 +740,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                   type="date"
                   value={formData.repayment_start_date}
                   onChange={e => setFormData({ ...formData, repayment_start_date: e.target.value })}
+                  error={errors.repayment_start_date}
                 />
 
                 <Input
@@ -725,6 +748,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                   type="date"
                   value={formData.first_demand_date}
                   onChange={e => setFormData({ ...formData, first_demand_date: e.target.value })}
+                  error={errors.first_demand_date}
                 />
                 <div className="col-span-2">
                   <FieldError msg={errors.repayment_start_date || errors.first_demand_date} />
@@ -955,6 +979,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                       type="date"
                       value={formData.security_valuation_date}
                       onChange={e => setFormData({ ...formData, security_valuation_date: e.target.value })}
+                      error={errors.security_valuation_date}
                     />
 
                     <div className="col-span-2">
@@ -1298,7 +1323,10 @@ export default function LoansPage() {
     }),
     columnHelper.accessor('loan_amount', {
       header: 'Principal',
-      cell: (info) => <span className="text-xs font-bold text-slate-800 amount-display">{formatCurrency(info.getValue())}</span>,
+      cell: (info) => {
+        const val = info.getValue()
+        return <span className="text-xs font-bold text-slate-800 amount-display">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
+      },
     }),
     columnHelper.accessor('interest_rate', {
       header: 'Interest Rate',
@@ -1311,14 +1339,17 @@ export default function LoansPage() {
     }),
     columnHelper.accessor('emi_amount', {
       header: 'Monthly EMI',
-      cell: (info) => <span className="text-xs font-extrabold amount-display text-emerald-600">{formatCurrency(info.getValue())}</span>,
+      cell: (info) => {
+        const val = info.getValue()
+        return <span className="text-xs font-extrabold amount-display text-emerald-600">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
+      },
     }),
     columnHelper.accessor('remaining_emi', {
       header: 'Progress',
       cell: (info) => {
         const total = info.row.original.emi_count
         const remaining = info.getValue()
-        const pct = ((total - remaining) / total) * 100
+        const pct = total ? ((total - remaining) / total) * 100 : 0
         return (
           <div className="min-w-[100px]">
             <div className="flex justify-between text-[11px] font-semibold mb-1">
@@ -1334,7 +1365,10 @@ export default function LoansPage() {
     }),
     columnHelper.accessor('remaining_balance', {
       header: 'Outstanding',
-      cell: (info) => <span className="text-xs font-bold amount-display text-slate-800">{formatCurrency(info.getValue())}</span>,
+      cell: (info) => {
+        const val = info.getValue()
+        return <span className="text-xs font-bold amount-display text-slate-800">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
+      },
     }),
 
     columnHelper.accessor('loan_date', {
@@ -1344,7 +1378,17 @@ export default function LoansPage() {
     columnHelper.accessor('status', {
       header: 'Status',
       cell: (info) => {
-        const status = info.getValue()
+        const loan = info.row.original
+        const hasAllCoreFields =
+          !!loan.customer_id &&
+          !!loan.loan_amount &&
+          !!loan.interest_rate &&
+          !!loan.duration_months &&
+          !!loan.loan_date
+        const isSubmitted = loan.status !== 'draft'
+        const kycStatus = isSubmitted && hasAllCoreFields ? 'verified' : 'pending'
+
+        const status = kycStatus === 'verified' ? 'active' : loan.status
         return <StatusBadge status={status} />
       },
     }),

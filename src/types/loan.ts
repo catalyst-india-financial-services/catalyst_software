@@ -9,7 +9,7 @@ export interface Loan {
   customer_id: string
   customer_name?: string
   loan_type: LoanType
-  loan_amount: number
+  loan_amount: number | null
   interest_rate: number
   interest_type: InterestType
   duration_months: number
@@ -27,7 +27,7 @@ export interface Loan {
   sync_status: 'synced' | 'pending' | 'failed'
 
   // Wizard fields from migration 00009
-  sanctioned_amount?: number
+  sanctioned_amount?: number | null
   loan_product?: string
   loan_category?: string
   loan_purpose?: string

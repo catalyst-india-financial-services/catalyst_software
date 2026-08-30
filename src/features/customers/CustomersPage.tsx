@@ -174,16 +174,28 @@ function isMandatoryFieldFilled(value: NewCustomerForm[keyof NewCustomerForm] | 
   return value !== null && value !== undefined
 }
 
+const mapProductToSegment = (product: string, availableSegments: string[]) => {
+  const lowerProd = product.toLowerCase()
+  if (lowerProd.includes('business')) return availableSegments.find(s => s.toLowerCase() === 'business') || ''
+  if (lowerProd.includes('gold')) return availableSegments.find(s => s.toLowerCase() === 'gold loan' || s.toLowerCase() === 'gold') || ''
+  if (lowerProd.includes('personal') || lowerProd.includes('vehicle') || lowerProd.includes('education') || lowerProd.includes('home')) {
+    return availableSegments.find(s => s.toLowerCase() === 'retail') || ''
+  }
+  return ''
+}
+
 export function CreateCustomerModal({
   customer,
   onClose,
   onSuccess,
   onCompletionChange,
+  prefillLeadId,
 }: {
   customer?: Customer
   onClose: () => void
   onSuccess?: (c: Customer) => void
   onCompletionChange?: (completion: number) => void
+  prefillLeadId?: string | null
 }) {
   const isDraft = customer?.status === 'draft'
   const { data: approvedLeads = [] } = useApprovedLeads()
@@ -192,7 +204,8 @@ export function CreateCustomerModal({
   const updateDraft = useUpdateDraftCustomer()
   const { data: segmentOptions = [] } = useCustomerSegmentOptions()
   const addSegmentOption = useAddCustomerSegmentOption()
-  const { isBranchUser, userBranch } = useAuthStore()
+  const { isBranchUser, userBranch, selectedBranch } = useAuthStore()
+  const activeBranch = isBranchUser ? userBranch : selectedBranch
 
   // Default built-in segments always available (fallback if DB table is empty)
   const DEFAULT_SEGMENTS = ['Retail', 'Business', 'Agriculture', 'Gold Loan', 'Micro Finance', 'Premium', 'Corporate']
@@ -242,13 +255,13 @@ export function CreateCustomerModal({
         customer_segment: customer.customer_segment ?? '',
         customer_category: customer.customer_category ?? '',
         // If branch user, always lock to their branch
-        branch: isBranchUser && userBranch ? userBranch : (customer.branch ?? ''),
+        branch: activeBranch ? activeBranch : (customer.branch ?? ''),
       }
     }
     return {
       ...EMPTY_FORM,
       // Auto-fill branch for branch-level users
-      branch: isBranchUser && userBranch ? userBranch : '',
+      branch: activeBranch ? activeBranch : '',
     }
   })
 
@@ -289,6 +302,28 @@ export function CreateCustomerModal({
     onCompletionChange?.(overallCompletion)
   }, [onCompletionChange, overallCompletion])
 
+  const prefilledRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (prefillLeadId && approvedLeads.length > 0 && prefilledRef.current !== prefillLeadId) {
+      const lead = approvedLeads.find(l => l.id === prefillLeadId)
+      if (lead) {
+        prefilledRef.current = prefillLeadId
+        const matchedSegment = mapProductToSegment(lead.product, allSegments)
+        setForm(prev => ({
+          ...prev,
+          lead_id: prefillLeadId,
+          full_name: lead.name || prev.full_name,
+          mobile: lead.phone || prev.mobile,
+          email: lead.email || prev.email,
+          customer_segment: matchedSegment || prev.customer_segment,
+          customer_category: prev.customer_category || 'New',
+          customer_type: prev.customer_type || 'Individual',
+        }))
+      }
+    }
+  }, [prefillLeadId, approvedLeads, allSegments])
+
   // When an approved lead is selected, pre-fill available fields
   const handleLeadSelect = (leadId: string) => {
     if (!leadId) {
@@ -297,12 +332,16 @@ export function CreateCustomerModal({
     }
     const lead = approvedLeads.find(l => l.id === leadId)
     if (!lead) return
+    const matchedSegment = mapProductToSegment(lead.product, allSegments)
     setForm(prev => ({
       ...prev,
       lead_id: leadId,
       full_name: lead.name || prev.full_name,
       mobile: lead.phone || prev.mobile,
       email: lead.email || prev.email,
+      customer_segment: matchedSegment || prev.customer_segment,
+      customer_category: prev.customer_category || 'New',
+      customer_type: prev.customer_type || 'Individual',
     }))
   }
 
@@ -862,6 +901,7 @@ export function CreateCustomerModal({
                     onChange={set('cibil_score_date')}
                     className="w-full border border-slate-200 bg-white rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all"
                   />
+                  <FieldError msg={errors.cibil_score_date} />
                 </div>
               </div>
             </div>
@@ -976,7 +1016,7 @@ export function CreateCustomerModal({
                   <FieldError msg={errors.customer_category} />
                 </div>
 
-                {/* Operating Branch — disabled for branch users, free dropdown for admin */}
+                {/* Operating Branch — disabled for branch users or when admin selected a branch */}
                 <div className="col-span-2">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                     Operating Branch *
@@ -985,10 +1025,10 @@ export function CreateCustomerModal({
                     <select
                       value={form.branch ?? ''}
                       onChange={set('branch')}
-                      disabled={isBranchUser}
+                      disabled={!!activeBranch}
                       className={cn(
                         'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none font-medium text-slate-700',
-                        isBranchUser
+                        activeBranch
                           ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 opacity-80'
                           : 'bg-white hover:border-slate-300',
                         errors.branch ? 'border-red-300 bg-red-50/20' : 'border-slate-200'
@@ -1001,10 +1041,10 @@ export function CreateCustomerModal({
                     </select>
                     <ChevronDown className={cn(
                       'absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none',
-                      isBranchUser ? 'text-slate-300' : 'text-slate-400'
+                      activeBranch ? 'text-slate-300' : 'text-slate-400'
                     )} />
                   </div>
-                  {isBranchUser && (
+                  {activeBranch && (
                     <p className="text-[10px] text-amber-600 font-medium mt-1 flex items-center gap-1">
                       <Lock className="h-3 w-3" /> Auto-set to your branch. Cannot be changed.
                     </p>
@@ -1086,9 +1126,11 @@ export default function CustomersPage() {
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('customers_status_filter', 'all')
 
   const prefillLeadId = searchParams.get('leadId')
+  const [prefilledLeadId, setPrefilledLeadId] = useState<string | null>(null)
 
   useEffect(() => {
     if (prefillLeadId) {
+      setPrefilledLeadId(prefillLeadId)
       setEditCustomer(undefined)
       setShowModal(true)
       const nextParams = new URLSearchParams(searchParams)
@@ -1193,7 +1235,8 @@ export default function CustomersPage() {
     columnHelper.accessor('status', {
       header: 'Status',
       cell: (info) => {
-        const status = info.getValue()
+        const customer = info.row.original
+        const status = customer.kyc_status === 'verified' ? 'active' : customer.status
         if (status === 'draft') {
           return (
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
@@ -1426,7 +1469,12 @@ export default function CustomersPage() {
       {/* Add/Edit Modal */}
       <Modal
         isOpen={showModal}
-        onClose={() => { setShowModal(false); setEditCustomer(undefined); setCustomerFormCompletion(0) }}
+        onClose={() => {
+          setShowModal(false)
+          setEditCustomer(undefined)
+          setCustomerFormCompletion(0)
+          setPrefilledLeadId(null)
+        }}
         title={
           editCustomer
             ? editCustomer.status === 'draft'
@@ -1451,7 +1499,13 @@ export default function CustomersPage() {
       >
         <CreateCustomerModal
           customer={editCustomer}
-          onClose={() => { setShowModal(false); setEditCustomer(undefined); setCustomerFormCompletion(0) }}
+          prefillLeadId={prefilledLeadId}
+          onClose={() => {
+            setShowModal(false)
+            setEditCustomer(undefined)
+            setCustomerFormCompletion(0)
+            setPrefilledLeadId(null)
+          }}
           onCompletionChange={setCustomerFormCompletion}
         />
       </Modal>

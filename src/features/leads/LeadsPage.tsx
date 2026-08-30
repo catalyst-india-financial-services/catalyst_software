@@ -340,9 +340,6 @@ function LeadCard({
                 <div className="flex items-center justify-center gap-1.5 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-200/60">
                   <CheckCircle2 className="h-4 w-4" /> Lead Approved
                 </div>
-                <p className="text-[10px] text-center text-slate-400 font-medium">
-                  Go to Customers → Add Customer to create
-                </p>
               </div>
             )}
           </div>
@@ -523,7 +520,7 @@ function LeadTableRow({
                   ? 'bg-slate-100 text-slate-500 border-slate-200'
                   : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                 }`}>
-                {lead.customer_conversion_status === 'Converted' ? 'Customer Created' : 'Awaiting Customer'}
+                {lead.customer_conversion_status === 'Converted' ? 'Customer Created' : 'Approved'}
               </span>
             )}
           </div>
@@ -825,11 +822,14 @@ export default function LeadsPage() {
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleApproveDirect = async (lead: Lead) => {
     try {
-      toast.promise(approveLead.mutateAsync(lead), {
-        loading: `Approving ${lead.name}...`,
-        success: `Lead ${lead.name} approved! Go to Customers → Add Customer to create the customer.`,
-        error: (err: any) => `Failed to approve: ${err.message || 'Unknown error'}`
-      })
+      toast.promise(
+        approveLead.mutateAsync(lead),
+        {
+          loading: `Approving ${lead.name}...`,
+          success: `Lead ${lead.name} approved! Draft customer profile registered.`,
+          error: (err: any) => `Failed to approve: ${err.message || 'Unknown error'}`
+        }
+      )
     } catch (err) { console.error(err) }
   }
 
