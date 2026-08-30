@@ -130,7 +130,24 @@ export default function DashboardPage() {
   const dashboardData = useMemo(() => {
     if (!data) return null
 
-    const { customers, loans, emiSchedule, payments, income, expenses, users, leads } = data
+    const { customers, loans: rawLoans, emiSchedule, payments, income, expenses, users, leads } = data
+
+    // Map each loan to dynamically resolve status (active if KYC verified, else database status)
+    const loans = rawLoans.map((l: any) => {
+      const hasAllCoreFields =
+        !!l.customer_id &&
+        !!l.loan_amount &&
+        !!l.interest_rate &&
+        !!l.duration_months &&
+        !!l.loan_date
+      const isSubmitted = l.status !== 'draft'
+      const computedKycStatus = isSubmitted && hasAllCoreFields ? 'verified' : 'pending'
+      const displayStatus = computedKycStatus === 'verified' ? 'active' : l.status
+      return {
+        ...l,
+        status: displayStatus,
+      }
+    })
 
     const today = dayjs()
     const todayStr = today.format('YYYY-MM-DD')
