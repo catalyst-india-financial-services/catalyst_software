@@ -17,6 +17,115 @@ function useBranchFilter(): string | null {
   return selectedBranch
 }
 
+// ─── Sequence ID Generator Helpers (Collision-Proof) ──────────────────────────
+
+export async function generateNextLoanNumber(): Promise<string> {
+  const currentYear = dayjs().format('YYYY')
+  const prefix = `LN${currentYear}`
+
+  const { data, error } = await supabase
+    .from('loans')
+    .select('loan_number')
+
+  if (error || !data || data.length === 0) {
+    return `${prefix}001`
+  }
+
+  const existingNumbers = new Set(
+    data.map((l: { loan_number?: string }) => l.loan_number).filter(Boolean)
+  )
+
+  let maxSeq = 0
+  for (const item of data) {
+    if (item.loan_number && item.loan_number.startsWith(prefix)) {
+      const numPart = item.loan_number.slice(prefix.length)
+      const num = parseInt(numPart, 10)
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num
+      }
+    }
+  }
+
+  let nextSeq = maxSeq + 1
+  let candidate = `${prefix}${String(nextSeq).padStart(3, '0')}`
+  while (existingNumbers.has(candidate)) {
+    nextSeq++
+    candidate = `${prefix}${String(nextSeq).padStart(3, '0')}`
+  }
+
+  return candidate
+}
+
+export async function generateNextCustomerId(): Promise<string> {
+  const prefix = 'CUS'
+  const { data, error } = await supabase
+    .from('customers')
+    .select('customer_id')
+
+  if (error || !data || data.length === 0) {
+    return `${prefix}001`
+  }
+
+  const existingIds = new Set(
+    data.map((c: { customer_id?: string }) => c.customer_id).filter(Boolean)
+  )
+
+  let maxSeq = 0
+  for (const item of data) {
+    if (item.customer_id && item.customer_id.startsWith(prefix)) {
+      const numPart = item.customer_id.slice(prefix.length)
+      const num = parseInt(numPart, 10)
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num
+      }
+    }
+  }
+
+  let nextSeq = maxSeq + 1
+  let candidate = `${prefix}${String(nextSeq).padStart(3, '0')}`
+  while (existingIds.has(candidate)) {
+    nextSeq++
+    candidate = `${prefix}${String(nextSeq).padStart(3, '0')}`
+  }
+
+  return candidate
+}
+
+export async function generateNextTxnId(): Promise<string> {
+  const prefix = 'TXN'
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('txn_id')
+
+  if (error || !data || data.length === 0) {
+    return `${prefix}0001`
+  }
+
+  const existingIds = new Set(
+    data.map((t: { txn_id?: string }) => t.txn_id).filter(Boolean)
+  )
+
+  let maxSeq = 0
+  for (const item of data) {
+    if (item.txn_id && item.txn_id.startsWith(prefix)) {
+      const numPart = item.txn_id.slice(prefix.length)
+      const num = parseInt(numPart, 10)
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num
+      }
+    }
+  }
+
+  let nextSeq = maxSeq + 1
+  let candidate = `${prefix}${String(nextSeq).padStart(4, '0')}`
+  while (existingIds.has(candidate)) {
+    nextSeq++
+    candidate = `${prefix}${String(nextSeq).padStart(4, '0')}`
+  }
+
+  return candidate
+}
+
 // ─── Customer Hooks ───────────────────────────────────────────────────────────
 
 export function useCustomers() {
@@ -62,11 +171,7 @@ export function useCreateCustomer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (customerData: Partial<Customer>) => {
-      // Generate a customer_id like CUS001
-      const { count } = await supabase.from('customers').select('*', { count: 'exact', head: true })
-      const prefix = 'CUS'
-      const index = (count || 0) + 1
-      const customer_id = `${prefix}${String(index).padStart(3, '0')}`
+      const customer_id = await generateNextCustomerId()
 
       const { data, error } = await supabase
         .from('customers')
@@ -226,9 +331,6 @@ export function useCreateLoan() {
       // Auditor
       created_by?: string
     }) => {
-      const { count } = await supabase.from('loans').select('*', { count: 'exact', head: true })
-      const loan_number = `LN${dayjs().format('YYYY')}${String((count || 0) + 1).padStart(3, '0')}`
-
       const emi_amount = calculateEMI(
         loanData.loan_amount || 0,
         loanData.interest_rate,
@@ -248,83 +350,113 @@ export function useCreateLoan() {
       const total_interest = Math.max(0, emi_amount * emi_count - (loanData.loan_amount || 0))
       const disbursed_amount = (loanData.loan_amount || 0) - (loanData.processing_fee || 0)
 
-      // Base fields — always exist in the database (migration 00001)
-      const baseLoanFields = {
-        loan_number,
-        customer_id: loanData.customer_id,
-        loan_type: loanData.loan_type,
-        loan_amount: loanData.loan_amount,
-        interest_rate: loanData.interest_rate,
-        interest_type: loanData.interest_type,
-        duration_months: loanData.duration_months,
-        processing_fee: loanData.processing_fee,
-        // Use account_opening_date if provided, otherwise use loan_date
-        loan_date: loanData.account_opening_date || loanData.loan_date || null,
-        emi_amount,
-        emi_count,
-        remaining_emi: emi_count,
-        remaining_balance: loanData.loan_amount || 0,
-        total_interest,
-        disbursed_amount,
-        // Use 'active' as fallback if status is 'draft' (pre-migration 00009 databases don't support 'draft')
-        status: (loanData.status === 'draft' || loanData.status === 'pending') ? 'active' as const : loanData.status,
-        sync_status: 'synced' as const,
-      }
+      let attempts = 0
+      let lastError: any = null
+      let loan: Loan | null = null
 
-      // Extended fields — only exist after migration 00009
-      const extendedLoanFields = {
-        ...baseLoanFields,
-        status: loanData.status, // override with real status after migration
-        sanctioned_amount: loanData.sanctioned_amount,
-        loan_product: loanData.loan_product,
-        loan_category: loanData.loan_category,
-        loan_purpose: loanData.loan_purpose,
-        branch: loanData.branch,
-        account_opening_date: loanData.account_opening_date || null,
-        repayment_frequency: loanData.repayment_frequency,
-        repayment_method: loanData.repayment_method,
-        repayment_start_date: loanData.repayment_start_date || null,
-        first_demand_date: loanData.first_demand_date || null,
-        emi_due_day: loanData.emi_due_day,
-        grace_period: loanData.grace_period || 0,
-        penal_interest_rate: loanData.penal_interest_rate || 0,
-        late_payment_charges: loanData.late_payment_charges || 0,
-        guarantor_customer_id: loanData.guarantor_customer_id || null,
-        guarantor_relationship: loanData.guarantor_relationship || null,
-        guarantor_type: loanData.guarantor_type || null,
-        guarantor_amount: loanData.guarantor_amount || null,
-        security_type: loanData.security_type || null,
-        security_description: loanData.security_description || null,
-        security_owner_id: loanData.security_owner_id || null,
-        security_ownership_type: loanData.security_ownership_type || null,
-        security_market_value: loanData.security_market_value || null,
-        security_valuation_date: loanData.security_valuation_date || null,
-        security_ltv: loanData.security_ltv || null,
-        security_doc_number: loanData.security_doc_number || null,
-        security_doc_status: loanData.security_doc_status || null,
-        security_insurance_required: loanData.security_insurance_required || false,
-        security_insurance_details: loanData.security_insurance_details || null,
-        created_by: loanData.created_by || 'Admin',
-      }
+      while (attempts < 3) {
+        attempts++
+        const loan_number = await generateNextLoanNumber()
 
-      // Attempt insert with full wizard fields (requires migration 00009)
-      let loanResult = await supabase.from('loans').insert([extendedLoanFields]).select().single()
-
-      if (loanResult.error) {
-        const errCode = (loanResult.error as any).code
-        // 42703 = undefined_column, 23514 = check_violation (status constraint not updated yet)
-        if (errCode === '42703' || errCode === '23514' || loanResult.error.message?.includes('column') || loanResult.error.message?.includes('check')) {
-          console.warn(
-            '[useCreateLoan] Extended columns not found — migration 00009 may not be applied. Falling back to base schema insert.',
-            loanResult.error
-          )
-          // Retry with only base fields
-          loanResult = await supabase.from('loans').insert([baseLoanFields]).select().single()
+        // Base fields — always exist in the database (migration 00001)
+        const baseLoanFields = {
+          loan_number,
+          customer_id: loanData.customer_id,
+          loan_type: loanData.loan_type,
+          loan_amount: loanData.loan_amount,
+          interest_rate: loanData.interest_rate,
+          interest_type: loanData.interest_type,
+          duration_months: loanData.duration_months,
+          processing_fee: loanData.processing_fee,
+          // Use account_opening_date if provided, otherwise use loan_date
+          loan_date: loanData.account_opening_date || loanData.loan_date || null,
+          emi_amount,
+          emi_count,
+          remaining_emi: emi_count,
+          remaining_balance: loanData.loan_amount || 0,
+          total_interest,
+          disbursed_amount,
+          // Use 'active' as fallback if status is 'draft' (pre-migration 00009 databases don't support 'draft')
+          status: (loanData.status === 'draft' || loanData.status === 'pending') ? 'active' as const : loanData.status,
+          sync_status: 'synced' as const,
         }
+
+        // Extended fields — only exist after migration 00009
+        const extendedLoanFields = {
+          ...baseLoanFields,
+          status: loanData.status, // override with real status after migration
+          sanctioned_amount: loanData.sanctioned_amount,
+          loan_product: loanData.loan_product,
+          loan_category: loanData.loan_category,
+          loan_purpose: loanData.loan_purpose,
+          branch: loanData.branch,
+          account_opening_date: loanData.account_opening_date || null,
+          repayment_frequency: loanData.repayment_frequency,
+          repayment_method: loanData.repayment_method,
+          repayment_start_date: loanData.repayment_start_date || null,
+          first_demand_date: loanData.first_demand_date || null,
+          emi_due_day: loanData.emi_due_day,
+          grace_period: loanData.grace_period || 0,
+          penal_interest_rate: loanData.penal_interest_rate || 0,
+          late_payment_charges: loanData.late_payment_charges || 0,
+          guarantor_customer_id: loanData.guarantor_customer_id || null,
+          guarantor_relationship: loanData.guarantor_relationship || null,
+          guarantor_type: loanData.guarantor_type || null,
+          guarantor_amount: loanData.guarantor_amount || null,
+          security_type: loanData.security_type || null,
+          security_description: loanData.security_description || null,
+          security_owner_id: loanData.security_owner_id || null,
+          security_ownership_type: loanData.security_ownership_type || null,
+          security_market_value: loanData.security_market_value || null,
+          security_valuation_date: loanData.security_valuation_date || null,
+          security_ltv: loanData.security_ltv || null,
+          security_doc_number: loanData.security_doc_number || null,
+          security_doc_status: loanData.security_doc_status || null,
+          security_insurance_required: loanData.security_insurance_required || false,
+          security_insurance_details: loanData.security_insurance_details || null,
+          created_by: loanData.created_by || 'Admin',
+        }
+
+        // Attempt insert with full wizard fields (requires migration 00009)
+        let loanResult = await supabase.from('loans').insert([extendedLoanFields]).select().single()
+
+        if (loanResult.error) {
+          const errCode = (loanResult.error as any).code
+          if (errCode === '23505' || loanResult.error.message?.includes('loans_loan_number_key') || loanResult.error.message?.includes('loan_number')) {
+            lastError = loanResult.error
+            continue
+          }
+
+          // 42703 = undefined_column, 23514 = check_violation (status constraint not updated yet)
+          if (errCode === '42703' || errCode === '23514' || loanResult.error.message?.includes('column') || loanResult.error.message?.includes('check')) {
+            console.warn(
+              '[useCreateLoan] Extended columns not found — migration 00009 may not be applied. Falling back to base schema insert.',
+              loanResult.error
+            )
+            // Retry with only base fields
+            loanResult = await supabase.from('loans').insert([baseLoanFields]).select().single()
+            if (loanResult.error) {
+              const baseErrCode = (loanResult.error as any).code
+              if (baseErrCode === '23505' || loanResult.error.message?.includes('loans_loan_number_key') || loanResult.error.message?.includes('loan_number')) {
+                lastError = loanResult.error
+                continue
+              }
+            }
+          }
+        }
+
+        if (loanResult.error) {
+          throw loanResult.error
+        }
+
+        loan = loanResult.data as Loan
+        break
       }
 
-      if (loanResult.error) throw loanResult.error
-      const loan = loanResult.data
+      if (!loan) {
+        if (lastError) throw lastError
+        throw new Error('Failed to create loan after multiple attempts.')
+      }
 
       // Generate EMI schedule using the repayment start date (or loan date as fallback)
       const scheduleStartDate = loanData.repayment_start_date || loanData.loan_date
@@ -1143,10 +1275,7 @@ export function useConvertLead() {
       }
 
       // ── 2. Insert customer ────────────────────────────────────────────────────
-      const { count: custCount } = await supabase
-        .from('customers')
-        .select('*', { count: 'exact', head: true })
-      const customer_id = `CUS${String((custCount || 0) + 1).padStart(3, '0')}`
+      const customer_id = await generateNextCustomerId()
 
       const { data: customer, error: custErr } = await supabase
         .from('customers')
@@ -1177,10 +1306,7 @@ export function useConvertLead() {
       const totalInterest = Math.round(emiAmount * durationMo - loanAmount)
       const disbursed = loanAmount - procFee
 
-      const { count: loanCount } = await supabase
-        .from('loans')
-        .select('*', { count: 'exact', head: true })
-      const loan_number = `LN${dayjs().format('YYYY')}${String((loanCount || 0) + 1).padStart(3, '0')}`
+      const loan_number = await generateNextLoanNumber()
 
       const { data: loan, error: loanErr } = await supabase
         .from('loans')
@@ -1864,9 +1990,7 @@ export function useCreateTransaction() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (txn: Omit<import('@/types').Transaction, 'id' | 'txn_id' | 'created_at' | 'updated_at' | 'bank_account_name' | 'customer_name' | 'loan_number'>) => {
-      // Auto-generate txn_id
-      const { count } = await supabase.from('transactions').select('*', { count: 'exact', head: true })
-      const txn_id = `TXN${String((count || 0) + 1).padStart(4, '0')}`
+      const txn_id = await generateNextTxnId()
       const { data, error } = await supabase
         .from('transactions')
         .insert({ ...txn, txn_id })
@@ -1995,10 +2119,7 @@ export function useApproveLead() {
   return useMutation({
     mutationFn: async (lead: Lead) => {
       // 1. Generate customer_id like CUS001
-      const { count } = await supabase
-        .from('customers')
-        .select('*', { count: 'exact', head: true })
-      const customer_id = `CUS${String((count || 0) + 1).padStart(3, '0')}`
+      const customer_id = await generateNextCustomerId()
 
       const payload = {
         customer_id,
@@ -2087,10 +2208,7 @@ export function useCreateNewCustomer() {
   return useMutation({
     mutationFn: async (form: NewCustomerForm) => {
       // Generate customer_id like CUS001
-      const { count } = await supabase
-        .from('customers')
-        .select('*', { count: 'exact', head: true })
-      const customer_id = `CUS${String((count || 0) + 1).padStart(3, '0')}`
+      const customer_id = await generateNextCustomerId()
 
       const payload = {
         customer_id,
@@ -2161,10 +2279,7 @@ export function useSaveDraftCustomer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (form: Partial<NewCustomerForm> & { full_name: string; mobile: string }) => {
-      const { count } = await supabase
-        .from('customers')
-        .select('*', { count: 'exact', head: true })
-      const customer_id = `CUS${String((count || 0) + 1).padStart(3, '0')}`
+      const customer_id = await generateNextCustomerId()
 
       const payload: Record<string, any> = {
         customer_id,
