@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowDownLeft, ArrowUpRight, Landmark, Wallet, Plus, X,
@@ -137,6 +137,13 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
 
   const cfg = TXN_CONFIG[type]
   const isDebit = type === 'disbursement' || type === 'expense'
+
+  // Auto-select first bank account when accounts load if not already set
+  useEffect(() => {
+    if (!form.bank_account_id && bankAccounts.length > 0) {
+      setForm(prev => ({ ...prev, bank_account_id: bankAccounts[0].id }))
+    }
+  }, [bankAccounts, form.bank_account_id])
 
   const handleSubmit = async () => {
     if (!form.bank_account_id) { toast.error('Please select a bank account'); return }

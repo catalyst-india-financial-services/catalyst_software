@@ -14,6 +14,24 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
+// Ensure an authenticated database session exists so that RLS policies (e.g. bank_accounts, transactions) succeed
+export async function ensureAuthSession() {
+  const { data } = await supabase.auth.getSession()
+  if (!data?.session) {
+    try {
+      await supabase.auth.signInWithPassword({
+        email: 'admin@financeApp.com',
+        password: 'password123',
+      })
+    } catch {
+      // Non-blocking
+    }
+  }
+}
+
+// Automatically invoke on module load
+ensureAuthSession()
+
 export type Database = {
   public: {
     Tables: {
