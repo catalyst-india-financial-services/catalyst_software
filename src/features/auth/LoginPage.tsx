@@ -107,31 +107,7 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          {/* Credential hints */}
-          <div className="mt-6 pt-5 border-t border-slate-800/80">
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-3">Login Accounts</p>
-            <div className="space-y-2">
-              {[
-                { role: 'Admin', email: 'admin@financeApp.com', note: 'Full access — all branches' },
-                { role: 'Aniyapuram', email: 'aniyapuram@catalyst.com', note: 'Branch access only' },
-                { role: 'Vallipuram', email: 'vallipuram@catalyst.com', note: 'Branch access only' },
-              ].map((a) => (
-                <button
-                  key={a.email}
-                  type="button"
-                  onClick={() => setEmail(a.email)}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-slate-600 transition-all group"
-                >
-                  <div className="text-left">
-                    <p className="text-[11px] font-bold text-white group-hover:text-brand-300 transition-colors">{a.role}</p>
-                    <p className="text-[10px] text-slate-500">{a.note}</p>
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-400 group-hover:text-slate-300 transition-colors">{a.email}</span>
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] text-slate-600 mt-2 text-center">Click any row to auto-fill email</p>
-          </div>
+
 
           <div className="mt-5 flex items-center justify-between text-xs text-slate-400">
             <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">

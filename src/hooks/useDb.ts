@@ -2117,9 +2117,13 @@ export function useSendPasswordReset() {
 export function useApproveLead() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (lead: Lead) => {
+    mutationFn: async (args: Lead | { lead: Lead; branch?: string | null }) => {
+      const lead = 'id' in args ? args : args.lead
+      const branch = 'id' in args ? null : (args.branch || null)
+
       // 1. Generate customer_id like CUS001
       const customer_id = await generateNextCustomerId()
+      const now = new Date().toISOString()
 
       const payload = {
         customer_id,
@@ -2147,10 +2151,12 @@ export function useApproveLead() {
         gender: null,
         customer_segment: null,
         customer_category: 'New',
-        branch: null,
+        branch: branch || null,
         lead_id: lead.id,
         status: 'draft' as const,
         sync_status: 'pending',
+        created_at: now,
+        updated_at: now,
       }
 
       // 2. Insert customer draft profile
@@ -2167,7 +2173,7 @@ export function useApproveLead() {
         .update({
           status: 'Converted',
           customer_conversion_status: 'Converted',
-          approved_at: new Date().toISOString(),
+          approved_at: now,
           customer_linked_id: customer.customer_id,
         })
         .eq('id', lead.id)
@@ -2193,7 +2199,7 @@ export function useApprovedLeads() {
         .select('*')
         .eq('status', 'Approved')
         .eq('customer_conversion_status', 'Not Created')
-        .order('approved_at', { ascending: false })
+        .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as Lead[]
     },
@@ -2240,6 +2246,8 @@ export function useCreateNewCustomer() {
         lead_id: form.lead_id || null,
         status: 'active' as const,
         sync_status: 'synced',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }
 
       const { data: customer, error: custErr } = await supabase
@@ -2280,6 +2288,7 @@ export function useSaveDraftCustomer() {
   return useMutation({
     mutationFn: async (form: Partial<NewCustomerForm> & { full_name: string; mobile: string }) => {
       const customer_id = await generateNextCustomerId()
+      const now = new Date().toISOString()
 
       const payload: Record<string, any> = {
         customer_id,
@@ -2311,6 +2320,8 @@ export function useSaveDraftCustomer() {
         lead_id: form.lead_id || null,
         status: 'draft' as const,
         sync_status: 'pending',
+        created_at: now,
+        updated_at: now,
       }
 
       const { data, error } = await supabase

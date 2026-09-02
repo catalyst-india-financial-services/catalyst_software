@@ -267,6 +267,12 @@ export default function CustomerDetailPage() {
   const canEditField = (fieldName: keyof ExtendedCustomer) => {
     if (userRole === 'admin') return true
 
+    // Branch user restrictions (can edit customer profile fields, cannot change customer_id or mapped branch)
+    if (userRole === 'branch') {
+      const branchReadOnly: (keyof ExtendedCustomer)[] = ['customer_id', 'branch']
+      return !branchReadOnly.includes(fieldName)
+    }
+
     // Manager restrictions
     if (userRole === 'manager') {
       const managerReadOnly: (keyof ExtendedCustomer)[] = ['customer_id', 'compliance_status']

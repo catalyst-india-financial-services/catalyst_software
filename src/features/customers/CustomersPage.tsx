@@ -324,6 +324,14 @@ export function CreateCustomerModal({
     }
   }, [prefillLeadId, approvedLeads, allSegments])
 
+  const sortedApprovedLeads = useMemo(() => {
+    return [...approvedLeads].sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0
+      return timeB - timeA
+    })
+  }, [approvedLeads])
+
   // When an approved lead is selected, pre-fill available fields
   const handleLeadSelect = (leadId: string) => {
     if (!leadId) {
@@ -519,7 +527,7 @@ export function CreateCustomerModal({
                 className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[10px] font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500/20 pr-8 appearance-none"
               >
                 <option value="">— Manual / Select Lead —</option>
-                {approvedLeads.map(l => (
+                {sortedApprovedLeads.map(l => (
                   <option key={l.id} value={l.id}>{l.name}</option>
                 ))}
               </select>
@@ -1118,7 +1126,8 @@ export function CreateCustomerModal({
 export default function CustomersPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [sorting, setSorting] = useLocalStorage<SortingState>('customers_sorting', [])
+  // Default and enforce sorting by Joined date (created_at) latest first
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'created_at', desc: true }])
   const [globalFilter, setGlobalFilter] = useLocalStorage<string>('customers_search', '')
   const [showModal, setShowModal] = useState(false)
   const [editCustomer, setEditCustomer] = useState<Customer | undefined>()
@@ -1127,6 +1136,15 @@ export default function CustomersPage() {
 
   const prefillLeadId = searchParams.get('leadId')
   const [prefilledLeadId, setPrefilledLeadId] = useState<string | null>(null)
+
+  // Clear any stale column sorting from previous browser sessions
+  useEffect(() => {
+    try {
+      localStorage.removeItem('customers_sorting')
+    } catch {
+      // ignore
+    }
+  }, [])
 
   useEffect(() => {
     if (prefillLeadId) {
@@ -1142,11 +1160,16 @@ export default function CustomersPage() {
   const { data: customers = [], isLoading } = useCustomers()
 
   const filteredData = useMemo(() => {
-    return customers.filter((c) => {
+    const list = customers.filter((c) => {
       if (statusFilter === 'all') return true
       if (statusFilter === 'draft') return c.status === 'draft'
       if (statusFilter === 'active') return c.status === 'active'
       return c.status === statusFilter
+    })
+    return [...list].sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0
+      return timeB - timeA
     })
   }, [customers, statusFilter])
 
@@ -1250,6 +1273,11 @@ export default function CustomersPage() {
     }),
     columnHelper.accessor('created_at', {
       header: 'Joined',
+      sortingFn: (rowA, rowB) => {
+        const timeA = rowA.original.created_at ? new Date(rowA.original.created_at).getTime() : 0
+        const timeB = rowB.original.created_at ? new Date(rowB.original.created_at).getTime() : 0
+        return timeA - timeB
+      },
       cell: (info) => <span className="text-xs text-slate-400 font-medium">{formatDate(info.getValue())}</span>,
     }),
     columnHelper.display({

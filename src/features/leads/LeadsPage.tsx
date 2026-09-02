@@ -14,6 +14,7 @@ import {
   useLeads, useApproveLead, useRejectLead,
   useMarkLeadInterested, useFollowups, useUpsertFollowup, useCompleteReminder
 } from '@/hooks/useDb'
+import { useAuthStore } from '@/store/authStore'
 import { Card, CardHeader, CardTitle, CardBody, Avatar, Button, Modal, Textarea, PageHeader } from '@/components/ui'
 import { formatCurrency, formatDate, cn } from '@/utils'
 import type { Lead, LeadFollowup } from '@/types'
@@ -203,7 +204,8 @@ function LeadCard({
   onInterested,
   onSaveFollowup,
   isSavingFollowup,
-  processingLeadId
+  processingLeadId,
+  isBranchUser,
 }: {
   lead: Lead
   followup?: LeadFollowup
@@ -213,6 +215,7 @@ function LeadCard({
   onSaveFollowup: (p: any) => void
   isSavingFollowup: boolean
   processingLeadId: string | null
+  isBranchUser?: boolean
 }) {
   const cfg = getProductConfig(lead.product)
   const ago = dayjs(lead.created_at).fromNow()
@@ -309,25 +312,29 @@ function LeadCard({
                 <Sparkles className="h-3.5 w-3.5" /> Interested
               </button>
             )}
-            <button
-              onClick={() => onReject(lead)}
-              disabled={!!processingLeadId}
-              className="flex items-center justify-center gap-1 py-2 px-2.5 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50 transition-colors text-xs font-bold border border-red-100"
-            >
-              <Ban className="h-3.5 w-3.5" /> Reject
-            </button>
-            <button
-              onClick={() => onApprove(lead)}
-              disabled={!!processingLeadId}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors text-xs font-bold shadow-xs"
-            >
-              {processingLeadId === lead.id ? (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <UserPlus className="h-3.5 w-3.5" />
-              )}
-              Approval
-            </button>
+            {!isBranchUser && (
+              <>
+                <button
+                  onClick={() => onReject(lead)}
+                  disabled={!!processingLeadId}
+                  className="flex items-center justify-center gap-1 py-2 px-2.5 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50 transition-colors text-xs font-bold border border-red-100"
+                >
+                  <Ban className="h-3.5 w-3.5" /> Reject
+                </button>
+                <button
+                  onClick={() => onApprove(lead)}
+                  disabled={!!processingLeadId}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors text-xs font-bold shadow-xs"
+                >
+                  {processingLeadId === lead.id ? (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <UserPlus className="h-3.5 w-3.5" />
+                  )}
+                  Approval
+                </button>
+              </>
+            )}
           </>
         ) : lead.status === 'Approved' ? (
           <div className="w-full flex flex-col gap-1.5">
@@ -383,7 +390,8 @@ function LeadTableRow({
   onInterested,
   onSaveFollowup,
   isSavingFollowup,
-  processingLeadId
+  processingLeadId,
+  isBranchUser,
 }: {
   lead: Lead
   idx: number
@@ -394,6 +402,7 @@ function LeadTableRow({
   onSaveFollowup: (p: any) => void
   isSavingFollowup: boolean
   processingLeadId: string | null
+  isBranchUser?: boolean
 }) {
   const cfg = getProductConfig(lead.product)
   const [showFollowup, setShowFollowup] = useState(false)
@@ -492,27 +501,31 @@ function LeadTableRow({
                     <Sparkles className="h-3 w-3" /> Interested
                   </button>
                 )}
-                <button
-                  onClick={() => onReject(lead)}
-                  disabled={!!processingLeadId}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors disabled:opacity-50"
-                  title="Reject Application"
-                >
-                  <Ban className="h-3 w-3" /> Reject
-                </button>
-                <button
-                  onClick={() => onApprove(lead)}
-                  disabled={!!processingLeadId}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-colors disabled:opacity-50"
-                  title="Approve Lead"
-                >
-                  {processingLeadId === lead.id ? (
-                    <RefreshCw className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <UserPlus className="h-3 w-3" />
-                  )}
-                  Approve
-                </button>
+                {!isBranchUser && (
+                  <>
+                    <button
+                      onClick={() => onReject(lead)}
+                      disabled={!!processingLeadId}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors disabled:opacity-50"
+                      title="Reject Application"
+                    >
+                      <Ban className="h-3 w-3" /> Reject
+                    </button>
+                    <button
+                      onClick={() => onApprove(lead)}
+                      disabled={!!processingLeadId}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-colors disabled:opacity-50"
+                      title="Approve Lead"
+                    >
+                      {processingLeadId === lead.id ? (
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <UserPlus className="h-3 w-3" />
+                      )}
+                      Approve
+                    </button>
+                  </>
+                )}
               </>
             )}
             {lead.status === 'Approved' && (
@@ -718,6 +731,7 @@ export default function LeadsPage() {
   const markInterested = useMarkLeadInterested()
   const upsertFollowup = useUpsertFollowup()
   const completeReminder = useCompleteReminder()
+  const { isBranchUser, userBranch } = useAuthStore()
 
   const [search, setSearch] = useLocalStorage<string>('leads_search', '')
   const [productFilter, setProductFilter] = useLocalStorage<string>('leads_product_filter', 'all')
@@ -730,7 +744,16 @@ export default function LeadsPage() {
   const [rejectingLead, setRejectingLead] = useState<Lead | null>(null)
   const [rejectionReason, setRejectionReason] = useState('')
 
+  const [approvingLead, setApprovingLead] = useState<Lead | null>(null)
+  const [selectedBranchForLead, setSelectedBranchForLead] = useState<string>('Aniyapuram')
+
   const [rescheduleFollowup, setRescheduleFollowup] = useState<{ followup: LeadFollowup; lead: Lead } | null>(null)
+
+  useEffect(() => {
+    if (statusFilter === 'Approved') {
+      setStatusFilter('all')
+    }
+  }, [statusFilter, setStatusFilter])
 
   // ─── Reminder polling ─────────────────────────────────────────────────────
   const firedRemindersRef = useRef<Set<string>>(new Set())
@@ -814,19 +837,28 @@ export default function LeadsPage() {
   const thisWeekLeads = leads.filter(l => dayjs(l.created_at).isSame(dayjs(), 'week')).length
 
   const processingLeadId =
-    (approveLead.isPending && approveLead.variables ? approveLead.variables.id : null) ||
+    (approveLead.isPending && approveLead.variables ? ('id' in approveLead.variables ? approveLead.variables.id : approveLead.variables.lead.id) : null) ||
     (rejectLeadMutation.isPending && rejectLeadMutation.variables ? rejectLeadMutation.variables.lead.id : null) ||
     (markInterested.isPending && markInterested.variables ? markInterested.variables.id : null) ||
     null
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
-  const handleApproveDirect = async (lead: Lead) => {
+  const handleApproveClick = (lead: Lead) => {
+    setApprovingLead(lead)
+    setSelectedBranchForLead(userBranch || 'Aniyapuram')
+  }
+
+  const handleApproveConfirm = async () => {
+    if (!approvingLead) return
+    const lead = approvingLead
+    const branch = selectedBranchForLead
+    setApprovingLead(null)
     try {
       toast.promise(
-        approveLead.mutateAsync(lead),
+        approveLead.mutateAsync({ lead, branch }),
         {
-          loading: `Approving ${lead.name}...`,
-          success: `Lead ${lead.name} approved! Draft customer profile registered.`,
+          loading: `Approving ${lead.name} and mapping to ${branch}...`,
+          success: `Lead ${lead.name} approved & mapped to ${branch} branch!`,
           error: (err: any) => `Failed to approve: ${err.message || 'Unknown error'}`
         }
       )
@@ -938,7 +970,6 @@ export default function LeadsPage() {
           { id: 'all', label: 'All Leads', count: totalCount, activeColor: 'bg-white text-slate-900 shadow-sm border border-slate-200/30' },
           { id: 'Pending', label: 'Pending', count: pendingCount, activeColor: 'bg-amber-500 text-white shadow-sm shadow-amber-500/25 border border-amber-600/10' },
           { id: 'Interested', label: 'Interested', count: interestedCount, activeColor: 'bg-blue-600 text-white shadow-sm shadow-blue-600/25 border border-blue-700/10' },
-          { id: 'Approved', label: 'Approved', count: approvedCount, activeColor: 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25 border border-emerald-700/10' },
           { id: 'Converted', label: 'Converted', count: convertedCount, activeColor: 'bg-slate-700 text-white shadow-sm shadow-slate-700/25 border border-slate-800/10' },
           { id: 'Rejected', label: 'Rejected', count: rejectedCount, activeColor: 'bg-red-500 text-white shadow-sm shadow-red-500/25 border border-red-600/10' },
         ].map((s) => (
@@ -1036,12 +1067,13 @@ export default function LeadsPage() {
               key={lead.id}
               lead={lead}
               followup={getFollowup(lead.id)}
-              onApprove={handleApproveDirect}
+              onApprove={handleApproveClick}
               onReject={handleRejectClick}
               onInterested={handleInterested}
               onSaveFollowup={handleSaveFollowup}
               isSavingFollowup={upsertFollowup.isPending}
               processingLeadId={processingLeadId}
+              isBranchUser={isBranchUser}
             />
           ))}
         </div>
@@ -1078,12 +1110,13 @@ export default function LeadsPage() {
                     lead={lead}
                     idx={idx}
                     followup={getFollowup(lead.id)}
-                    onApprove={handleApproveDirect}
+                    onApprove={handleApproveClick}
                     onReject={handleRejectClick}
                     onInterested={handleInterested}
                     onSaveFollowup={handleSaveFollowup}
                     isSavingFollowup={upsertFollowup.isPending}
                     processingLeadId={processingLeadId}
+                    isBranchUser={isBranchUser}
                   />
                 ))}
               </tbody>
@@ -1116,6 +1149,71 @@ export default function LeadsPage() {
             onChange={(e) => setRejectionReason(e.target.value)}
           />
         </div>
+      </Modal>
+
+      {/* Approve & Map to Branch Modal */}
+      <Modal
+        isOpen={!!approvingLead}
+        onClose={() => setApprovingLead(null)}
+        title={approvingLead ? `Approve Application & Map to Branch — ${approvingLead.name}` : 'Approve Application'}
+        size="md"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setApprovingLead(null)}>Cancel</Button>
+            <Button
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
+              onClick={handleApproveConfirm}
+              loading={approveLead.isPending}
+            >
+              <CheckCircle2 className="h-4 w-4" /> Confirm Approval &amp; Map
+            </Button>
+          </>
+        }
+      >
+        {approvingLead && (
+          <div className="space-y-4">
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/70 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Applicant:</span>
+                <span className="font-bold text-slate-800">{approvingLead.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Phone:</span>
+                <span className="font-semibold text-slate-700">{approvingLead.phone}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Loan Product:</span>
+                <span className="font-semibold text-slate-700">{approvingLead.product}</span>
+              </div>
+              {approvingLead.amount && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">Requested Amount:</span>
+                  <span className="font-bold text-emerald-600 amount-display">
+                    {isNaN(Number(approvingLead.amount)) ? approvingLead.amount : formatCurrency(Number(approvingLead.amount))}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Map / Assign to Branch *
+              </label>
+              <select
+                value={selectedBranchForLead}
+                onChange={(e) => setSelectedBranchForLead(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              >
+                <option value="Aniyapuram">Aniyapuram Branch</option>
+                <option value="Vallipuram">Vallipuram Branch</option>
+                <option value="Head Office">Head Office</option>
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Only users of the mapped branch (and Admins) will be able to view, edit, and create records for this customer profile.
+              </p>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Reschedule Modal */}
