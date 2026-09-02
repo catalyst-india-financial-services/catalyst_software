@@ -33,12 +33,45 @@ export const useAuthStore = create<AuthState>()(
       userBranch: null,
       selectedBranch: null,
       setSelectedBranch: (selectedBranch) => set({ selectedBranch }),
-      setUser: (user) => set({
-        user,
-        isAuthenticated: !!user,
-        isBranchUser: user?.role === 'branch',
-        userBranch: user?.branch ?? null,
-      }),
+      setUser: (rawUser) => {
+        if (!rawUser) {
+          set({
+            user: null,
+            isAuthenticated: false,
+            isBranchUser: false,
+            userBranch: null,
+            selectedBranch: null,
+          })
+          return
+        }
+
+        const emailLower = (rawUser.email || '').toLowerCase()
+        const detectedBranch = rawUser.branch || (
+          emailLower.includes('aniyapuram') ? 'Aniyapuram' :
+          emailLower.includes('vallipuram') ? 'Vallipuram' : null
+        )
+        const isBranch = rawUser.role === 'branch' || !!detectedBranch
+        const finalBranch = detectedBranch || null
+        const finalRole = isBranch ? ('branch' as const) : rawUser.role
+        const finalName = isBranch && (rawUser.full_name === 'Admin User' || !rawUser.full_name)
+          ? `${finalBranch} Branch`
+          : rawUser.full_name
+
+        const user: User = {
+          ...rawUser,
+          role: finalRole,
+          branch: finalBranch,
+          full_name: finalName,
+        }
+
+        set({
+          user,
+          isAuthenticated: true,
+          isBranchUser: isBranch,
+          userBranch: finalBranch,
+          selectedBranch: isBranch ? finalBranch : null,
+        })
+      },
       setSession: (session) => set({ session }),
       setActiveSessionId: (id) => set({ activeSessionId: id }),
       setLoading: (isLoading) => set({ isLoading }),
@@ -92,7 +125,14 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         activeSessionId: state.activeSessionId,
         selectedBranch: state.selectedBranch,
+        isBranchUser: state.isBranchUser,
+        userBranch: state.userBranch,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.user) {
+          state.setUser(state.user)
+        }
+      },
     }
   )
 )

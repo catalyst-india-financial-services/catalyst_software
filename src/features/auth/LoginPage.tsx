@@ -19,8 +19,15 @@ export default function LoginPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
+    const emailLower = email.toLowerCase()
+    const detectedName = emailLower.includes('aniyapuram')
+      ? 'Aniyapuram Branch'
+      : emailLower.includes('vallipuram')
+      ? 'Vallipuram Branch'
+      : 'Admin User'
+
     signInMutation.mutate(
-      { email, password, fullName: 'Admin User' },
+      { email, password, fullName: detectedName },
       {
         onSuccess: (data) => {
           setUser(data.user)

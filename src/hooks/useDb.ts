@@ -11,9 +11,13 @@ import { useAuthStore } from '@/store/authStore'
 // Returns the branch name if the current user is a branch-level user, else null (admin sees all or selected branch)
 function useBranchFilter(): string | null {
   const user = useAuthStore((s) => s.user)
+  const isBranchUser = useAuthStore((s) => s.isBranchUser)
+  const userBranch = useAuthStore((s) => s.userBranch)
   const selectedBranch = useAuthStore((s) => s.selectedBranch)
   if (!user) return null
+  if (isBranchUser && userBranch) return userBranch
   if (user.role === 'branch' && user.branch) return user.branch
+  if (user.branch) return user.branch
   return selectedBranch
 }
 
@@ -1142,15 +1146,35 @@ export function useSignIn() {
 
       if (error) throw error
 
+      const emailLower = (email || '').toLowerCase()
+      const branchName = emailLower.includes('aniyapuram')
+        ? 'Aniyapuram'
+        : emailLower.includes('vallipuram')
+        ? 'Vallipuram'
+        : null
+
       if (!user) {
-        // Auto-register default admin profile
+        // Auto-register profile with appropriate role and branch
+        const role = branchName ? 'branch' : 'admin'
+        const name = branchName ? `${branchName} Branch` : fullName
         const { data: newUser, error: insertError } = await supabase
           .from('users')
-          .insert([{ email, full_name: fullName, role: 'admin', is_active: true }])
+          .insert([{ email, full_name: name, role, branch: branchName, is_active: true }])
           .select()
           .single()
         if (insertError) throw insertError
         user = newUser
+      } else if (branchName && (!user.branch || user.role !== 'branch')) {
+        // Auto-update profile if previously registered as admin without branch
+        const { data: updatedUser, error: updateError } = await supabase
+          .from('users')
+          .update({ role: 'branch', branch: branchName, full_name: `${branchName} Branch` })
+          .eq('id', user.id)
+          .select()
+          .single()
+        if (!updateError && updatedUser) {
+          user = updatedUser
+        }
       }
 
       // 3. Check account is active

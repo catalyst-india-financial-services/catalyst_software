@@ -52,16 +52,16 @@ export function Header() {
 
         {/* Right Nav Options */}
         <div className="flex items-center gap-2.5 ml-auto">
-          {/* Operating Branch Badge */}
+          {/* Operating Branch Badge (fixed for branch users) */}
           {isBranchUser && userBranch && (
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border shadow-2xs bg-violet-50 text-violet-700 border-violet-200/60">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border shadow-2xs bg-violet-50 text-violet-700 border-violet-200/60">
               <Building2 className="h-3.5 w-3.5" />
               {userBranch} Branch
             </div>
           )}
 
-          {/* Branch Switcher Dropdown for Admin */}
-          {user?.role === 'admin' && (
+          {/* Branch Switcher Dropdown - strictly for Admin only */}
+          {user?.role === 'admin' && !isBranchUser && (
             <div ref={branchMenuRef} className="relative">
               <button
                 onClick={() => setShowBranchMenu(!showBranchMenu)}
