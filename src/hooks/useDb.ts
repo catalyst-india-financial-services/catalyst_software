@@ -6,6 +6,7 @@ import dayjs from 'dayjs'
 import { customerProfileService } from '@/services/customerProfileService'
 import type { CustomerSegmentOption } from '@/services/customerProfileService'
 import { useAuthStore } from '@/store/authStore'
+import { AUTHORIZED_LOGIN_ACCOUNTS } from '@/config/authCredentials'
 
 // ─── Branch Filter Helper ─────────────────────────────────────────────────────
 // Returns the branch name if the current user is a branch-level user, else null (admin sees all or selected branch)
@@ -366,20 +367,20 @@ export function useCreateLoan() {
         const baseLoanFields = {
           loan_number,
           customer_id: loanData.customer_id,
-          loan_type: loanData.loan_type,
-          loan_amount: loanData.loan_amount,
-          interest_rate: loanData.interest_rate,
-          interest_type: loanData.interest_type,
-          duration_months: loanData.duration_months,
-          processing_fee: loanData.processing_fee,
+          loan_type: loanData.loan_type || 'personal',
+          loan_amount: loanData.loan_amount ?? 0,
+          interest_rate: loanData.interest_rate ?? 0,
+          interest_type: loanData.interest_type ?? 'flat',
+          duration_months: loanData.duration_months ?? 12,
+          processing_fee: loanData.processing_fee ?? 0,
           // Use account_opening_date if provided, otherwise use loan_date
-          loan_date: loanData.account_opening_date || loanData.loan_date || null,
-          emi_amount,
-          emi_count,
-          remaining_emi: emi_count,
-          remaining_balance: loanData.loan_amount || 0,
-          total_interest,
-          disbursed_amount,
+          loan_date: loanData.account_opening_date || loanData.loan_date || new Date().toISOString().split('T')[0],
+          emi_amount: isNaN(emi_amount) ? 0 : emi_amount,
+          emi_count: isNaN(emi_count) ? 12 : emi_count,
+          remaining_emi: isNaN(emi_count) ? 12 : emi_count,
+          remaining_balance: loanData.loan_amount ?? 0,
+          total_interest: isNaN(total_interest) ? 0 : total_interest,
+          disbursed_amount: isNaN(disbursed_amount) ? 0 : disbursed_amount,
           // Use 'active' as fallback if status is 'draft' (pre-migration 00009 databases don't support 'draft')
           status: (loanData.status === 'draft' || loanData.status === 'pending') ? 'active' as const : loanData.status,
           sync_status: 'synced' as const,
@@ -1122,53 +1123,62 @@ export function useUsers() {
 export function useSignIn() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ email, password, fullName }: { email: string; password?: string; fullName: string }) => {
-      const usePassword = password || 'password123'
+    mutationFn: async ({ email, password }: { email: string; password?: string; fullName?: string }) => {
+      const normalizedEmail = (email || '').trim().toLowerCase()
+      const authAccount = AUTHORIZED_LOGIN_ACCOUNTS[normalizedEmail]
 
-      // 1. Authenticate with Supabase Auth first
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password: usePassword,
-      })
-
-      if (authError) {
-        // Try sign up for first-time admin setup
-        const { error: signUpError } = await supabase.auth.signUp({ email, password: usePassword })
-        if (signUpError) console.warn('Auth sign-up failed:', signUpError.message)
+      if (!authAccount) {
+        throw new Error('Access denied: Unauthorized username/email.')
       }
 
-      // 2. Find the profile in public.users
+      if (password !== authAccount.password) {
+        throw new Error('Invalid password. Please check your credentials.')
+      }
+
+      // 1. Non-blocking attempt with Supabase Auth
+      try {
+        await supabase.auth.signInWithPassword({
+          email: authAccount.email,
+          password: authAccount.password,
+        })
+      } catch (authError) {
+        // Non-blocking fallback
+      }
+
+      // 2. Find or sync the profile in public.users
       let { data: user, error } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email)
+        .eq('email', authAccount.email)
         .maybeSingle()
 
       if (error) throw error
 
-      const emailLower = (email || '').toLowerCase()
-      const branchName = emailLower.includes('aniyapuram')
-        ? 'Aniyapuram'
-        : emailLower.includes('vallipuram')
-        ? 'Vallipuram'
-        : null
-
       if (!user) {
-        // Auto-register profile with appropriate role and branch
-        const role = branchName ? 'branch' : 'admin'
-        const name = branchName ? `${branchName} Branch` : fullName
+        // Register authorized profile with explicit role and branch
         const { data: newUser, error: insertError } = await supabase
           .from('users')
-          .insert([{ email, full_name: name, role, branch: branchName, is_active: true }])
+          .insert([{
+            email: authAccount.email,
+            full_name: authAccount.fullName,
+            role: authAccount.role,
+            branch: authAccount.branch,
+            is_active: true,
+          }])
           .select()
           .single()
         if (insertError) throw insertError
         user = newUser
-      } else if (branchName && (!user.branch || user.role !== 'branch')) {
-        // Auto-update profile if previously registered as admin without branch
+      } else if (user.role !== authAccount.role || user.branch !== authAccount.branch || user.full_name !== authAccount.fullName) {
+        // Ensure user record in DB matches the authorized role and branch
         const { data: updatedUser, error: updateError } = await supabase
           .from('users')
-          .update({ role: 'branch', branch: branchName, full_name: `${branchName} Branch` })
+          .update({
+            role: authAccount.role,
+            branch: authAccount.branch,
+            full_name: authAccount.fullName,
+            is_active: true,
+          })
           .eq('id', user.id)
           .select()
           .single()
@@ -1190,7 +1200,7 @@ export function useSignIn() {
         .eq('id', user.id)
 
       // 5. Record login session in employee_sessions
-      const authUser = authData?.user || (await supabase.auth.getUser()).data.user
+      const authUser = (await supabase.auth.getUser()).data.user
       let sessionId: string | null = null
       if (authUser) {
         const { data: sessionRow } = await supabase

@@ -150,7 +150,7 @@ export function Header() {
                 >
                   <div className="px-3 py-2 border-b border-slate-100 mb-1">
                     <p className="text-xs font-bold text-slate-900">{user?.full_name ?? 'Admin User'}</p>
-                    <p className="text-[11px] text-slate-400 truncate">{user?.email ?? 'admin@financeApp.com'}</p>
+                    <p className="text-[11px] text-slate-400 truncate">{user?.email ?? 'admincatalyst@gmail.com'}</p>
                   </div>
                   <button
                     onClick={() => { navigate('/settings'); setShowUserMenu(false) }}

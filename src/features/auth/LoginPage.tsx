@@ -5,6 +5,8 @@ import { DollarSign, Lock, Mail, ArrowRight, ShieldCheck, Eye, EyeOff } from 'lu
 import { Button, Card } from '@/components/ui'
 import { useAuthStore } from '@/store/authStore'
 import { useSignIn } from '@/hooks/useDb'
+import { AUTHORIZED_LOGIN_ACCOUNTS } from '@/config/authCredentials'
+import { toast } from 'sonner'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -19,20 +21,29 @@ export default function LoginPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    const emailLower = email.toLowerCase()
-    const detectedName = emailLower.includes('aniyapuram')
-      ? 'Aniyapuram Branch'
-      : emailLower.includes('vallipuram')
-      ? 'Vallipuram Branch'
-      : 'Admin User'
+    const trimmedEmail = (email || '').trim().toLowerCase()
+    const account = AUTHORIZED_LOGIN_ACCOUNTS[trimmedEmail]
+
+    if (!account) {
+      toast.error('Access denied: Unauthorized username/email.')
+      return
+    }
+
+    if (password !== account.password) {
+      toast.error('Invalid password. Please check your credentials.')
+      return
+    }
 
     signInMutation.mutate(
-      { email, password, fullName: detectedName },
+      { email: account.email, password: account.password, fullName: account.fullName },
       {
         onSuccess: (data) => {
           setUser(data.user)
           setActiveSessionId(data.sessionId)
           navigate('/dashboard')
+        },
+        onError: (err: any) => {
+          toast.error(err.message || 'Login failed')
         },
       }
     )

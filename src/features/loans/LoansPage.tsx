@@ -344,16 +344,16 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
       const payload = {
         customer_id: formData.customer_id,
         loan_type: formData.loan_category.toLowerCase() as Loan['loan_type'],
-        loan_amount: formData.loan_amount ? parseFloat(formData.loan_amount) : null,
-        interest_rate: parseFloat(formData.interest_rate),
-        interest_type: formData.interest_type as 'flat' | 'reducing',
-        duration_months: parseInt(formData.duration_months),
+        loan_amount: formData.loan_amount ? parseFloat(formData.loan_amount) : 0,
+        interest_rate: parseFloat(formData.interest_rate) || 0,
+        interest_type: (formData.interest_type as 'flat' | 'reducing') || 'flat',
+        duration_months: parseInt(formData.duration_months, 10) || 12,
         processing_fee: parseFloat(formData.processing_fee) || 0,
-        loan_date: formData.loan_date,
+        loan_date: formData.loan_date || formData.account_opening_date || new Date().toISOString().split('T')[0],
         status: computedStatus,
 
         // Wizard details
-        sanctioned_amount: formData.sanctioned_amount ? parseFloat(formData.sanctioned_amount) : (formData.loan_amount ? parseFloat(formData.loan_amount) : null),
+        sanctioned_amount: formData.sanctioned_amount ? parseFloat(formData.sanctioned_amount) : (formData.loan_amount ? parseFloat(formData.loan_amount) : 0),
         loan_product: formData.loan_product,
         loan_category: formData.loan_category,
         loan_purpose: formData.loan_purpose,
@@ -470,7 +470,16 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                   <Select
                     label="Customer ID *"
                     value={formData.customer_id}
-                    onChange={e => setFormData({ ...formData, customer_id: e.target.value })}
+                    onChange={e => {
+                      setFormData({ ...formData, customer_id: e.target.value })
+                      if (errors.customer_id) {
+                        setErrors(prev => {
+                          const next = { ...prev }
+                          delete next.customer_id
+                          return next
+                        })
+                      }
+                    }}
                      options={activeCustomers.map(c => ({ value: c.id, label: `${c.customer_id} — ${c.name}` }))}
                     placeholder="Select borrower customer"
                   />
