@@ -15,6 +15,12 @@ import {
   useDeleteCustomerDocument, useCustomerIncomeRecords
 } from '@/hooks/useDb'
 import {
+  loadScheduleRevisions,
+  createAndSaveScheduleRevision,
+  type ScheduleRevision,
+  type ScheduleRevisionItem
+} from '@/services/scheduleRevisionService'
+import {
   Button, Card, CardHeader, CardTitle, CardBody, StatusBadge, Badge,
   Input, Select, Textarea, Modal, DropdownMenu, Avatar
 } from '@/components/ui'
@@ -57,7 +63,7 @@ export default function LoanDetailPage() {
   const deleteDocument = useDeleteCustomerDocument()
 
   // --- Branch ownership guard ---
-  const { isBranchUser, userBranch } = useAuthStore()
+  const { user, isBranchUser, userBranch } = useAuthStore()
   useEffect(() => {
     if (isBranchUser && userBranch && loan && loan.branch !== userBranch) {
       toast.error(`Access denied: This account belongs to ${loan.branch || 'another'} branch.`)
@@ -107,6 +113,14 @@ export default function LoanDetailPage() {
     status: 'active' as any
   })
 
+  // Schedule Revisions state (Record 1, Record 2... as per date changes)
+  const [revisions, setRevisions] = useState<ScheduleRevision[]>([])
+  const [selectedRecordNumber, setSelectedRecordNumber] = useState<number>(1)
+  const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false)
+  const [rescheduleDate, setRescheduleDate] = useState('')
+  const [rescheduleReason, setRescheduleReason] = useState('')
+  const [isRescheduling, setIsRescheduling] = useState(false)
+
   // Set Edit Form default values once loan is loaded
   useEffect(() => {
     if (loan) {
@@ -121,6 +135,106 @@ export default function LoanDetailPage() {
       })
     }
   }, [loan])
+
+  // Initialize and sync revisions whenever loan or schedule loads
+  useEffect(() => {
+    if (loan) {
+      const revs = loadScheduleRevisions(loan, emiSchedule)
+      setRevisions(revs)
+      setSelectedRecordNumber((prev) => {
+        const exists = revs.some((r) => r.recordNumber === prev)
+        if (exists) return prev
+        const active = revs.find((r) => r.isCurrent) || revs[revs.length - 1]
+        return active ? active.recordNumber : 1
+      })
+    }
+  }, [loan, emiSchedule])
+
+  const selectedRecord = useMemo(() => {
+    return revisions.find((r) => r.recordNumber === selectedRecordNumber) || revisions[revisions.length - 1] || null
+  }, [revisions, selectedRecordNumber])
+
+  const displayedSchedule = useMemo(() => {
+    if (selectedRecord && selectedRecord.schedule && selectedRecord.schedule.length > 0) {
+      return selectedRecord.schedule
+    }
+    return emiSchedule
+  }, [selectedRecord, emiSchedule])
+
+  // ── Unified Internal Ledger Entries (Showing ALL collected amounts, not only interest) ──
+  const ledgerEntries = useMemo(() => {
+    const list: Array<{
+      id: string
+      date: string
+      type: string
+      category: string
+      description: string
+      credit: number | null
+      debit: number | null
+      status: string
+    }> = []
+
+    // 1. All EMI Collections -> Full collected amount as Credit (IN)
+    payments.forEach((p) => {
+      list.push({
+        id: p.receipt_number || p.id,
+        date: p.payment_date,
+        type: 'EMI Collection',
+        category: 'EMI Collection',
+        description: `EMI #${p.emi_number} Collection (Principal: ${formatCurrency(p.principal_paid || 0)} + Interest: ${formatCurrency(p.interest_paid || 0)}) [${(p.payment_mode || 'CASH').toUpperCase()}]`,
+        credit: p.amount_paid,
+        debit: null,
+        status: 'posted',
+      })
+    })
+
+    // 2. Add income records that are NOT already in payments (e.g. standalone penalty/fees)
+    incomeRecords.forEach((r) => {
+      const isAlreadyIncluded = payments.some(
+        p => p.payment_date === r.date && (p.amount_paid === r.amount || p.receipt_number === r.description || r.description?.includes(`EMI #${p.emi_number}`))
+      )
+      if (!isAlreadyIncluded) {
+        list.push({
+          id: r.id,
+          date: r.date,
+          type: r.category === 'interest' ? 'Interest' : r.category === 'penalty' ? 'Penalty' : (r.category || 'Income'),
+          category: r.category || 'Income',
+          description: r.description,
+          credit: r.amount,
+          debit: null,
+          status: 'posted',
+        })
+      }
+    })
+
+    // 3. Add Loan Sanction Disbursement (if loan is active or closed)
+    if (loan && (loan.status === 'active' || loan.status === 'closed' || loan.disbursed_amount)) {
+      list.push({
+        id: `DSB-${loan.loan_number}`,
+        date: loan.loan_date,
+        type: 'Disbursement',
+        category: 'Disbursement',
+        description: `Loan Sanction Disbursement to Customer (${loan.loan_type?.toUpperCase()} Loan - ${loan.loan_number})`,
+        credit: null,
+        debit: loan.disbursed_amount || loan.loan_amount || 0,
+        status: 'posted',
+      })
+    }
+
+    return list.sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf())
+  }, [payments, incomeRecords, loan])
+
+  const filteredLedgerEntries = useMemo(() => {
+    return ledgerEntries.filter(r => {
+      const matchSearch = r.description.toLowerCase().includes(txSearch.toLowerCase()) ||
+                          r.id.toLowerCase().includes(txSearch.toLowerCase()) ||
+                          r.type.toLowerCase().includes(txSearch.toLowerCase())
+      const matchCategory = txTypeFilter === 'all'
+        ? true
+        : r.category.toLowerCase() === txTypeFilter.toLowerCase() || r.type.toLowerCase() === txTypeFilter.toLowerCase()
+      return matchSearch && matchCategory
+    })
+  }, [ledgerEntries, txSearch, txTypeFilter])
 
   // --- Dynamic Math and Rollups ---
 
@@ -256,6 +370,37 @@ export default function LoanDetailPage() {
     }
   }
 
+  // Handler for Reschedule / Date Change modal
+  const handleRescheduleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!rescheduleDate) return toast.error('Please choose a valid new date')
+    if (!loan) return
+
+    try {
+      setIsRescheduling(true)
+      const { updatedRevisions, newRecord } = await createAndSaveScheduleRevision({
+        loan,
+        newDate: rescheduleDate,
+        reason: rescheduleReason.trim() || undefined,
+        changedBy: user?.full_name || (isBranchUser ? `${userBranch} Branch` : 'Admin User'),
+        currentRevisions: revisions,
+      })
+
+      setRevisions(updatedRevisions)
+      setSelectedRecordNumber(newRecord.recordNumber)
+      setIsRescheduleModalOpen(false)
+      setRescheduleReason('')
+      toast.success(`Date changed successfully! Record ${newRecord.recordNumber} created.`)
+      refetchLoan()
+      refetchSchedule()
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.message || 'Failed to update schedule date')
+    } finally {
+      setIsRescheduling(false)
+    }
+  }
+
   // Edit Loan parameters handler
   const handleEditLoanSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -269,6 +414,8 @@ export default function LoanDetailPage() {
     if (isNaN(tenure) || tenure <= 0) return toast.error('Tenure must be at least 1 month')
 
     try {
+      const dateChanged = loan && editForm.loan_date && editForm.loan_date !== loan.loan_date
+
       await updateLoan.mutateAsync({
         id: loanId,
         loan_amount: amount,
@@ -279,6 +426,23 @@ export default function LoanDetailPage() {
         interest_type: editForm.interest_type,
         status: editForm.status
       })
+
+      if (dateChanged && loan) {
+        try {
+          const { updatedRevisions, newRecord } = await createAndSaveScheduleRevision({
+            loan: { ...loan, loan_amount: amount, interest_rate: rate, duration_months: tenure, loan_date: editForm.loan_date },
+            newDate: editForm.loan_date,
+            reason: 'Date updated via Edit Account parameters',
+            changedBy: user?.full_name || (isBranchUser ? `${userBranch} Branch` : 'Admin User'),
+            currentRevisions: revisions,
+          })
+          setRevisions(updatedRevisions)
+          setSelectedRecordNumber(newRecord.recordNumber)
+        } catch (revErr) {
+          console.warn('Could not generate schedule revision:', revErr)
+        }
+      }
+
       toast.success('Account Details Updated Successfully')
       setIsEditModalOpen(false)
       refetchLoan()
@@ -687,12 +851,133 @@ export default function LoanDetailPage() {
             {/* DEMAND FLOW TAB */}
             {activeTab === 'demand-flow' && (
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100">
-                  <CardTitle>Amortization Demand Schedule</CardTitle>
-                  <span className="text-[10px] text-slate-400 font-extrabold uppercase">Total EMIs: {emiSchedule.length}</span>
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 gap-3">
+                  <div className="flex items-center gap-3">
+                    <CardTitle>Amortization Demand Schedule</CardTitle>
+                    {revisions.length > 1 && (
+                      <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200">
+                        {revisions.length} Date Revisions
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase">
+                      Total EMIs: {displayedSchedule.length}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setRescheduleDate(loan?.loan_date || dayjs().format('YYYY-MM-DD'))
+                        setRescheduleReason('')
+                        setIsRescheduleModalOpen(true)
+                      }}
+                      className="h-8 text-xs font-bold border-brand-200 text-brand-700 hover:bg-brand-50 flex items-center gap-1.5"
+                    >
+                      <Calendar className="h-3.5 w-3.5" />
+                      Change Date / Reschedule
+                    </Button>
+                  </div>
                 </CardHeader>
+
+                {/* Revision Tabs: Record 1, Record 2 ... as per date changes */}
+                <div className="flex items-center gap-2 border-b border-slate-100 px-6 pt-3 pb-0 bg-slate-50/60 overflow-x-auto">
+                  <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mr-1 shrink-0">
+                    Schedule Records:
+                  </span>
+                  {revisions.map((rev) => {
+                    const isSelected = selectedRecordNumber === rev.recordNumber
+                    return (
+                      <button
+                        key={rev.recordNumber}
+                        type="button"
+                        onClick={() => setSelectedRecordNumber(rev.recordNumber)}
+                        className={cn(
+                          'flex items-center gap-2 px-3.5 py-2 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap',
+                          isSelected
+                            ? 'border-brand-600 text-brand-600 bg-white shadow-xs rounded-t-lg font-extrabold -mb-[1px]'
+                            : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/70'
+                        )}
+                      >
+                        <span>Record {rev.recordNumber}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
+                          {formatDate(rev.effectiveDate)}
+                        </span>
+                        {rev.isCurrent ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-extrabold uppercase">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600 font-medium uppercase">
+                            Previous
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Selected Record Details Bar */}
+                {selectedRecord && (
+                  <div className={cn(
+                    'px-6 py-3 border-b text-xs flex flex-wrap items-center justify-between gap-3 transition-colors',
+                    selectedRecord.isCurrent
+                      ? 'bg-emerald-50/30 border-emerald-100 text-slate-700'
+                      : 'bg-amber-50/30 border-amber-100 text-slate-700'
+                  )}>
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                      <span className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                        {selectedRecord.isCurrent ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <Calendar className="h-4 w-4 text-amber-600" />
+                        )}
+                        Record {selectedRecord.recordNumber} Details
+                      </span>
+                      <div>
+                        <span className="text-slate-500 font-medium">Effective Schedule Date: </span>
+                        <span className="font-bold text-slate-800">{formatDate(selectedRecord.effectiveDate)}</span>
+                      </div>
+                      {selectedRecord.previousDate && (
+                        <div>
+                          <span className="text-slate-500 font-medium">Previous Created Date: </span>
+                          <span className="font-bold text-slate-800 line-through text-slate-400 mr-1">
+                            {formatDate(selectedRecord.previousDate)}
+                          </span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-slate-500 font-medium">Created On: </span>
+                        <span className="font-semibold text-slate-700">{formatDate(selectedRecord.createdAt)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-medium">By: </span>
+                        <span className="font-semibold text-slate-700">{selectedRecord.createdBy}</span>
+                      </div>
+                      {selectedRecord.reason && (
+                        <div>
+                          <span className="text-slate-500 font-medium">Note: </span>
+                          <span className="italic text-slate-600 font-medium">{selectedRecord.reason}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {selectedRecord.isCurrent ? (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Active Current Schedule
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200">
+                          Previous Created Date Snapshot
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="overflow-x-auto">
-                  {emiSchedule.length === 0 ? (
+                  {displayedSchedule.length === 0 ? (
                     <div className="p-8 text-center text-slate-400">No amortization schedule found.</div>
                   ) : (
                     <table className="data-table w-full">
@@ -709,7 +994,7 @@ export default function LoanDetailPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {emiSchedule.map((item) => {
+                        {displayedSchedule.map((item) => {
                           const isOverdue = (item.status === 'pending' || item.status === 'overdue') && dayjs(item.due_date).isBefore(dayjs(), 'day')
                           return (
                             <tr key={item.emi_number} className={cn(
@@ -795,7 +1080,10 @@ export default function LoanDetailPage() {
             {activeTab === 'transactions' && (
               <Card>
                 <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100">
-                  <CardTitle>Internal Ledger Accounting</CardTitle>
+                  <div>
+                    <CardTitle>Internal Ledger Accounting</CardTitle>
+                    <p className="text-xs text-slate-500 mt-0.5">Complete account cash flow showing all collections (Principal + Interest) and disbursements</p>
+                  </div>
                   <div className="flex gap-2 w-full sm:w-auto">
                     <input
                       type="text"
@@ -809,15 +1097,17 @@ export default function LoanDetailPage() {
                       onChange={(e) => setTxTypeFilter(e.target.value)}
                       options={[
                         { value: 'all', label: 'All Categories' },
+                        { value: 'EMI Collection', label: 'EMI Collection' },
+                        { value: 'Disbursement', label: 'Disbursement' },
                         { value: 'interest', label: 'Interest' },
                         { value: 'penalty', label: 'Penalty' }
                       ]}
-                      className="w-32 h-9 border border-slate-200 text-xs rounded-xl"
+                      className="w-36 h-9 border border-slate-200 text-xs rounded-xl"
                     />
                   </div>
                 </CardHeader>
                 <div className="overflow-x-auto">
-                  {incomeRecords.length === 0 ? (
+                  {filteredLedgerEntries.length === 0 ? (
                     <div className="p-8 text-center text-slate-400">No transactions available.</div>
                   ) : (
                     <table className="data-table w-full">
@@ -833,28 +1123,34 @@ export default function LoanDetailPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {incomeRecords
-                          .filter(r => {
-                            const matchSearch = r.description.toLowerCase().includes(txSearch.toLowerCase()) || r.id.toLowerCase().includes(txSearch.toLowerCase())
-                            const matchCategory = txTypeFilter === 'all' ? true : r.category === txTypeFilter
-                            return matchSearch && matchCategory
-                          })
-                          .map((r) => (
-                            <tr key={r.id}>
-                              <td className="text-xs text-slate-500">{formatDate(r.date)}</td>
-                              <td className="font-mono text-xs text-slate-500 truncate max-w-[120px]">{r.id}</td>
-                              <td className="capitalize text-xs font-bold text-slate-600">{r.category}</td>
-                              <td className="text-xs font-medium text-slate-700">{r.description}</td>
-                              <td className="font-mono text-xs font-extrabold text-emerald-600">{formatCurrency(r.amount)}</td>
-                              <td className="font-mono text-xs text-slate-400">-</td>
-                              <td>
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border bg-emerald-50 text-emerald-700 border-emerald-250">
-                                  posted
-                                </span>
-                              </td>
-                            </tr>
-                          ))
-                        }
+                        {filteredLedgerEntries.map((r) => (
+                          <tr key={r.id}>
+                            <td className="text-xs text-slate-500">{formatDate(r.date)}</td>
+                            <td className="font-mono text-xs text-slate-500 truncate max-w-[140px] font-semibold">{r.id}</td>
+                            <td className="capitalize text-xs font-bold text-slate-700">
+                              <span className={cn(
+                                'px-2 py-0.5 rounded-md text-[10px] font-extrabold',
+                                r.type === 'EMI Collection' && 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+                                r.type === 'Disbursement' && 'bg-red-50 text-red-700 border border-red-200',
+                                r.type !== 'EMI Collection' && r.type !== 'Disbursement' && 'bg-slate-100 text-slate-700'
+                              )}>
+                                {r.type}
+                              </span>
+                            </td>
+                            <td className="text-xs font-medium text-slate-700">{r.description}</td>
+                            <td className="font-mono text-xs font-black text-emerald-600">
+                              {r.credit ? formatCurrency(r.credit) : '-'}
+                            </td>
+                            <td className="font-mono text-xs font-bold text-red-600">
+                              {r.debit ? formatCurrency(r.debit) : '-'}
+                            </td>
+                            <td>
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border bg-emerald-50 text-emerald-700 border-emerald-250">
+                                {r.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   )}
@@ -1100,6 +1396,59 @@ export default function LoanDetailPage() {
           onSubmit={handleCollectEmiSubmit}
         />
       )}
+
+      {/* Reschedule / Change Schedule Date Modal */}
+      <Modal
+        isOpen={isRescheduleModalOpen}
+        onClose={() => setIsRescheduleModalOpen(false)}
+        title="Change Schedule Date & Create Revision (Record)"
+        size="md"
+      >
+        <form onSubmit={handleRescheduleSubmit} className="space-y-4">
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs space-y-2">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Current Schedule Date:</span>
+              <span className="font-bold text-slate-800">{formatDate(loan?.loan_date || '')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Current Active Record:</span>
+              <span className="font-bold text-brand-600">Record {revisions.length}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Total EMIs in Schedule:</span>
+              <span className="font-semibold text-slate-700">{displayedSchedule.length}</span>
+            </div>
+            <p className="text-[11px] text-slate-500 pt-2 border-t border-slate-200">
+              Entering a new date will preserve your previous schedule details in <span className="font-bold text-slate-700">Record {revisions.length}</span> and automatically create <span className="font-bold text-brand-600">Record {revisions.length + 1}</span> with due dates recalculated as per the new date.
+            </p>
+          </div>
+
+          <Input
+            label="New Schedule / Repayment Start Date"
+            type="date"
+            value={rescheduleDate}
+            onChange={(e) => setRescheduleDate(e.target.value)}
+            required
+          />
+
+          <Textarea
+            label="Reason for Date Change (Optional)"
+            placeholder="e.g. Borrower requested due date shift, holiday adjustment..."
+            value={rescheduleReason}
+            onChange={(e) => setRescheduleReason(e.target.value)}
+            rows={2}
+          />
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+            <Button variant="outline" type="button" onClick={() => setIsRescheduleModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={isRescheduling} className="bg-brand-600 hover:bg-brand-700 text-white font-bold">
+              Apply Date Change & Create Record {revisions.length + 1}
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Edit Account Parameter Modal */}
       <Modal

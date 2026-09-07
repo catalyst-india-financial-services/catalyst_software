@@ -690,12 +690,12 @@ export function useCreatePayment() {
         .eq('id', paymentData.loan_id)
       if (updateLoanError) throw updateLoanError
 
-      // Insert income record for finance audit
+      // Insert income record for full collection audit (all collected amount)
       await supabase.from('income').insert([
         {
-          category: 'interest',
-          amount: interest_paid,
-          description: `Interest income from Loan ${loan.loan_number} EMI #${paymentData.emi_number}`,
+          category: 'EMI Collection',
+          amount: paymentData.amount_paid,
+          description: `EMI Collection from Loan ${loan.loan_number} EMI #${paymentData.emi_number} (Principal: ₹${principal_paid.toLocaleString('en-IN')} + Interest: ₹${interest_paid.toLocaleString('en-IN')})`,
           date: paymentData.payment_date,
           loan_id: paymentData.loan_id,
           customer_id: paymentData.customer_id,
@@ -722,6 +722,8 @@ export function useCreatePayment() {
       queryClient.invalidateQueries({ queryKey: ['loans'] })
       queryClient.invalidateQueries({ queryKey: ['loans', variables.loan_id] })
       queryClient.invalidateQueries({ queryKey: ['loans', variables.loan_id, 'schedule'] })
+      queryClient.invalidateQueries({ queryKey: ['income'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
     },
   })
@@ -2027,16 +2029,61 @@ export function useTransactions(filters?: {
       if (filters?.bank_account_id) query = (query as any).eq('bank_account_id', filters.bank_account_id)
       if (filters?.date_from) query = (query as any).gte('date', filters.date_from)
       if (filters?.date_to) query = (query as any).lte('date', filters.date_to)
-      const { data, error } = await query
-      if (error) throw error
-      let results = data.map((t: any) => ({
+
+      let paymentQuery = supabase
+        .from('emi_payments')
+        .select('*, customers(name, branch), loans(loan_number, branch)')
+        .order('payment_date', { ascending: false })
+      if (filters?.date_from) paymentQuery = (paymentQuery as any).gte('payment_date', filters.date_from)
+      if (filters?.date_to) paymentQuery = (paymentQuery as any).lte('payment_date', filters.date_to)
+
+      const [{ data: txnsData, error: txnErr }, { data: emiPays, error: payErr }] = await Promise.all([
+        query,
+        (!filters?.txn_type || filters.txn_type === 'repayment') && !filters?.bank_account_id
+          ? paymentQuery
+          : Promise.resolve({ data: [], error: null })
+      ])
+      if (txnErr) throw txnErr
+
+      const mappedTxns = (txnsData || []).map((t: any) => ({
         ...t,
         bank_account_name: t.bank_accounts?.name || '',
         customer_name: t.customers?.name || '',
         loan_number: t.loans?.loan_number || '',
         _loan_branch: t.loans?.branch || null,
         _customer_branch: t.customers?.branch || null,
-      })) as (import('@/types').Transaction & { _loan_branch?: string | null; _customer_branch?: string | null })[]
+      }))
+
+      const mappedEmiTxns = (emiPays || []).map((p: any) => ({
+        id: p.id,
+        txn_id: p.receipt_number || p.id,
+        txn_type: 'repayment' as const,
+        direction: 'credit' as const,
+        amount: Number(p.amount_paid || 0),
+        principal: Number(p.principal_paid || 0),
+        interest: Number(p.interest_paid || 0),
+        other_charges: Number(p.penalty || 0),
+        bank_account_id: null,
+        bank_account_name: p.payment_mode ? `${p.payment_mode.toUpperCase()} Counter` : 'Cash Account',
+        customer_id: p.customer_id,
+        customer_name: p.customers?.name || '',
+        loan_id: p.loan_id,
+        loan_number: p.loans?.loan_number || '',
+        reference_number: p.receipt_number || '',
+        description: `EMI #${p.emi_number} Collection (Principal: ₹${Number(p.principal_paid || 0).toLocaleString('en-IN')} + Interest: ₹${Number(p.interest_paid || 0).toLocaleString('en-IN')})`,
+        date: p.payment_date,
+        created_by: p.collected_by || 'Admin User',
+        is_reversed: false,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+        _loan_branch: p.loans?.branch || null,
+        _customer_branch: p.customers?.branch || null,
+      }))
+
+      let results = [...mappedTxns, ...mappedEmiTxns].sort(
+        (a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf()
+      ) as (import('@/types').Transaction & { _loan_branch?: string | null; _customer_branch?: string | null })[]
+
       // Client-side branch filter: show transactions for this branch's loans/customers
       if (branchFilter) {
         results = results.filter(t => t._loan_branch === branchFilter || t._customer_branch === branchFilter)
