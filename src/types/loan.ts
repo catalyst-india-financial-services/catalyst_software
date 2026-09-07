@@ -1,7 +1,17 @@
+export type LoanStructureType = 'regular' | 'interest_only' | 'composite'
+
+export interface CompositePhase {
+  phase_number: number
+  phase_name: string
+  phase_type: 'interest_only' | 'regular'
+  tenure_months: number
+  monthly_roi: number
+}
+
 // Loan types
 export type LoanStatus = 'draft' | 'active' | 'closed' | 'overdue' | 'pending'
 export type InterestType = 'flat' | 'reducing'
-export type LoanType = 'personal' | 'business' | 'home' | 'vehicle' | 'gold' | 'education' | 'agriculture'
+export type LoanType = 'personal' | 'business' | 'home' | 'vehicle' | 'gold' | 'education' | 'agriculture' | 'regular' | 'interest_only' | 'composite' | string
 
 export interface Loan {
   id: string
@@ -63,12 +73,18 @@ export interface Loan {
 
   // Auditing
   created_by?: string
+
+  // Loan Structure & Phases
+  loan_structure_type?: LoanStructureType
+  monthly_roi?: number
+  composite_phases?: CompositePhase[]
 }
 
 export interface EMISchedule {
   id: string
   loan_id: string
   emi_number: number
+  phase?: string
   due_date: string
   emi_amount: number
   principal: number

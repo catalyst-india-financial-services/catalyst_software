@@ -16,11 +16,17 @@ import {
   Button, SearchInput, Pagination, StatusBadge, Card, CardHeader, CardTitle,
   CardBody, Modal, Input, Select, Badge, DropdownMenu, EmptyState, StatsCard, PageHeader, Textarea
 } from '@/components/ui'
-import { formatCurrency, formatDate, calculateEMI, generateEMISchedule, cn } from '@/utils'
+import {
+  formatCurrency, formatDate, calculateEMI, generateEMISchedule, cn,
+  calculateLoanSchedule, type LoanStructureType, type CompositePhase, DEFAULT_COMPOSITE_PHASES
+} from '@/utils'
 
 const columnHelper = createColumnHelper<Loan>()
 
 const loanTypes = [
+  { value: 'regular', label: 'Regular Loan' },
+  { value: 'interest_only', label: 'Interest Loan' },
+  { value: 'composite', label: 'Composite Loan' },
   { value: 'personal', label: 'Personal Loan' },
   { value: 'business', label: 'Business Loan' },
   { value: 'home', label: 'Home Loan' },
@@ -34,7 +40,7 @@ import { CreateCustomerModal } from '../customers/CustomersPage'
 
 const LOAN_SECTION_REQUIRED_FIELDS = {
   1: ['customer_id', 'loan_product', 'loan_category', 'loan_purpose', 'branch', 'account_opening_date'],
-  2: ['sanctioned_amount', 'loan_amount', 'interest_rate', 'interest_type', 'duration_months', 'loan_date'],
+  2: ['sanctioned_amount', 'loan_structure_type', 'loan_date'],
   3: ['repayment_frequency', 'repayment_method', 'repayment_start_date', 'first_demand_date', 'emi_due_day'],
   4: ['guarantor_customer_id', 'guarantor_relationship', 'guarantor_type'],
   5: ['security_type', 'security_owner_id', 'security_ownership_type', 'security_market_value', 'security_valuation_date', 'security_doc_status'],
@@ -43,7 +49,7 @@ const LOAN_SECTION_REQUIRED_FIELDS = {
 
 const LOAN_SECTION_TICK_FIELDS = {
   1: ['customer_id', 'loan_purpose', 'account_opening_date'],
-  2: ['sanctioned_amount', 'loan_amount', 'interest_rate', 'duration_months'],
+  2: ['sanctioned_amount', 'loan_structure_type'],
   3: ['repayment_start_date', 'first_demand_date', 'emi_due_day'],
   4: ['guarantor_customer_id', 'guarantor_relationship'],
   5: ['security_type', 'security_owner_id', 'security_market_value'],
@@ -88,9 +94,12 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
 
     sanctioned_amount: loan?.sanctioned_amount?.toString() ?? '',
     loan_amount: loan?.loan_amount?.toString() ?? '', // Principal
+    loan_structure_type: ((loan as any)?.loan_structure_type || (loan?.loan_type === 'composite' || loan?.loan_type === 'interest_only' || loan?.loan_type === 'regular' ? loan.loan_type : 'regular')) as LoanStructureType,
+    monthly_roi: ((loan as any)?.monthly_roi?.toString() ?? (loan?.interest_rate ? (loan.interest_rate / 12).toString() : '1')),
+    composite_phases: ((loan as any)?.composite_phases && (loan as any).composite_phases.length > 0 ? (loan as any).composite_phases : DEFAULT_COMPOSITE_PHASES) as CompositePhase[],
     interest_rate: loan?.interest_rate?.toString() ?? '12',
-    interest_type: (loan?.interest_type ?? 'reducing') as 'flat' | 'reducing',
-    duration_months: loan?.duration_months?.toString() ?? '12',
+    interest_type: (loan?.interest_type ?? 'flat') as 'flat' | 'reducing',
+    duration_months: loan?.duration_months?.toString() ?? '25',
     repayment_frequency: (loan?.repayment_frequency ?? 'monthly') as 'monthly' | 'weekly' | 'fortnightly',
     repayment_method: loan?.repayment_method ?? 'NACH',
     processing_fee: loan?.processing_fee?.toString() ?? '0',
@@ -155,45 +164,57 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
   const [isAddingPurpose, setIsAddingPurpose] = useState(false)
   const [newPurposeName, setNewPurposeName] = useState('')
 
-  // Calculations
+  // Calculations based on 3 Loan Types
+  const calculatedScheduleResult = useMemo(() => {
+    const principal = parseFloat(formData.sanctioned_amount || formData.loan_amount) || 0
+    const months = parseInt(formData.duration_months) || (formData.loan_structure_type === 'composite' ? 30 : 25)
+    const roi = parseFloat(formData.monthly_roi) || (parseFloat(formData.interest_rate) / 12) || 1
+    const startDate = formData.repayment_start_date || formData.loan_date || new Date().toISOString().split('T')[0]
+
+    return calculateLoanSchedule({
+      loanAmount: principal,
+      loanStructureType: formData.loan_structure_type,
+      tenureMonths: months,
+      monthlyRoi: roi,
+      startDate,
+      frequency: formData.repayment_frequency,
+      phases: formData.composite_phases,
+    })
+  }, [
+    formData.sanctioned_amount,
+    formData.loan_amount,
+    formData.loan_structure_type,
+    formData.duration_months,
+    formData.monthly_roi,
+    formData.interest_rate,
+    formData.repayment_start_date,
+    formData.loan_date,
+    formData.repayment_frequency,
+    formData.composite_phases,
+  ])
+
   const calculatedInstallments = useMemo(() => {
-    const months = parseInt(formData.duration_months) || 0
-    if (formData.repayment_frequency === 'weekly') return months * 4
-    if (formData.repayment_frequency === 'fortnightly') return months * 2
-    return months
-  }, [formData.duration_months, formData.repayment_frequency])
+    return calculatedScheduleResult.schedule.length
+  }, [calculatedScheduleResult])
 
   const calculatedEmi = useMemo(() => {
-    const principal = parseFloat(formData.loan_amount) || 0
-    const rate = parseFloat(formData.interest_rate) || 0
-    const months = parseInt(formData.duration_months) || 0
-    if (!principal || !rate || !months) return 0
-    return calculateEMI(principal, rate, months, formData.interest_type as 'flat' | 'reducing', formData.repayment_frequency as any)
-  }, [formData.loan_amount, formData.interest_rate, formData.duration_months, formData.interest_type, formData.repayment_frequency])
+    return calculatedScheduleResult.schedule[0]?.emi_amount || 0
+  }, [calculatedScheduleResult])
 
   const calculatedTotalInterest = useMemo(() => {
-    const principal = parseFloat(formData.loan_amount) || 0
-    return Math.max(0, calculatedEmi * calculatedInstallments - principal)
-  }, [calculatedEmi, calculatedInstallments, formData.loan_amount])
+    return calculatedScheduleResult.totalInterest
+  }, [calculatedScheduleResult])
 
   const calculatedMaturityDate = useMemo(() => {
-    if (!formData.repayment_start_date) return ''
-    const months = parseInt(formData.duration_months) || 0
-    if (formData.repayment_frequency === 'weekly') {
-      return dayjs(formData.repayment_start_date).add(months * 4, 'week').format('YYYY-MM-DD')
-    } else if (formData.repayment_frequency === 'fortnightly') {
-      return dayjs(formData.repayment_start_date).add(months * 2 * 2, 'week').format('YYYY-MM-DD')
-    } else {
-      return dayjs(formData.repayment_start_date).add(months, 'month').format('YYYY-MM-DD')
-    }
-  }, [formData.repayment_start_date, formData.duration_months, formData.repayment_frequency])
+    return calculatedScheduleResult.maturityDate
+  }, [calculatedScheduleResult])
 
   const calculatedLtv = useMemo(() => {
-    const principal = parseFloat(formData.loan_amount) || 0
+    const principal = parseFloat(formData.sanctioned_amount || formData.loan_amount) || 0
     const value = parseFloat(formData.security_market_value) || 0
     if (!principal || !value) return 0
     return Math.round((principal / value) * 100 * 100) / 100
-  }, [formData.loan_amount, formData.security_market_value])
+  }, [formData.sanctioned_amount, formData.loan_amount, formData.security_market_value])
 
   const sectionCompletion = useMemo(() => {
     return Object.fromEntries(
@@ -230,7 +251,6 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
   // Validators
   const validateStep = (currentStep: number): boolean => {
     const newErrors: Record<string, string> = {}
-    const todayStr = new Date().toISOString().split('T')[0]
 
     if (currentStep === 1) {
       if (!formData.customer_id) newErrors.customer_id = 'Customer selection is required'
@@ -240,15 +260,19 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
 
     if (currentStep === 2) {
       const sanctioned = parseFloat(formData.sanctioned_amount) || 0
-      const principal = parseFloat(formData.loan_amount) || 0
-      const rate = parseFloat(formData.interest_rate) || 0
       const duration = parseInt(formData.duration_months) || 0
+      const monthlyRoi = parseFloat(formData.monthly_roi) || 0
 
       if (sanctioned <= 0) newErrors.sanctioned_amount = 'Sanctioned amount must be greater than 0'
-      if (principal <= 0) newErrors.loan_amount = 'Principal amount must be greater than 0'
-      if (principal > sanctioned) newErrors.loan_amount = 'Principal amount cannot exceed sanctioned amount'
-      if (rate <= 0) newErrors.interest_rate = 'Interest rate must be greater than 0'
-      if (duration <= 0) newErrors.duration_months = 'Tenure must be greater than 0'
+      if (!formData.loan_structure_type) newErrors.loan_structure_type = 'Please select a loan type'
+      if (formData.loan_structure_type !== 'composite') {
+        if (duration <= 0) newErrors.duration_months = 'Tenure must be greater than 0'
+        if (monthlyRoi <= 0) newErrors.monthly_roi = 'Monthly ROI must be greater than 0'
+      } else {
+        if (!formData.composite_phases || formData.composite_phases.length === 0) {
+          newErrors.composite_phases = 'At least one phase must be configured'
+        }
+      }
 
       if (!formData.loan_date) {
         newErrors.loan_date = 'Sanction / Loan date is required'
@@ -340,21 +364,36 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
       //   draft  → user clicked "Save Draft" (incomplete, not yet an account)
       //   pending → user clicked "Create Account" (submitted for activation, KYC pending)
       const computedStatus: 'draft' | 'pending' = isFinalCreate ? 'pending' : 'draft'
+      const principalVal = formData.sanctioned_amount ? parseFloat(formData.sanctioned_amount) : (formData.loan_amount ? parseFloat(formData.loan_amount) : 0)
+      const computedTenure = formData.loan_structure_type === 'composite'
+        ? calculatedScheduleResult.totalTenureMonths
+        : (parseInt(formData.duration_months, 10) || 25)
+      const computedMonthlyRoi = parseFloat(formData.monthly_roi) || (parseFloat(formData.interest_rate) / 12) || 1
+      const structureProductLabel = formData.loan_structure_type === 'composite'
+        ? 'Composite Loan'
+        : formData.loan_structure_type === 'interest_only'
+        ? 'Interest Loan'
+        : 'Regular Loan'
 
       const payload = {
         customer_id: formData.customer_id,
-        loan_type: formData.loan_category.toLowerCase() as Loan['loan_type'],
-        loan_amount: formData.loan_amount ? parseFloat(formData.loan_amount) : 0,
-        interest_rate: parseFloat(formData.interest_rate) || 0,
+        loan_type: (formData.loan_structure_type || 'regular') as Loan['loan_type'],
+        loan_amount: principalVal,
+        interest_rate: computedMonthlyRoi * 12,
         interest_type: (formData.interest_type as 'flat' | 'reducing') || 'flat',
-        duration_months: parseInt(formData.duration_months, 10) || 12,
+        duration_months: computedTenure,
         processing_fee: parseFloat(formData.processing_fee) || 0,
         loan_date: formData.loan_date || formData.account_opening_date || new Date().toISOString().split('T')[0],
         status: computedStatus,
 
+        // Loan Structure & Phases
+        loan_structure_type: formData.loan_structure_type,
+        monthly_roi: computedMonthlyRoi,
+        composite_phases: formData.composite_phases,
+
         // Wizard details
-        sanctioned_amount: formData.sanctioned_amount ? parseFloat(formData.sanctioned_amount) : (formData.loan_amount ? parseFloat(formData.loan_amount) : 0),
-        loan_product: formData.loan_product,
+        sanctioned_amount: principalVal,
+        loan_product: structureProductLabel,
         loan_category: formData.loan_category,
         loan_purpose: formData.loan_purpose,
         branch: formData.branch,
@@ -645,54 +684,331 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                   value={formData.sanctioned_amount}
                   onChange={e => {
                     const val = e.target.value.replace(/^0+/, '')
-                    setFormData({ ...formData, sanctioned_amount: val })
+                    setFormData({
+                      ...formData,
+                      sanctioned_amount: val,
+                      loan_amount: val,
+                    })
                   }}
-                  placeholder="Total sanctioned amount"
-                />
-                <Input
-                  label="Loan Principal Amount (₹) *"
-                  type="number"
-                  value={formData.loan_amount}
-                  onChange={e => {
-                    const val = e.target.value.replace(/^0+/, '')
-                    setFormData({ ...formData, loan_amount: val })
-                  }}
-                  placeholder="Requested principal amount"
-                />
-                <div className="col-span-2">
-                  <FieldError msg={errors.sanctioned_amount || errors.loan_amount} />
-                </div>
-
-                <Input
-                  label="Interest Rate (% p.a.) *"
-                  type="number"
-                  step="0.01"
-                  value={formData.interest_rate}
-                  onChange={e => setFormData({ ...formData, interest_rate: e.target.value })}
-                  placeholder="Annual interest rate"
+                  placeholder="Total sanctioned amount (e.g. 100000)"
                 />
 
                 <Select
-                  label="Interest Method *"
-                  value={formData.interest_type}
-                  onChange={e => setFormData({ ...formData, interest_type: e.target.value as 'flat' | 'reducing' })}
+                  label="Loan Type *"
+                  value={formData.loan_structure_type}
+                  onChange={e => {
+                    const nextType = e.target.value as LoanStructureType
+                    setFormData(prev => ({
+                      ...prev,
+                      loan_structure_type: nextType,
+                      ...(nextType === 'regular'
+                        ? { duration_months: '25', monthly_roi: '1', interest_rate: '12' }
+                        : nextType === 'interest_only'
+                        ? { duration_months: '25', monthly_roi: '2', interest_rate: '24' }
+                        : { duration_months: '30', monthly_roi: '1', interest_rate: '12' }),
+                    }))
+                  }}
                   options={[
-                    { value: 'flat', label: 'Flat Interest Rate' },
-                    { value: 'reducing', label: 'Reducing Balance Interest' }
+                    { value: 'regular', label: 'Regular Loan' },
+                    { value: 'interest_only', label: 'Interest Loan' },
+                    { value: 'composite', label: 'Composite Loan' }
                   ]}
                 />
                 <div className="col-span-2">
-                  <FieldError msg={errors.interest_rate} />
+                  <FieldError msg={errors.sanctioned_amount || errors.loan_structure_type} />
                 </div>
 
-                <Input
-                  label="Tenure (Months) *"
-                  type="number"
-                  value={formData.duration_months}
-                  onChange={e => setFormData({ ...formData, duration_months: e.target.value })}
-                  placeholder="Number of months"
-                />
+                {/* ── REGULAR LOAN INPUTS ── */}
+                {formData.loan_structure_type === 'regular' && (
+                  <>
+                    <Input
+                      label="Tenure (Months) *"
+                      type="number"
+                      value={formData.duration_months}
+                      onChange={e => setFormData({ ...formData, duration_months: e.target.value })}
+                      placeholder="e.g. 25"
+                    />
 
+                    <div>
+                      <Input
+                        label="ROI (% per month) *"
+                        type="number"
+                        step="0.1"
+                        value={formData.monthly_roi}
+                        onChange={e => setFormData({
+                          ...formData,
+                          monthly_roi: e.target.value,
+                          interest_rate: ((parseFloat(e.target.value) || 0) * 12).toString()
+                        })}
+                        placeholder="e.g. 1"
+                      />
+                      <p className="text-[10px] text-slate-500 font-medium mt-1">
+                        Annual equivalent: {((parseFloat(formData.monthly_roi) || 0) * 12).toFixed(1)}% p.a.
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <FieldError msg={errors.duration_months || errors.monthly_roi} />
+                    </div>
+
+                    {/* Calculation Summary Card for Regular Loan */}
+                    <div className="col-span-2 bg-blue-50/60 border border-blue-200/80 rounded-xl p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                          <Calculator className="h-4 w-4 text-blue-600" /> Regular Loan Calculation Parameters
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                          Equal Principal Amortization
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-blue-900 mt-2">
+                        <div>
+                          <p className="text-[10px] text-blue-600 font-bold">Principal EMI</p>
+                          <p className="font-bold text-sm">{formatCurrency(calculatedScheduleResult.schedule[0]?.principal || 0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-blue-600 font-bold">Monthly Interest</p>
+                          <p className="font-bold text-sm">{formatCurrency(calculatedScheduleResult.schedule[0]?.interest || 0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-blue-600 font-bold">Total Monthly EMI</p>
+                          <p className="font-bold text-sm">{formatCurrency(calculatedScheduleResult.schedule[0]?.emi_amount || 0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-blue-600 font-bold">Total Interest</p>
+                          <p className="font-bold text-sm">{formatCurrency(calculatedScheduleResult.totalInterest)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* ── INTEREST LOAN INPUTS ── */}
+                {formData.loan_structure_type === 'interest_only' && (
+                  <>
+                    <Input
+                      label="Tenure (Months) *"
+                      type="number"
+                      value={formData.duration_months}
+                      onChange={e => setFormData({ ...formData, duration_months: e.target.value })}
+                      placeholder="e.g. 25"
+                    />
+
+                    <div>
+                      <Input
+                        label="ROI (% per month) *"
+                        type="number"
+                        step="0.1"
+                        value={formData.monthly_roi}
+                        onChange={e => setFormData({
+                          ...formData,
+                          monthly_roi: e.target.value,
+                          interest_rate: ((parseFloat(e.target.value) || 0) * 12).toString()
+                        })}
+                        placeholder="e.g. 2"
+                      />
+                      <p className="text-[10px] text-slate-500 font-medium mt-1">
+                        Annual equivalent: {((parseFloat(formData.monthly_roi) || 0) * 12).toFixed(1)}% p.a.
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <FieldError msg={errors.duration_months || errors.monthly_roi} />
+                    </div>
+
+                    {/* Calculation Summary Card for Interest Loan */}
+                    <div className="col-span-2 bg-amber-50/60 border border-amber-200/80 rounded-xl p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                          <Calculator className="h-4 w-4 text-amber-600" /> Interest Only Loan Parameters
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                          Bullet Principal at Maturity
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs font-semibold text-amber-900 mt-2">
+                        <div>
+                          <p className="text-[10px] text-amber-600 font-bold">Monthly Interest Due</p>
+                          <p className="font-bold text-sm">{formatCurrency(calculatedScheduleResult.schedule[0]?.interest || 0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-amber-600 font-bold">Principal at Maturity</p>
+                          <p className="font-bold text-sm">{formatCurrency(parseFloat(formData.sanctioned_amount) || 0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-amber-600 font-bold">Total Interest ({calculatedScheduleResult.totalTenureMonths} mos)</p>
+                          <p className="font-bold text-sm">{formatCurrency(calculatedScheduleResult.totalInterest)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* ── COMPOSITE LOAN (PHASES SETUP) ── */}
+                {formData.loan_structure_type === 'composite' && (
+                  <div className="col-span-2 bg-purple-50/40 border border-purple-200/70 rounded-2xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h5 className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                          <SlidersHorizontal className="h-4 w-4 text-purple-600" /> Composite Phases Setup
+                        </h5>
+                        <p className="text-[11px] text-purple-700 mt-0.5">
+                          Configure multi-phase repayment (e.g. Phase 1 Interest-Only, Phase 2 Regular Principal + Interest).
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                          Total Tenure: {calculatedScheduleResult.totalTenureMonths} Months
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px] border-purple-300 text-purple-800 hover:bg-purple-100"
+                          onClick={() => {
+                            const nextNum = formData.composite_phases.length + 1
+                            setFormData(prev => ({
+                              ...prev,
+                              composite_phases: [
+                                ...prev.composite_phases,
+                                {
+                                  phase_number: nextNum,
+                                  phase_name: `Phase ${nextNum}`,
+                                  phase_type: 'regular',
+                                  tenure_months: 12,
+                                  monthly_roi: 1,
+                                }
+                              ]
+                            }))
+                          }}
+                        >
+                          <Plus className="h-3 w-3 mr-1" /> Add Phase
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Phase Cards */}
+                    <div className="space-y-2.5">
+                      {formData.composite_phases.map((phase, idx) => {
+                        const principalAmt = parseFloat(formData.sanctioned_amount) || 100000
+                        const phaseInt = Math.round(principalAmt * ((phase.monthly_roi || 0) / 100))
+                        const phaseEmi = phase.phase_type === 'regular' ? Math.round(principalAmt / (phase.tenure_months || 1)) : 0
+
+                        return (
+                          <div key={idx} className="bg-white border border-purple-100/90 rounded-xl p-3 shadow-xs space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="w-5 h-5 rounded-full bg-purple-600 text-white text-[10px] font-extrabold flex items-center justify-center">
+                                  {idx + 1}
+                                </span>
+                                <span className="text-xs font-bold text-slate-800">{phase.phase_name || `Phase ${idx + 1}`}</span>
+                                <span className={cn(
+                                  "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                                  phase.phase_type === 'interest_only'
+                                    ? "bg-amber-50 text-amber-800 border-amber-200"
+                                    : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                )}>
+                                  {phase.phase_type === 'interest_only' ? 'Interest Only' : 'Regular (Principal + Interest)'}
+                                </span>
+                              </div>
+                              {formData.composite_phases.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      composite_phases: prev.composite_phases.filter((_, i) => i !== idx).map((p, i) => ({
+                                        ...p,
+                                        phase_number: i + 1,
+                                        phase_name: `Phase ${i + 1}`,
+                                      }))
+                                    }))
+                                  }}
+                                  className="text-slate-400 hover:text-red-600 p-1 transition-colors"
+                                  title="Remove phase"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2.5">
+                              <Select
+                                label="Phase Type *"
+                                value={phase.phase_type}
+                                onChange={e => {
+                                  const newType = e.target.value as 'interest_only' | 'regular'
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    composite_phases: prev.composite_phases.map((p, i) => i === idx ? { ...p, phase_type: newType } : p)
+                                  }))
+                                }}
+                                options={[
+                                  { value: 'interest_only', label: 'Interest Only' },
+                                  { value: 'regular', label: 'Regular (Principal + EMI)' },
+                                ]}
+                              />
+
+                              <Input
+                                label="Tenure (Months) *"
+                                type="number"
+                                value={phase.tenure_months}
+                                onChange={e => {
+                                  const val = parseInt(e.target.value, 10) || 0
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    composite_phases: prev.composite_phases.map((p, i) => i === idx ? { ...p, tenure_months: val } : p)
+                                  }))
+                                }}
+                                placeholder="Months"
+                              />
+
+                              <Input
+                                label="ROI (% per month) *"
+                                type="number"
+                                step="0.1"
+                                value={phase.monthly_roi}
+                                onChange={e => {
+                                  const val = parseFloat(e.target.value) || 0
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    composite_phases: prev.composite_phases.map((p, i) => i === idx ? { ...p, monthly_roi: val } : p)
+                                  }))
+                                }}
+                                placeholder="Monthly %"
+                              />
+                            </div>
+
+                            {/* Phase micro preview */}
+                            <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-lg text-slate-600 border border-slate-100">
+                              <span>
+                                <strong>{phase.tenure_months} Months</strong> @ {phase.monthly_roi}% ROI
+                                ({(phase.monthly_roi * 12).toFixed(0)}% p.a.)
+                              </span>
+                              <span>
+                                Monthly Interest: <strong className="text-slate-800">{formatCurrency(phaseInt)}</strong>
+                                {phase.phase_type === 'regular' && (
+                                  <> | Principal EMI: <strong className="text-slate-800">{formatCurrency(phaseEmi)}</strong></>
+                                )}
+                                {' '}= Total: <strong className="text-brand-700">{formatCurrency(phaseInt + phaseEmi)}</strong>/mo
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Overall composite preview */}
+                    <div className="bg-white/80 border border-purple-200/80 rounded-xl p-2.5 flex items-center justify-between text-xs text-purple-900 font-bold">
+                      <span>
+                        Total Interest: {formatCurrency(calculatedScheduleResult.totalInterest)} | Total Principal: {formatCurrency(calculatedScheduleResult.totalPrincipal)}
+                      </span>
+                      <span className="text-brand-700 font-extrabold">
+                        Total Demand: {formatCurrency(calculatedScheduleResult.totalDemand)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Common fields */}
                 <Input
                   label="Processing Fees (₹)"
                   type="number"
@@ -700,19 +1016,14 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                   onChange={e => setFormData({ ...formData, processing_fee: e.target.value })}
                   placeholder="Processing / documentation fee"
                 />
-                <div className="col-span-2">
-                  <FieldError msg={errors.duration_months} />
-                </div>
 
-                <div className="col-span-2">
-                  <Input
-                    label="Sanction / Loan Date *"
-                    type="date"
-                    value={formData.loan_date}
-                    onChange={e => setFormData({ ...formData, loan_date: e.target.value })}
-                    error={errors.loan_date}
-                  />
-                </div>
+                <Input
+                  label="Sanction / Loan Date *"
+                  type="date"
+                  value={formData.loan_date}
+                  onChange={e => setFormData({ ...formData, loan_date: e.target.value })}
+                  error={errors.loan_date}
+                />
               </div>
             </div>
           )}
@@ -1068,27 +1379,31 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                 <div className="bg-slate-50/80 border border-slate-200/60 p-3.5 rounded-2xl space-y-2">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Loan & Repayment Parameters</h4>
                   <div className="text-xs font-semibold space-y-1 mt-2">
-                    <p><strong>Sanctioned principal:</strong> {formatCurrency(parseFloat(formData.sanctioned_amount) || 0)}</p>
-                    <p><strong>Loan amount:</strong> {formatCurrency(parseFloat(formData.loan_amount) || 0)}</p>
-                    <p><strong>Rate / Method:</strong> {formData.interest_rate}% ({formData.interest_type})</p>
-                    <p><strong>Installment frequency:</strong> {formData.repayment_frequency}</p>
+                    <p><strong>Sanctioned Principal:</strong> {formatCurrency(parseFloat(formData.sanctioned_amount) || 0)}</p>
+                    <p><strong>Loan Structure Type:</strong> <span className="capitalize font-bold text-brand-700">{formData.loan_structure_type === 'composite' ? 'Composite Loan' : formData.loan_structure_type === 'interest_only' ? 'Interest Loan' : 'Regular Loan'}</span></p>
+                    <p><strong>Monthly ROI:</strong> {formData.loan_structure_type === 'composite' ? 'Multi-Phase Rates' : `${formData.monthly_roi}% p.m. (${((parseFloat(formData.monthly_roi) || 0) * 12).toFixed(1)}% p.a.)`}</p>
+                    <p><strong>Total Tenure:</strong> {calculatedScheduleResult.totalTenureMonths} Months ({calculatedInstallments} installments)</p>
                   </div>
                 </div>
 
                 {/* Amortization parameters */}
                 <div className="col-span-2 bg-emerald-50/40 border border-emerald-100 p-3.5 rounded-2xl">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-800">Repayment & Amortization Estimates</h4>
-                  <div className="grid grid-cols-3 gap-3 text-xs font-bold text-emerald-900 mt-3">
+                  <div className="grid grid-cols-4 gap-3 text-xs font-bold text-emerald-900 mt-3">
                     <div>
-                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Estimated EMI Amount</p>
-                      <p className="text-base font-extrabold amount-display mt-0.5">{formatCurrency(calculatedEmi)}</p>
+                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Total Principal</p>
+                      <p className="text-base font-extrabold amount-display mt-0.5">{formatCurrency(calculatedScheduleResult.totalPrincipal)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Installments Count</p>
-                      <p className="text-base font-extrabold amount-display mt-0.5">{calculatedInstallments} payments</p>
+                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Total Interest</p>
+                      <p className="text-base font-extrabold amount-display mt-0.5 text-blue-800">{formatCurrency(calculatedScheduleResult.totalInterest)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Maturity Date Estimate</p>
+                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Total Repayment Demand</p>
+                      <p className="text-base font-extrabold amount-display mt-0.5 text-brand-700">{formatCurrency(calculatedScheduleResult.totalDemand)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Maturity Date</p>
                       <p className="text-sm font-extrabold mt-1">{calculatedMaturityDate ? formatDate(calculatedMaturityDate) : '—'}</p>
                     </div>
                   </div>
@@ -1121,6 +1436,76 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                     ) : (
                       <p className="text-xs text-slate-400 italic">No security collateral asset registered.</p>
                     )}
+                  </div>
+                </div>
+
+                {/* ── Amortization Demand Flow Preview Table ── */}
+                <div className="col-span-2 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                  <div className="bg-slate-50/80 border-b border-slate-200/80 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                        <FileText className="h-4 w-4 text-brand-600" /> Amortization Demand Flow Schedule
+                      </h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Demand flow schedule calculated based on selected <strong className="text-slate-700">{formData.loan_structure_type === 'composite' ? 'Composite Phased Structure' : formData.loan_structure_type === 'interest_only' ? 'Interest Only Structure' : 'Regular Loan Structure'}</strong>.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-brand-50 text-brand-700 border border-brand-200">
+                        {calculatedScheduleResult.schedule.length} Total Installments
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="max-h-72 overflow-y-auto overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-100/90 text-slate-600 text-[10px] font-bold uppercase sticky top-0 z-10 border-b border-slate-200">
+                        <tr>
+                          <th className="px-3 py-2">Sr No</th>
+                          {formData.loan_structure_type === 'composite' && <th className="px-3 py-2">Phase</th>}
+                          <th className="px-3 py-2">Due Date</th>
+                          <th className="px-3 py-2 text-right">Principal O/s</th>
+                          <th className="px-3 py-2 text-right">Interest</th>
+                          <th className="px-3 py-2 text-right">EMI (Principal)</th>
+                          <th className="px-3 py-2 text-right">Total Due</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-mono text-xs">
+                        {calculatedScheduleResult.schedule.map((row) => (
+                          <tr key={row.emi_number} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="px-3 py-2 font-bold text-slate-700 font-sans">#{row.emi_number}</td>
+                            {formData.loan_structure_type === 'composite' && (
+                              <td className="px-3 py-2 font-sans">
+                                <span className={cn(
+                                  "text-[9px] font-extrabold px-2 py-0.5 rounded-full border",
+                                  row.phase === 'Phase 1'
+                                    ? "bg-amber-50 text-amber-800 border-amber-200"
+                                    : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                )}>
+                                  {row.phase || 'Phase 1'}
+                                </span>
+                              </td>
+                            )}
+                            <td className="px-3 py-2 text-slate-500 font-sans">{formatDate(row.due_date)}</td>
+                            <td className="px-3 py-2 text-right font-bold text-slate-800">{formatCurrency(row.outstanding_balance)}</td>
+                            <td className="px-3 py-2 text-right text-slate-600">{formatCurrency(row.interest)}</td>
+                            <td className="px-3 py-2 text-right text-slate-800 font-bold">{row.principal > 0 ? formatCurrency(row.principal) : '—'}</td>
+                            <td className="px-3 py-2 text-right font-extrabold text-brand-700">{formatCurrency(row.emi_amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200 text-xs">
+                        <tr>
+                          <td className="px-3 py-2 font-sans" colSpan={formData.loan_structure_type === 'composite' ? 3 : 2}>
+                            Totals ({calculatedScheduleResult.schedule.length} Payments)
+                          </td>
+                          <td className="px-3 py-2 text-right font-sans text-slate-400">—</td>
+                          <td className="px-3 py-2 text-right text-blue-700">{formatCurrency(calculatedScheduleResult.totalInterest)}</td>
+                          <td className="px-3 py-2 text-right text-slate-900">{formatCurrency(calculatedScheduleResult.totalPrincipal)}</td>
+                          <td className="px-3 py-2 text-right text-brand-700 font-extrabold">{formatCurrency(calculatedScheduleResult.totalDemand)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
                 </div>
               </div>

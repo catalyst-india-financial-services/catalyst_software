@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
 import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Lead, LeadFollowup, NewCustomerForm } from '@/types'
-import { calculateEMI, generateEMISchedule } from '@/utils'
+import { calculateEMI, generateEMISchedule, calculateLoanSchedule } from '@/utils'
 import dayjs from 'dayjs'
 import { customerProfileService } from '@/services/customerProfileService'
 import type { CustomerSegmentOption } from '@/services/customerProfileService'
@@ -335,24 +335,53 @@ export function useCreateLoan() {
 
       // Auditor
       created_by?: string
+
+      // Loan Structure & Phases
+      loan_structure_type?: 'regular' | 'interest_only' | 'composite'
+      monthly_roi?: number
+      composite_phases?: Array<{
+        phase_number: number
+        phase_name: string
+        phase_type: 'interest_only' | 'regular'
+        tenure_months: number
+        monthly_roi: number
+      }>
     }) => {
-      const emi_amount = calculateEMI(
-        loanData.loan_amount || 0,
-        loanData.interest_rate,
-        loanData.duration_months,
-        loanData.interest_type,
-        loanData.repayment_frequency
-      )
-
-      // Calculate installments count based on frequency
+      const scheduleStartDate = loanData.repayment_start_date || loanData.loan_date || new Date().toISOString().split('T')[0]
+      let emi_amount = 0
       let emi_count = loanData.duration_months
-      if (loanData.repayment_frequency === 'weekly') {
-        emi_count = loanData.duration_months * 4
-      } else if (loanData.repayment_frequency === 'fortnightly') {
-        emi_count = loanData.duration_months * 2
-      }
+      let total_interest = 0
 
-      const total_interest = Math.max(0, emi_amount * emi_count - (loanData.loan_amount || 0))
+      if (loanData.loan_structure_type) {
+        const scheduleResult = calculateLoanSchedule({
+          loanAmount: loanData.loan_amount || 0,
+          loanStructureType: loanData.loan_structure_type,
+          tenureMonths: loanData.duration_months,
+          monthlyRoi: loanData.monthly_roi ?? (loanData.interest_rate / 12),
+          startDate: scheduleStartDate,
+          phases: loanData.composite_phases,
+        })
+        emi_count = scheduleResult.schedule.length
+        total_interest = scheduleResult.totalInterest
+        emi_amount = scheduleResult.schedule[0]?.emi_amount || 0
+      } else {
+        emi_amount = calculateEMI(
+          loanData.loan_amount || 0,
+          loanData.interest_rate,
+          loanData.duration_months,
+          loanData.interest_type,
+          loanData.repayment_frequency
+        )
+
+        // Calculate installments count based on frequency
+        if (loanData.repayment_frequency === 'weekly') {
+          emi_count = loanData.duration_months * 4
+        } else if (loanData.repayment_frequency === 'fortnightly') {
+          emi_count = loanData.duration_months * 2
+        }
+
+        total_interest = Math.max(0, emi_amount * emi_count - (loanData.loan_amount || 0))
+      }
       const disbursed_amount = (loanData.loan_amount || 0) - (loanData.processing_fee || 0)
 
       let attempts = 0
@@ -367,7 +396,7 @@ export function useCreateLoan() {
         const baseLoanFields = {
           loan_number,
           customer_id: loanData.customer_id,
-          loan_type: loanData.loan_type || 'personal',
+          loan_type: loanData.loan_structure_type || loanData.loan_type || 'regular',
           loan_amount: loanData.loan_amount ?? 0,
           interest_rate: loanData.interest_rate ?? 0,
           interest_type: loanData.interest_type ?? 'flat',
@@ -464,14 +493,18 @@ export function useCreateLoan() {
       }
 
       // Generate EMI schedule using the repayment start date (or loan date as fallback)
-      const scheduleStartDate = loanData.repayment_start_date || loanData.loan_date
       const schedule = generateEMISchedule(
         loanData.loan_amount || 0,
         loanData.interest_rate,
         loanData.duration_months,
         scheduleStartDate,
         loanData.interest_type,
-        loanData.repayment_frequency
+        loanData.repayment_frequency,
+        {
+          loanStructureType: loanData.loan_structure_type,
+          monthlyRoi: loanData.monthly_roi,
+          phases: loanData.composite_phases,
+        }
       )
 
       const scheduleData = schedule.map((s) => ({

@@ -72,14 +72,35 @@ export function calculateEMI(
   return Math.ceil(emi)
 }
 
+export * from './loanCalculations'
+import { calculateLoanSchedule, type LoanStructureType, type CompositePhase } from './loanCalculations'
+
 export function generateEMISchedule(
   principal: number,
   annualRate: number,
   months: number,
   startDate: string,
   type: 'flat' | 'reducing',
-  frequency: 'monthly' | 'weekly' | 'fortnightly' = 'monthly'
+  frequency: 'monthly' | 'weekly' | 'fortnightly' = 'monthly',
+  options?: {
+    loanStructureType?: LoanStructureType
+    monthlyRoi?: number
+    phases?: CompositePhase[]
+  }
 ) {
+  if (options?.loanStructureType) {
+    const calc = calculateLoanSchedule({
+      loanAmount: principal,
+      loanStructureType: options.loanStructureType,
+      tenureMonths: months,
+      monthlyRoi: options.monthlyRoi ?? (annualRate / 12),
+      startDate,
+      frequency,
+      phases: options.phases,
+    })
+    return calc.schedule
+  }
+
   const schedule = []
   const emi = calculateEMI(principal, annualRate, months, type, frequency)
   let balance = principal

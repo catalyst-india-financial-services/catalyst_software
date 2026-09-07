@@ -256,10 +256,13 @@ export default function LoanDetailPage() {
     return emiSchedule.find(s => s.status === 'pending' || s.status === 'overdue' || s.status === 'partial') || null
   }, [emiSchedule])
 
-  // 3. Outstanding Interest Calculation
+  // 3. Outstanding Interest Calculation (Only past-due / overdue pending interest, not future installments)
   const outstandingInterest = useMemo(() => {
     return emiSchedule.reduce((sum, s) => {
       if (s.status === 'paid') return sum
+      const isPastDue = s.status === 'overdue' || dayjs(s.due_date).isBefore(dayjs(), 'day')
+      if (!isPastDue) return sum
+
       const totalInterest = Number(s.interest || 0)
       if (s.status === 'partial') {
         const principalPart = Number(s.principal || 0)
@@ -679,7 +682,7 @@ export default function LoanDetailPage() {
             {[
               { label: 'Loan Amount', value: formatCurrency(loan.loan_amount || 0), subtitle: 'Sanctioned base principal', color: 'text-slate-900', icon: Banknote },
               { label: 'Outstanding Principal', value: formatCurrency(loan.remaining_balance), subtitle: 'Balance base amount', color: 'text-slate-900', icon: Landmark },
-              { label: 'Outstanding Interest', value: formatCurrency(outstandingInterest), subtitle: 'Accrued unpaid interest', color: 'text-amber-600', icon: TrendingDown },
+              { label: 'Outstanding Interest', value: formatCurrency(outstandingInterest), subtitle: 'Overdue unpaid interest', color: 'text-amber-600', icon: TrendingDown },
               { label: 'EMI (Monthly)', value: formatCurrency(loan.emi_amount), subtitle: `${loan.duration_months} Months tenure`, color: 'text-brand-600', icon: Coins },
               { label: 'ROI', value: `${loan.interest_rate}%`, subtitle: `${loan.interest_type} rate calculation`, color: 'text-emerald-600', icon: Percent },
               { label: 'Tenure', value: `${loan.duration_months} Months`, subtitle: `End date: ${formatDate(dayjs(loan.loan_date).add(loan.duration_months, 'month').toDate())}`, color: 'text-purple-600', icon: CalendarDays }
@@ -983,11 +986,15 @@ export default function LoanDetailPage() {
                     <table className="data-table w-full">
                       <thead>
                         <tr>
-                          <th>EMI #</th>
+                          <th>Sr No</th>
+                          {(loan?.loan_type === 'composite' || (loan as any)?.loan_structure_type === 'composite' || displayedSchedule.some(s => (s as any).phase)) && (
+                            <th>Phase</th>
+                          )}
                           <th>Due Date</th>
-                          <th>Principal</th>
+                          <th>Principal O/s</th>
                           <th>Interest</th>
-                          <th>EMI Amount</th>
+                          <th>EMI (Principal)</th>
+                          <th>Total Due</th>
                           <th>Collected</th>
                           <th>Payment Date</th>
                           <th>Status</th>
@@ -996,16 +1003,32 @@ export default function LoanDetailPage() {
                       <tbody>
                         {displayedSchedule.map((item) => {
                           const isOverdue = (item.status === 'pending' || item.status === 'overdue') && dayjs(item.due_date).isBefore(dayjs(), 'day')
+                          const isComposite = loan?.loan_type === 'composite' || (loan as any)?.loan_structure_type === 'composite' || displayedSchedule.some(s => (s as any).phase)
+                          const phaseLabel = (item as any).phase || (item.principal === 0 ? 'Phase 1' : 'Phase 2')
+
                           return (
                             <tr key={item.emi_number} className={cn(
                               item.status === 'paid' && 'bg-emerald-50/20',
                               isOverdue && 'bg-red-50/30'
                             )}>
                               <td className="font-bold text-slate-700">#{item.emi_number}</td>
+                              {isComposite && (
+                                <td>
+                                  <span className={cn(
+                                    "text-[9px] font-extrabold px-2 py-0.5 rounded-full border",
+                                    phaseLabel === 'Phase 1'
+                                      ? "bg-amber-50 text-amber-800 border-amber-200"
+                                      : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                  )}>
+                                    {phaseLabel}
+                                  </span>
+                                </td>
+                              )}
                               <td className="text-xs text-slate-500">{formatDate(item.due_date)}</td>
-                              <td className="font-mono text-xs">{formatCurrency(item.principal)}</td>
-                              <td className="font-mono text-xs text-slate-500">{formatCurrency(item.interest)}</td>
-                              <td className="font-mono text-xs font-bold text-slate-800">{formatCurrency(item.emi_amount)}</td>
+                              <td className="font-mono text-xs font-bold text-slate-800">{formatCurrency(item.outstanding_balance)}</td>
+                              <td className="font-mono text-xs text-slate-600">{formatCurrency(item.interest)}</td>
+                              <td className="font-mono text-xs font-bold text-slate-800">{item.principal > 0 ? formatCurrency(item.principal) : '—'}</td>
+                              <td className="font-mono text-xs font-extrabold text-brand-700">{formatCurrency(item.emi_amount)}</td>
                               <td className="font-mono text-xs text-emerald-600 font-bold">{formatCurrency(item.paid_amount || 0)}</td>
                               <td className="text-xs text-slate-500">{item.paid_date ? formatDate(item.paid_date) : '-'}</td>
                               <td>
@@ -1023,6 +1046,27 @@ export default function LoanDetailPage() {
                           )
                         })}
                       </tbody>
+                      <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200 text-xs">
+                        <tr>
+                          <td colSpan={(loan?.loan_type === 'composite' || (loan as any)?.loan_structure_type === 'composite' || displayedSchedule.some(s => (s as any).phase)) ? 3 : 2} className="px-3 py-2 font-bold text-slate-700">
+                            Totals ({displayedSchedule.length} EMIs)
+                          </td>
+                          <td className="font-mono text-xs text-slate-400">—</td>
+                          <td className="font-mono text-xs text-blue-700">
+                            {formatCurrency(displayedSchedule.reduce((acc, cur) => acc + (cur.interest || 0), 0))}
+                          </td>
+                          <td className="font-mono text-xs text-slate-900">
+                            {formatCurrency(displayedSchedule.reduce((acc, cur) => acc + (cur.principal || 0), 0))}
+                          </td>
+                          <td className="font-mono text-xs font-extrabold text-brand-700">
+                            {formatCurrency(displayedSchedule.reduce((acc, cur) => acc + (cur.emi_amount || 0), 0))}
+                          </td>
+                          <td className="font-mono text-xs font-bold text-emerald-600">
+                            {formatCurrency(displayedSchedule.reduce((acc, cur) => acc + (cur.paid_amount || 0), 0))}
+                          </td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      </tfoot>
                     </table>
                   )}
                 </div>
