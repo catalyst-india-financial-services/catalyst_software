@@ -451,9 +451,9 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
   }
 
   return (
-    <div className="flex flex-col md:flex-row h-full min-h-0 overflow-hidden">
+    <div className="flex flex-col md:flex-row h-full w-full min-h-0 overflow-hidden">
       {/* ── Left Sidebar: Step Indicators ── */}
-      <div className="w-full md:w-56 bg-slate-50/80 border-r border-slate-200/60 p-3 flex flex-col justify-between flex-shrink-0">
+      <div className="w-full md:w-56 bg-slate-50/80 border-r border-slate-200/60 p-3 flex flex-col justify-between flex-shrink-0 overflow-y-auto">
         <div className="space-y-3">
           <div className="pb-4 border-b border-slate-200/50">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Account Wizard</h4>
@@ -1556,7 +1556,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
         </div>
 
         {/* ── Wizard Controls footer ── */}
-        <div className="flex justify-between items-center px-4 py-3 border-t border-slate-100 bg-slate-50/60 rounded-br-2xl flex-shrink-0">
+        <div className="flex justify-between items-center px-5 py-3.5 border-t border-slate-200 bg-slate-50/95 rounded-br-2xl flex-shrink-0 z-20 shadow-xs">
           <div>
             {step > 1 && (
               <Button variant="outline" type="button" onClick={handlePrev}>
@@ -1571,7 +1571,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
             {/* Save Draft Action always visible to park state */}
             <Button
               variant="outline"
-              className="border-amber-200 text-amber-700 hover:bg-amber-50"
+              className="border-amber-200 text-amber-700 hover:bg-amber-50 font-semibold"
               onClick={() => handleSave(false)}
               loading={loading === 'draft'}
             >
@@ -1579,15 +1579,14 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
             </Button>
 
             {step < 6 ? (
-              <Button type="button" onClick={handleNext}>
+              <Button type="button" onClick={handleNext} className="bg-brand-600 hover:bg-brand-700 text-white font-semibold">
                 Next Step
               </Button>
             ) : (
               <Button
                 onClick={() => handleSave(true)}
                 loading={loading === 'create'}
-                disabled={overallCompletion < 100}
-                title={overallCompletion < 100 ? `Fill all mandatory fields first (${overallCompletion}% complete)` : 'Create account and submit for KYC verification'}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold shadow-xs"
               >
                 Create Account
               </Button>

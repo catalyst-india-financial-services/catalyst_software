@@ -378,7 +378,7 @@ export function Modal({ isOpen, onClose, title, subtitle, children, size = 'md',
             transition={{ duration: 0.18, ease: 'easeOut' }}
             className={cn(
               'relative w-full bg-white rounded-2xl shadow-2xl flex flex-col z-10 border border-slate-200/80',
-              noScroll ? 'max-h-[90vh] overflow-hidden' : 'max-h-[90vh]',
+              noScroll ? 'h-[88vh] max-h-[90vh] overflow-hidden' : 'max-h-[90vh]',
               modalSizes[size]
             )}
           >
