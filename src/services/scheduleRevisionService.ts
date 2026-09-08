@@ -15,6 +15,7 @@ export interface ScheduleRevisionItem {
   paid_amount?: number
   paid_date?: string | null
   penalty?: number
+  phase?: string
 }
 
 export interface ScheduleRevision {
@@ -32,45 +33,17 @@ export interface ScheduleRevision {
 
 const STORAGE_PREFIX = 'catalyst_schedule_revisions_'
 
-/**
- * Load schedule revisions from loan metadata or localStorage,
- * falling back to generating Record 1 from initial loan parameters.
- */
-export function loadScheduleRevisions(loan: Loan, emiSchedule: EMISchedule[]): ScheduleRevision[] {
-  if (!loan) return []
+function mapEmiToScheduleItems(loan: Loan, emiSchedule: EMISchedule[]): ScheduleRevisionItem[] {
+  const structureType = (loan.loan_type === 'composite' || loan.loan_type === 'interest_only' || loan.loan_type === 'regular')
+    ? loan.loan_type
+    : (loan as any).loan_structure_type || (loan.loan_product?.toLowerCase().includes('composite') ? 'composite' : loan.loan_product?.toLowerCase().includes('interest') ? 'interest_only' : 'regular')
 
-  // 1. Check if database stored revisions in security_insurance_details
-  if (loan.security_insurance_details) {
-    try {
-      const parsed = JSON.parse(loan.security_insurance_details)
-      if (Array.isArray(parsed?.schedule_revisions) && parsed.schedule_revisions.length > 0) {
-        return parsed.schedule_revisions
-      }
-    } catch {
-      // Ignore JSON parse errors for non-JSON content
+  return emiSchedule.map((s) => {
+    let phase: string | undefined = (s as any).phase
+    if (!phase && (structureType === 'composite' || loan.loan_type === 'composite')) {
+      phase = s.principal === 0 ? 'Phase 1' : 'Phase 2'
     }
-  }
-
-  // 2. Check localStorage
-  try {
-    const cached = localStorage.getItem(STORAGE_PREFIX + loan.id)
-    if (cached) {
-      const parsed = JSON.parse(cached)
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed
-      }
-    }
-  } catch (err) {
-    console.warn('[scheduleRevisionService] Error reading from localStorage', err)
-  }
-
-  // 3. Fallback: Synthesize Record 1 (Original Created Date Schedule)
-  const effectiveDate = loan.loan_date || loan.account_opening_date || loan.repayment_start_date || '2026-02-01'
-
-  let scheduleItems: ScheduleRevisionItem[] = []
-
-  if (emiSchedule && emiSchedule.length > 0) {
-    scheduleItems = emiSchedule.map((s) => ({
+    return {
       id: s.id,
       emi_number: s.emi_number,
       due_date: s.due_date,
@@ -82,30 +55,133 @@ export function loadScheduleRevisions(loan: Loan, emiSchedule: EMISchedule[]): S
       paid_amount: s.paid_amount,
       paid_date: s.paid_date,
       penalty: s.penalty,
-    }))
-  } else {
-    // Generate fresh from loan data
-    const gen = generateEMISchedule(
-      loan.loan_amount || 0,
-      loan.interest_rate || 0,
-      loan.duration_months || 12,
-      effectiveDate,
-      loan.interest_type || 'reducing',
-      loan.repayment_frequency || 'monthly'
-    )
-    scheduleItems = gen.map((s) => ({
-      emi_number: s.emi_number,
-      due_date: s.due_date,
-      principal: s.principal,
-      interest: s.interest,
-      emi_amount: s.emi_amount,
-      outstanding_balance: s.outstanding_balance,
-      status: s.status,
-      paid_amount: 0,
-      paid_date: null,
-      penalty: 0,
-    }))
+      phase,
+    }
+  })
+}
+
+/**
+ * Load schedule revisions from loan metadata or localStorage,
+ * falling back to generating Record 1 from initial loan parameters.
+ */
+export function loadScheduleRevisions(loan: Loan, emiSchedule: EMISchedule[]): ScheduleRevision[] {
+  if (!loan) return []
+
+  const structureType = (loan.loan_type === 'composite' || loan.loan_type === 'interest_only' || loan.loan_type === 'regular')
+    ? loan.loan_type
+    : (loan as any).loan_structure_type || (loan.loan_product?.toLowerCase().includes('composite') ? 'composite' : loan.loan_product?.toLowerCase().includes('interest') ? 'interest_only' : 'regular')
+
+  // 1. Check if database stored revisions in security_insurance_details
+  if (loan.security_insurance_details) {
+    try {
+      const parsed = JSON.parse(loan.security_insurance_details)
+      if (Array.isArray(parsed?.schedule_revisions) && parsed.schedule_revisions.length > 0) {
+        if (emiSchedule && emiSchedule.length > 0) {
+          parsed.schedule_revisions[0].schedule = mapEmiToScheduleItems(loan, emiSchedule)
+          parsed.schedule_revisions[0].totalEmis = parsed.schedule_revisions[0].schedule.length
+        }
+        return parsed.schedule_revisions
+      }
+    } catch {
+      // Ignore JSON parse errors for non-JSON content
+    }
   }
+
+  // 2. Check localStorage
+  try {
+    const cached = localStorage.getItem(STORAGE_PREFIX + loan.id)
+    if (cached) {
+      const parsed: ScheduleRevision[] = JSON.parse(cached)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (emiSchedule && emiSchedule.length > 0) {
+          // Sync Record 1 with the authentic DB emiSchedule
+          parsed[0].schedule = mapEmiToScheduleItems(loan, emiSchedule)
+          parsed[0].totalEmis = parsed[0].schedule.length
+          // Recalculate any subsequent date revisions using the corrected Record 1 base
+          for (let i = 1; i < parsed.length; i++) {
+            parsed[i].schedule = calculateRevisedSchedule(loan, parsed[0].schedule, parsed[i].effectiveDate)
+            parsed[i].totalEmis = parsed[i].schedule.length
+          }
+          try {
+            localStorage.setItem(STORAGE_PREFIX + loan.id, JSON.stringify(parsed))
+          } catch {}
+        }
+        return parsed
+      }
+    }
+  } catch (err) {
+    console.warn('[scheduleRevisionService] Error reading from localStorage', err)
+  }
+
+  // 3. If DB emiSchedule is already loaded, construct Record 1 directly from it!
+  const effectiveDate = loan.loan_date || loan.account_opening_date || loan.repayment_start_date || '2026-02-01'
+
+  if (emiSchedule && emiSchedule.length > 0) {
+    const scheduleItems = mapEmiToScheduleItems(loan, emiSchedule)
+    const record1: ScheduleRevision = {
+      recordNumber: 1,
+      title: 'Record 1',
+      effectiveDate,
+      createdAt: loan.created_at || new Date().toISOString(),
+      createdBy: loan.created_by || 'Initial Account Creation',
+      reason: 'Original created date details & amortization schedule',
+      isCurrent: true,
+      totalEmis: scheduleItems.length,
+      schedule: scheduleItems,
+    }
+
+    // Cache record 1
+    try {
+      localStorage.setItem(STORAGE_PREFIX + loan.id, JSON.stringify([record1]))
+    } catch {
+      // Non-blocking
+    }
+
+    return [record1]
+  }
+
+  // 4. Fallback when emiSchedule is still fetching: Synthesize Record 1 with structure options (do NOT cache yet to prevent stale cache)
+  let parsedPhases: any = undefined
+  if ((loan as any).composite_phases) {
+    try {
+      parsedPhases = typeof (loan as any).composite_phases === 'string'
+        ? JSON.parse((loan as any).composite_phases)
+        : (loan as any).composite_phases
+    } catch {}
+  } else if (loan.security_insurance_details) {
+    try {
+      const parsedSec = JSON.parse(loan.security_insurance_details)
+      if (parsedSec.composite_phases) parsedPhases = parsedSec.composite_phases
+    } catch {}
+  }
+
+  const gen = generateEMISchedule(
+    loan.loan_amount || 0,
+    loan.interest_rate || 0,
+    loan.duration_months || 12,
+    effectiveDate,
+    loan.interest_type || 'reducing',
+    loan.repayment_frequency || 'monthly',
+    {
+      loanStructureType: structureType as any,
+      monthlyRoi: (loan as any).monthly_roi,
+      phases: parsedPhases,
+    }
+  )
+
+  const scheduleItems: ScheduleRevisionItem[] = gen.map((s) => ({
+    emi_number: s.emi_number,
+    due_date: s.due_date,
+    principal: s.principal,
+    interest: s.interest,
+    emi_amount: s.emi_amount,
+    outstanding_balance: s.outstanding_balance,
+    status: s.status,
+    paid_amount: 0,
+    paid_date: null,
+    penalty: 0,
+    phase: (s as any).phase || ((structureType === 'composite' || loan.loan_type === 'composite') ? (s.principal === 0 ? 'Phase 1' : 'Phase 2') : undefined),
+  }))
 
   const record1: ScheduleRevision = {
     recordNumber: 1,
@@ -117,13 +193,6 @@ export function loadScheduleRevisions(loan: Loan, emiSchedule: EMISchedule[]): S
     isCurrent: true,
     totalEmis: scheduleItems.length,
     schedule: scheduleItems,
-  }
-
-  // Cache record 1
-  try {
-    localStorage.setItem(STORAGE_PREFIX + loan.id, JSON.stringify([record1]))
-  } catch {
-    // Non-blocking
   }
 
   return [record1]
@@ -141,7 +210,6 @@ export function calculateRevisedSchedule(
   const frequency = loan.repayment_frequency || 'monthly'
   const newSchedule: ScheduleRevisionItem[] = []
 
-  // Count how many paid vs pending
   let balance = loan.loan_amount || 0
 
   baseSchedule.forEach((item, index) => {
@@ -156,23 +224,14 @@ export function calculateRevisedSchedule(
       dueDate = dayjs(newStartDate).add(emiNum, 'month').format('YYYY-MM-DD')
     }
 
-    if (item.status === 'paid') {
-      // Keep paid records and payment details intact
-      balance = Math.max(0, balance - (item.principal || 0))
-      newSchedule.push({
-        ...item,
-        due_date: dueDate,
-        outstanding_balance: Math.ceil(balance),
-      })
-    } else {
-      // Pending / overdue / partial: apply new due date
-      balance = Math.max(0, balance - (item.principal || 0))
-      newSchedule.push({
-        ...item,
-        due_date: dueDate,
-        outstanding_balance: Math.ceil(balance),
-      })
-    }
+    balance = Math.max(0, balance - (item.principal || 0))
+
+    newSchedule.push({
+      ...item,
+      due_date: dueDate,
+      outstanding_balance: Math.ceil(balance),
+      phase: item.phase || ((loan.loan_type === 'composite' || (loan as any).loan_structure_type === 'composite') ? (item.principal === 0 ? 'Phase 1' : 'Phase 2') : undefined),
+    })
   })
 
   return newSchedule

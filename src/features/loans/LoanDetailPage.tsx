@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, WalletCards, Download, FileText, CheckCircle2, Calendar,
@@ -72,8 +72,29 @@ export default function LoanDetailPage() {
   }, [isBranchUser, userBranch, loan, navigate])
 
   // --- UI States ---
-  const [activeTab, setActiveTab] = useState<'overview' | 'loan-details' | 'demand-flow' | 'collections' | 'transactions' | 'security' | 'documents'>('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialTab = (searchParams.get('tab') as any) || 'overview'
+  const validTabs = ['overview', 'loan-details', 'demand-flow', 'collections', 'transactions', 'security', 'documents']
+  const [activeTab, setActiveTab] = useState<'overview' | 'loan-details' | 'demand-flow' | 'collections' | 'transactions' | 'security' | 'documents'>(
+    validTabs.includes(initialTab) ? initialTab : 'overview'
+  )
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+
+  useEffect(() => {
+    const urlTab = searchParams.get('tab') as any
+    if (urlTab && validTabs.includes(urlTab) && urlTab !== activeTab) {
+      setActiveTab(urlTab)
+    }
+  }, [searchParams])
+
+  const handleTabChange = (tabId: any) => {
+    setActiveTab(tabId)
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('tab', tabId)
+      return next
+    }, { replace: true })
+  }
 
   useEffect(() => {
     if (activeTab && tabRefs.current[activeTab]) {
@@ -584,8 +605,9 @@ export default function LoanDetailPage() {
             return (
               <button
                 key={tab.id}
+                id={`tab-btn-${tab.id}`}
                 ref={(el) => { tabRefs.current[tab.id] = el }}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => handleTabChange(tab.id as any)}
                 className={cn(
                   'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 whitespace-nowrap cursor-pointer',
                   isActive
@@ -628,7 +650,7 @@ export default function LoanDetailPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-xs text-slate-500 font-semibold pt-1">
               <div>Borrower: <span className="text-slate-800 font-bold hover:underline cursor-pointer" onClick={() => navigate(`/customers/${customer.id}`)}>{customer.name}</span></div>
               <div>Customer ID: <span className="font-mono text-slate-800 font-bold">{customer.customer_id}</span></div>
-              <div>Product: <span className="text-slate-800 font-bold capitalize">{loan.loan_type} Loan</span></div>
+              <div>Product: <span className="text-slate-800 font-bold capitalize">{loan.loan_type?.replace('_', ' ')} Loan</span></div>
               <div>Category: <span className="text-slate-800 font-bold">{loan.loan_category || '-'}</span></div>
               <div>Purpose: <span className="text-slate-800 font-bold">{loan.loan_purpose || '-'}</span></div>
               <div>Branch: <span className="text-slate-800 font-bold">{customer.branch || 'Namakkal Branch'}</span></div>
@@ -678,30 +700,50 @@ export default function LoanDetailPage() {
           {/* ==================================================
               3. FINANCIAL SUMMARY CARDS
               ================================================== */}
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-            {[
-              { label: 'Loan Amount', value: formatCurrency(loan.loan_amount || 0), subtitle: 'Sanctioned base principal', color: 'text-slate-900', icon: Banknote },
-              { label: 'Outstanding Principal', value: formatCurrency(loan.remaining_balance), subtitle: 'Balance base amount', color: 'text-slate-900', icon: Landmark },
-              { label: 'Outstanding Interest', value: formatCurrency(outstandingInterest), subtitle: 'Overdue unpaid interest', color: 'text-amber-600', icon: TrendingDown },
-              { label: 'EMI (Monthly)', value: formatCurrency(loan.emi_amount), subtitle: `${loan.duration_months} Months tenure`, color: 'text-brand-600', icon: Coins },
-              { label: 'ROI', value: `${loan.interest_rate}%`, subtitle: `${loan.interest_type} rate calculation`, color: 'text-emerald-600', icon: Percent },
-              { label: 'Tenure', value: `${loan.duration_months} Months`, subtitle: `End date: ${formatDate(dayjs(loan.loan_date).add(loan.duration_months, 'month').toDate())}`, color: 'text-purple-600', icon: CalendarDays }
-            ].map((c) => {
-              const Icon = c.icon
-              return (
-                <Card key={c.label} className="p-4 bg-white border border-slate-100 hover:shadow-md transition-all flex flex-col justify-between">
-                  <div className="flex justify-between items-center text-slate-400">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider">{c.label}</span>
-                    <Icon className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="mt-3">
-                    <p className={cn('text-lg font-black font-mono tracking-tight', c.color)}>{c.value}</p>
-                    <p className="text-[10px] text-slate-400 mt-1 leading-snug">{c.subtitle}</p>
-                  </div>
-                </Card>
-              )
-            })}
-          </div>
+          {(() => {
+            const isComp = loan.loan_type === 'composite' || (loan as any).loan_structure_type === 'composite'
+            const compP1 = displayedSchedule.find((s) => (s as any).phase === 'Phase 1' || s.principal === 0)
+            const compP2 = displayedSchedule.find((s) => (s as any).phase === 'Phase 2' || s.principal > 0)
+
+            return (
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+                {[
+                  { label: 'Loan Amount', value: formatCurrency(loan.loan_amount || 0), subtitle: 'Sanctioned base principal', color: 'text-slate-900', icon: Banknote },
+                  { label: 'Outstanding Principal', value: formatCurrency(loan.remaining_balance), subtitle: 'Balance base amount', color: 'text-slate-900', icon: Landmark },
+                  { label: 'Outstanding Interest', value: formatCurrency(outstandingInterest), subtitle: 'Overdue unpaid interest', color: 'text-amber-600', icon: TrendingDown },
+                  { 
+                    label: 'EMI (Monthly)', 
+                    value: isComp && compP1 && compP2 ? `${formatCurrency(compP1.emi_amount)} / ${formatCurrency(compP2.emi_amount)}` : formatCurrency(loan.emi_amount), 
+                    subtitle: isComp ? 'Phase 1 / Phase 2 monthly' : `${loan.duration_months} Months tenure`, 
+                    color: 'text-brand-600', 
+                    icon: Coins 
+                  },
+                  { 
+                    label: 'ROI', 
+                    value: isComp ? '2% / 1% p.m.' : `${loan.interest_rate}%`, 
+                    subtitle: isComp ? 'Phase 1: 2% | Phase 2: 1%' : `${loan.interest_type} rate calculation`, 
+                    color: 'text-emerald-600', 
+                    icon: Percent 
+                  },
+                  { label: 'Tenure', value: `${loan.duration_months} Months`, subtitle: `End date: ${formatDate(dayjs(loan.loan_date).add(loan.duration_months, 'month').toDate())}`, color: 'text-purple-600', icon: CalendarDays }
+                ].map((c) => {
+                  const Icon = c.icon
+                  return (
+                    <Card key={c.label} className="p-4 bg-white border border-slate-100 hover:shadow-md transition-all flex flex-col justify-between">
+                      <div className="flex justify-between items-center text-slate-400">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider">{c.label}</span>
+                        <Icon className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="mt-3">
+                        <p className={cn('text-lg font-black font-mono tracking-tight', c.color)}>{c.value}</p>
+                        <p className="text-[10px] text-slate-400 mt-1 leading-snug">{c.subtitle}</p>
+                      </div>
+                    </Card>
+                  )
+                })}
+              </div>
+            )
+          })()}
 
           {/* ==================================================
               4. ACCOUNT STATUS SUMMARY
@@ -828,10 +870,26 @@ export default function LoanDetailPage() {
                     { label: 'Sanctioned Amount', value: formatCurrency(loan.loan_amount || 0), bold: true },
                     { label: 'Disbursement Date', value: formatDate(loan.loan_date) },
                     { label: 'Processing Fee Paid', value: formatCurrency(loan.processing_fee || 0) },
-                    { label: 'Interest Rate Percentage', value: `${loan.interest_rate}% per annum` },
-                    { label: 'Interest Accrual Type', value: loan.interest_type === 'reducing' ? 'Reducing Balance' : 'Flat Balance' },
+                    { 
+                      label: 'Interest Rate Percentage', 
+                      value: (loan.loan_type === 'composite' || (loan as any).loan_structure_type === 'composite')
+                        ? 'Phase 1: 2% p.m. (24% p.a.) | Phase 2: 1% p.m. (12% p.a.)'
+                        : `${loan.interest_rate}% per annum` 
+                    },
+                    { 
+                      label: 'Interest Accrual Type', 
+                      value: (loan.loan_type === 'composite' || (loan as any).loan_structure_type === 'composite')
+                        ? 'Composite Phased Calculation'
+                        : loan.interest_type === 'reducing' ? 'Reducing Balance' : 'Flat Balance' 
+                    },
                     { label: 'Total Tenure Period', value: `${loan.duration_months} Months` },
-                    { label: 'Base EMI Amount', value: formatCurrency(loan.emi_amount), bold: true },
+                    { 
+                      label: 'Base EMI Amount', 
+                      value: (loan.loan_type === 'composite' || (loan as any).loan_structure_type === 'composite') && displayedSchedule.length > 0
+                        ? `${formatCurrency(displayedSchedule[0]?.emi_amount || 0)} (Phase 1) / ${formatCurrency(displayedSchedule.find(s => (s as any).phase === 'Phase 2' || s.principal > 0)?.emi_amount || 0)} (Phase 2)`
+                        : formatCurrency(loan.emi_amount), 
+                      bold: true 
+                    },
                     { label: 'Outstanding Balance', value: formatCurrency(loan.remaining_balance), bold: true, color: 'text-red-600' },
                     { label: 'Closed Status Date', value: loan.status === 'closed' ? 'Closed/Completed' : 'Active Account' }
                   ].map((d) => (
@@ -1015,7 +1073,7 @@ export default function LoanDetailPage() {
                               {isComposite && (
                                 <td>
                                   <span className={cn(
-                                    "text-[9px] font-extrabold px-2 py-0.5 rounded-full border",
+                                    "text-[9px] font-extrabold px-2.5 py-0.5 rounded-full border whitespace-nowrap inline-flex items-center",
                                     phaseLabel === 'Phase 1'
                                       ? "bg-amber-50 text-amber-800 border-amber-200"
                                       : "bg-emerald-50 text-emerald-800 border-emerald-200"
