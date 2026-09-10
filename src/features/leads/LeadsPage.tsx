@@ -1206,6 +1206,7 @@ export default function LeadsPage() {
               >
                 <option value="Aniyapuram">Aniyapuram Branch</option>
                 <option value="Vallipuram">Vallipuram Branch</option>
+                <option value="Namakkal">Namakkal Branch</option>
                 <option value="Head Office">Head Office</option>
               </select>
               <p className="text-[11px] text-slate-400 mt-1">

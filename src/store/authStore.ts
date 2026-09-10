@@ -48,7 +48,8 @@ export const useAuthStore = create<AuthState>()(
         const emailLower = (rawUser.email || '').toLowerCase()
         const detectedBranch = rawUser.branch || (
           emailLower.includes('aniyapuram') ? 'Aniyapuram' :
-          emailLower.includes('vallipuram') ? 'Vallipuram' : null
+          emailLower.includes('vallipuram') ? 'Vallipuram' :
+          emailLower.includes('namakkal') ? 'Namakkal' : null
         )
         const isBranch = rawUser.role === 'branch' || !!detectedBranch
         const finalBranch = detectedBranch || null

@@ -88,6 +88,7 @@ export function Header() {
                       { name: 'All Branches', value: null },
                       { name: 'Aniyapuram Branch', value: 'Aniyapuram' },
                       { name: 'Vallipuram Branch', value: 'Vallipuram' },
+                      { name: 'Namakkal Branch', value: 'Namakkal' },
                     ].map((b) => (
                       <button
                         key={b.name}

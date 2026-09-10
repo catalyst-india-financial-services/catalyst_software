@@ -653,7 +653,8 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                     options={[
                       { value: 'Head Office', label: 'Head Office' },
                       { value: 'Aniyapuram', label: 'Aniyapuram Branch' },
-                      { value: 'Vallipuram', label: 'Vallipuram Branch' }
+                      { value: 'Vallipuram', label: 'Vallipuram Branch' },
+                      { value: 'Namakkal', label: 'Namakkal Branch' }
                     ]}
                   />
                   {activeBranch && (

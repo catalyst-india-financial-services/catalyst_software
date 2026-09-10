@@ -144,7 +144,7 @@ export default function ReportsPage() {
   // 3. Branch Performance Audit Calculations
   // ─────────────────────────────────────────────────────────────────────────────
   const branchPerformance = useMemo(() => {
-    const branches = ['Head Office', 'Aniyapuram', 'Vallipuram']
+    const branches = ['Head Office', 'Aniyapuram', 'Vallipuram', 'Namakkal']
     return branches.map(b => {
       const branchCustomers = customers.filter(c => c.branch === b)
       const branchLoans = parsedLoans.filter(l => l.branch === b)

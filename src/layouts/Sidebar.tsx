@@ -35,6 +35,7 @@ function SidebarContent({ collapsed }: { collapsed: boolean }) {
   const branchColors: Record<string, { accent: string; badge: string }> = {
     Aniyapuram: { accent: 'from-emerald-600 to-teal-500', badge: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
     Vallipuram: { accent: 'from-violet-600 to-purple-500', badge: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
+    Namakkal: { accent: 'from-amber-600 to-orange-500', badge: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
   }
   const branchTheme = userBranch ? (branchColors[userBranch] ?? branchColors['Aniyapuram']) : null
 

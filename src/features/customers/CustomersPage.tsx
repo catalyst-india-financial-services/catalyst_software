@@ -224,6 +224,7 @@ export function CreateCustomerModal({
     { value: 'Head Office', label: 'Head Office' },
     { value: 'Aniyapuram', label: 'Aniyapuram Branch' },
     { value: 'Vallipuram', label: 'Vallipuram Branch' },
+    { value: 'Namakkal', label: 'Namakkal Branch' },
   ]
 
   const [form, setForm] = useState<Partial<NewCustomerForm>>(() => {

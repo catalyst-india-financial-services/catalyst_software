@@ -93,7 +93,10 @@ const sourceOptions = [
 ]
 
 const branchOptions = [
-  { value: 'Namakkal', label: 'Namakkal' },
+  { value: 'Head Office', label: 'Head Office' },
+  { value: 'Aniyapuram', label: 'Aniyapuram Branch' },
+  { value: 'Vallipuram', label: 'Vallipuram Branch' },
+  { value: 'Namakkal', label: 'Namakkal Branch' },
   { value: 'Chennai', label: 'Chennai' },
   { value: 'Coimbatore', label: 'Coimbatore' },
   { value: 'Salem', label: 'Salem' },

@@ -28,4 +28,18 @@ export const AUTHORIZED_LOGIN_ACCOUNTS: Record<string, AuthorizedAccount> = {
     branch: 'Vallipuram',
     fullName: 'Vallipuram Branch',
   },
+  'namakkalcatalyst@gmail.com': {
+    email: 'namakkalcatalyst@gmail.com',
+    password: 'namacatalyst',
+    role: 'branch',
+    branch: 'Namakkal',
+    fullName: 'Namakkal Branch',
+  },
+  'namakkal@catalyst.com': {
+    email: 'namakkal@catalyst.com',
+    password: 'namacatalyst',
+    role: 'branch',
+    branch: 'Namakkal',
+    fullName: 'Namakkal Branch',
+  },
 }
