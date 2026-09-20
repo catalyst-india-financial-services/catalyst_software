@@ -8,12 +8,13 @@ import {
 import {
   Plus, Download, Eye, SquarePen, Trash2, Phone, SlidersHorizontal,
   UserPlus, ChevronDown, CheckCircle2, ClipboardList, X, AlertCircle,
-  RefreshCw, ArrowRight, Lock, ChevronLeft, ChevronRight
+  RefreshCw, ArrowRight, Lock, ChevronLeft, ChevronRight, AlertTriangle
 } from 'lucide-react'
 import {
   useCustomers, useUpdateCustomer,
   useApprovedLeads, useCreateNewCustomer, useSaveDraftCustomer, useUpdateDraftCustomer,
-  useCustomerSegmentOptions, useAddCustomerSegmentOption
+  useCustomerSegmentOptions, useAddCustomerSegmentOption, useMoveCustomerToTrash,
+  useAllCustomersValidationList
 } from '@/hooks/useDb'
 import type { Customer, Lead, NewCustomerForm } from '@/types'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
@@ -22,6 +23,13 @@ import {
   Modal, Input, Select, Textarea, DropdownMenu, EmptyState, PageHeader
 } from '@/components/ui'
 import { formatDate, cn } from '@/utils'
+import {
+  checkCustomerDuplicatesFromList,
+  normalizeMobile,
+  normalizePan,
+  normalizeAadhaar,
+  type CustomerSummary
+} from '@/utils/customerValidation'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
 
@@ -29,7 +37,12 @@ const columnHelper = createColumnHelper<Customer>()
 
 // ─── Validation helpers ───────────────────────────────────────────────────────
 
-function validateForm(form: Partial<NewCustomerForm>, fullValidation: boolean): Record<string, string> {
+function validateForm(
+  form: Partial<NewCustomerForm>,
+  fullValidation: boolean,
+  existingCustomers?: CustomerSummary[],
+  excludeCustomerId?: string | null
+): Record<string, string> {
   const errors: Record<string, string> = {}
 
   // Always required even for draft
@@ -42,9 +55,31 @@ function validateForm(form: Partial<NewCustomerForm>, fullValidation: boolean): 
     errors.mobile = 'Mobile number is required'
   } else if (!/^[6-9]\d{9}$/.test(form.mobile.replace(/\s/g, ''))) {
     errors.mobile = 'Enter a valid 10-digit Indian mobile number'
+  } else if (existingCustomers && existingCustomers.length > 0) {
+    const dup = checkCustomerDuplicatesFromList({ mobile: form.mobile }, existingCustomers, excludeCustomerId)
+    if (dup.duplicateMobile) {
+      errors.mobile = dup.errors.mobile || 'Mobile number is already registered with another customer profile'
+    }
   }
 
-  if (!fullValidation) return errors
+  // Draft mode checks: if draft has PAN or Aadhaar entered, also prevent duplicates
+  if (!fullValidation) {
+    if (existingCustomers && existingCustomers.length > 0) {
+      if (form.pan && /^[A-Z]{5}[0-9]{4}[A-Z]$/i.test(form.pan)) {
+        const dup = checkCustomerDuplicatesFromList({ pan: form.pan }, existingCustomers, excludeCustomerId)
+        if (dup.duplicatePan) {
+          errors.pan = dup.errors.pan || 'PAN card is already registered with another customer profile'
+        }
+      }
+      if (form.aadhaar_kyc_id && /^\d{12}$/.test(form.aadhaar_kyc_id.replace(/\s/g, ''))) {
+        const dup = checkCustomerDuplicatesFromList({ aadhaar: form.aadhaar_kyc_id }, existingCustomers, excludeCustomerId)
+        if (dup.duplicateAadhaar) {
+          errors.aadhaar_kyc_id = dup.errors.aadhaar_kyc_id || 'Aadhaar number is already registered with another customer profile'
+        }
+      }
+    }
+    return errors
+  }
 
   // Full validation for Create Customer
   if (!form.customer_type) errors.customer_type = 'Customer type is required'
@@ -76,12 +111,24 @@ function validateForm(form: Partial<NewCustomerForm>, fullValidation: boolean): 
     errors.pan = 'PAN is required'
   } else if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(form.pan.toUpperCase())) {
     errors.pan = 'Enter a valid PAN (e.g., ABCDE1234F)'
+  } else if (existingCustomers && existingCustomers.length > 0) {
+    const dup = checkCustomerDuplicatesFromList({ pan: form.pan }, existingCustomers, excludeCustomerId)
+    if (dup.duplicatePan) {
+      errors.pan = dup.errors.pan || 'PAN card is already registered with another customer profile'
+    }
   }
+
   if (!form.aadhaar_kyc_id) {
     errors.aadhaar_kyc_id = 'Aadhaar / KYC ID is required'
   } else if (!/^\d{12}$/.test(form.aadhaar_kyc_id.replace(/\s/g, ''))) {
     errors.aadhaar_kyc_id = 'Enter a valid 12-digit Aadhaar number'
+  } else if (existingCustomers && existingCustomers.length > 0) {
+    const dup = checkCustomerDuplicatesFromList({ aadhaar: form.aadhaar_kyc_id }, existingCustomers, excludeCustomerId)
+    if (dup.duplicateAadhaar) {
+      errors.aadhaar_kyc_id = dup.errors.aadhaar_kyc_id || 'Aadhaar number is already registered with another customer profile'
+    }
   }
+
   if (!form.kyc_status) errors.kyc_status = 'KYC status is required'
   if (!form.verification_date) errors.verification_date = 'Verification date is required'
 
@@ -108,6 +155,7 @@ function validateForm(form: Partial<NewCustomerForm>, fullValidation: boolean): 
 
   return errors
 }
+
 
 // ─── Field Error component ────────────────────────────────────────────────────
 
@@ -199,6 +247,7 @@ export function CreateCustomerModal({
 }) {
   const isDraft = customer?.status === 'draft'
   const { data: approvedLeads = [] } = useApprovedLeads()
+  const { data: allCustomersValidation = [] } = useAllCustomersValidationList()
   const createNewCustomer = useCreateNewCustomer()
   const saveDraft = useSaveDraftCustomer()
   const updateDraft = useUpdateDraftCustomer()
@@ -352,6 +401,14 @@ export function CreateCustomerModal({
       customer_category: prev.customer_category || 'New',
       customer_type: prev.customer_type || 'Individual',
     }))
+
+    if (lead.phone) {
+      const dup = checkCustomerDuplicatesFromList({ mobile: lead.phone }, allCustomersValidation, customer?.id)
+      if (dup.duplicateMobile) {
+        setErrors(prev => ({ ...prev, mobile: dup.errors.mobile! }))
+        toast.error(`Warning: Lead mobile ${lead.phone} is already registered to ${dup.duplicateMobile.name} (${dup.duplicateMobile.customer_id}).`)
+      }
+    }
   }
 
   const set = (key: keyof NewCustomerForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -359,12 +416,111 @@ export function CreateCustomerModal({
     if (errors[key]) setErrors(prev => { const n = { ...prev }; delete n[key]; return n })
   }
 
+  // Real-time mobile input & duplicate validation
+  const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setForm(prev => ({ ...prev, mobile: val }))
+    const clean = val.replace(/\D/g, '')
+    if (clean.length === 10) {
+      const dup = checkCustomerDuplicatesFromList({ mobile: clean }, allCustomersValidation, customer?.id)
+      if (dup.duplicateMobile) {
+        setErrors(prev => ({ ...prev, mobile: dup.errors.mobile! }))
+        return
+      }
+    }
+    if (errors.mobile) {
+      setErrors(prev => { const n = { ...prev }; delete n.mobile; return n })
+    }
+  }
+
+  const handleMobileBlur = () => {
+    if (!form.mobile) {
+      setErrors(prev => ({ ...prev, mobile: 'Mobile number is required' }))
+    } else if (!/^[6-9]\d{9}$/.test(form.mobile.replace(/\s/g, ''))) {
+      setErrors(prev => ({ ...prev, mobile: 'Enter a valid 10-digit Indian mobile number' }))
+    } else {
+      const dup = checkCustomerDuplicatesFromList({ mobile: form.mobile }, allCustomersValidation, customer?.id)
+      if (dup.duplicateMobile) {
+        setErrors(prev => ({ ...prev, mobile: dup.errors.mobile! }))
+      }
+    }
+  }
+
+  // Real-time PAN input & duplicate validation
+  const handlePanChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.toUpperCase()
+    setForm(prev => ({ ...prev, pan: val }))
+    const clean = val.replace(/[^A-Za-z0-9]/g, '').trim()
+    if (clean.length === 10) {
+      const dup = checkCustomerDuplicatesFromList({ pan: clean }, allCustomersValidation, customer?.id)
+      if (dup.duplicatePan) {
+        setErrors(prev => ({ ...prev, pan: dup.errors.pan! }))
+        return
+      }
+    }
+    if (errors.pan) {
+      setErrors(prev => { const n = { ...prev }; delete n.pan; return n })
+    }
+  }
+
+  const handlePanBlur = () => {
+    if (form.pan) {
+      if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(form.pan.toUpperCase())) {
+        setErrors(prev => ({ ...prev, pan: 'Enter a valid PAN (e.g., ABCDE1234F)' }))
+      } else {
+        const dup = checkCustomerDuplicatesFromList({ pan: form.pan }, allCustomersValidation, customer?.id)
+        if (dup.duplicatePan) {
+          setErrors(prev => ({ ...prev, pan: dup.errors.pan! }))
+        }
+      }
+    }
+  }
+
+  // Real-time Aadhaar input & duplicate validation
+  const handleAadhaarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setForm(prev => ({ ...prev, aadhaar_kyc_id: val }))
+    const clean = val.replace(/\D/g, '').trim()
+    if (clean.length === 12) {
+      const dup = checkCustomerDuplicatesFromList({ aadhaar: clean }, allCustomersValidation, customer?.id)
+      if (dup.duplicateAadhaar) {
+        setErrors(prev => ({ ...prev, aadhaar_kyc_id: dup.errors.aadhaar_kyc_id! }))
+        return
+      }
+    }
+    if (errors.aadhaar_kyc_id) {
+      setErrors(prev => { const n = { ...prev }; delete n.aadhaar_kyc_id; return n })
+    }
+  }
+
+  const handleAadhaarBlur = () => {
+    if (form.aadhaar_kyc_id) {
+      if (!/^\d{12}$/.test(form.aadhaar_kyc_id.replace(/\s/g, ''))) {
+        setErrors(prev => ({ ...prev, aadhaar_kyc_id: 'Enter a valid 12-digit Aadhaar number' }))
+      } else {
+        const dup = checkCustomerDuplicatesFromList({ aadhaar: form.aadhaar_kyc_id }, allCustomersValidation, customer?.id)
+        if (dup.duplicateAadhaar) {
+          setErrors(prev => ({ ...prev, aadhaar_kyc_id: dup.errors.aadhaar_kyc_id! }))
+        }
+      }
+    }
+  }
+
   const handleSaveDraft = async () => {
-    const draftErrors = validateForm(form, false)
+    const draftErrors = validateForm(form, false, allCustomersValidation, customer?.id)
     if (Object.keys(draftErrors).length > 0) {
       setErrors(draftErrors)
-      // Highlight step 1 since draft errors reside there
-      setActiveSection(1)
+      if (draftErrors.mobile) {
+        setActiveSection(1)
+        toast.error(
+          draftErrors.mobile.includes('already registered')
+            ? 'Cannot save draft: Mobile number is already registered with another customer profile.'
+            : 'Please fix mobile number error before saving draft.'
+        )
+      } else if (draftErrors.pan || draftErrors.aadhaar_kyc_id) {
+        setActiveSection(3)
+        toast.error('Cannot save draft: KYC credentials (PAN / Aadhaar) are already registered with another customer profile.')
+      }
       return
     }
     setLoading('draft')
@@ -387,16 +543,24 @@ export function CreateCustomerModal({
   }
 
   const handleCreateCustomer = async () => {
-    const allErrors = validateForm(form, true)
+    const allErrors = validateForm(form, true, allCustomersValidation, customer?.id)
     if (Object.keys(allErrors).length > 0) {
       setErrors(allErrors)
       // Find the first step that contains an error and focus it
       if (allErrors.full_name || allErrors.mobile || allErrors.customer_type || allErrors.date_of_birth || allErrors.gender) {
         setActiveSection(1)
+        if (allErrors.mobile && allErrors.mobile.includes('already registered')) {
+          toast.error('Cannot create customer: Mobile number is already registered to an existing customer profile.')
+          return
+        }
       } else if (allErrors.current_address || allErrors.city || allErrors.district || allErrors.state || allErrors.pin_code || allErrors.address_type) {
         setActiveSection(2)
       } else if (allErrors.pan || allErrors.aadhaar_kyc_id || allErrors.kyc_status || allErrors.verification_date) {
         setActiveSection(3)
+        if (allErrors.pan?.includes('already registered') || allErrors.aadhaar_kyc_id?.includes('already registered')) {
+          toast.error('Cannot create customer: PAN or Aadhaar is already registered to an existing customer profile.')
+          return
+        }
       } else if (allErrors.occupation_business || allErrors.income || allErrors.income_source) {
         setActiveSection(4)
       } else if (allErrors.customer_segment || allErrors.customer_category || allErrors.branch) {
@@ -433,14 +597,23 @@ export function CreateCustomerModal({
   ]
 
   const handleNextStep = () => {
-    // Quick validation of the current step before advancing
+    // Step-by-step validation including duplicate prevention
     const stepErrors: Record<string, string> = {}
     if (activeSection === 1) {
       if (!form.full_name) stepErrors.full_name = 'Name is required'
-      if (!form.mobile) stepErrors.mobile = 'Mobile is required'
       if (!form.customer_type) stepErrors.customer_type = 'Type is required'
       if (!form.gender) stepErrors.gender = 'Gender is required'
       if (!form.date_of_birth) stepErrors.date_of_birth = 'DOB is required'
+      if (!form.mobile) {
+        stepErrors.mobile = 'Mobile is required'
+      } else if (!/^[6-9]\d{9}$/.test(form.mobile.replace(/\s/g, ''))) {
+        stepErrors.mobile = 'Enter a valid 10-digit Indian mobile number'
+      } else {
+        const dup = checkCustomerDuplicatesFromList({ mobile: form.mobile }, allCustomersValidation, customer?.id)
+        if (dup.duplicateMobile) {
+          stepErrors.mobile = dup.errors.mobile || 'Mobile number is already registered with another customer profile'
+        }
+      }
     } else if (activeSection === 2) {
       if (!form.current_address) stepErrors.current_address = 'Address is required'
       if (!form.city) stepErrors.city = 'City is required'
@@ -449,8 +622,28 @@ export function CreateCustomerModal({
       if (!form.pin_code) stepErrors.pin_code = 'PIN code is required'
       if (!form.address_type) stepErrors.address_type = 'Address type is required'
     } else if (activeSection === 3) {
-      if (!form.pan) stepErrors.pan = 'PAN is required'
-      if (!form.aadhaar_kyc_id) stepErrors.aadhaar_kyc_id = 'Aadhaar ID is required'
+      if (!form.pan) {
+        stepErrors.pan = 'PAN is required'
+      } else if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(form.pan.toUpperCase())) {
+        stepErrors.pan = 'Enter a valid PAN (e.g., ABCDE1234F)'
+      } else {
+        const dup = checkCustomerDuplicatesFromList({ pan: form.pan }, allCustomersValidation, customer?.id)
+        if (dup.duplicatePan) {
+          stepErrors.pan = dup.errors.pan || 'PAN card is already registered with another customer profile'
+        }
+      }
+
+      if (!form.aadhaar_kyc_id) {
+        stepErrors.aadhaar_kyc_id = 'Aadhaar ID is required'
+      } else if (!/^\d{12}$/.test(form.aadhaar_kyc_id.replace(/\s/g, ''))) {
+        stepErrors.aadhaar_kyc_id = 'Enter a valid 12-digit Aadhaar number'
+      } else {
+        const dup = checkCustomerDuplicatesFromList({ aadhaar: form.aadhaar_kyc_id }, allCustomersValidation, customer?.id)
+        if (dup.duplicateAadhaar) {
+          stepErrors.aadhaar_kyc_id = dup.errors.aadhaar_kyc_id || 'Aadhaar number is already registered with another customer profile'
+        }
+      }
+
       if (!form.kyc_status) stepErrors.kyc_status = 'KYC status is required'
     } else if (activeSection === 4) {
       if (!form.occupation_business) stepErrors.occupation_business = 'Occupation is required'
@@ -460,9 +653,19 @@ export function CreateCustomerModal({
 
     if (Object.keys(stepErrors).length > 0) {
       setErrors(prev => ({ ...prev, ...stepErrors }))
-      toast.error('Please fill all required fields in this step.')
+      if (stepErrors.mobile && stepErrors.mobile.includes('already registered')) {
+        toast.error('Cannot proceed: Mobile number is already registered to an existing customer profile.')
+      } else if (
+        (stepErrors.pan && stepErrors.pan.includes('already registered')) ||
+        (stepErrors.aadhaar_kyc_id && stepErrors.aadhaar_kyc_id.includes('already registered'))
+      ) {
+        toast.error('Cannot proceed: PAN or Aadhaar is already registered to an existing customer profile.')
+      } else {
+        toast.error('Please fill all required fields in this step.')
+      }
       return
     }
+
 
     setActiveSection(prev => Math.min(5, prev + 1))
   }
@@ -620,15 +823,24 @@ export function CreateCustomerModal({
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Mobile Number *</label>
                   <input
                     value={form.mobile ?? ''}
-                    onChange={set('mobile')}
+                    onChange={handleMobileChange}
+                    onBlur={handleMobileBlur}
                     placeholder="10-digit mobile number"
                     maxLength={10}
                     className={cn(
                       'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
-                      errors.mobile ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
+                      errors.mobile ? 'border-red-400 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
                   <FieldError msg={errors.mobile} />
+                  {errors.mobile && errors.mobile.includes('already registered') && (
+                    <div className="mt-1.5 p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-1.5 text-red-700">
+                      <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-red-600" />
+                      <p className="text-[11px] font-medium leading-tight">
+                        Account creation is blocked because this mobile number is already linked to another customer profile.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="col-span-2">
@@ -763,30 +975,48 @@ export function CreateCustomerModal({
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">PAN Card *</label>
                   <input
                     value={form.pan ?? ''}
-                    onChange={e => { set('pan')({ ...e, target: { ...e.target, value: e.target.value.toUpperCase() } } as any) }}
+                    onChange={handlePanChange}
+                    onBlur={handlePanBlur}
                     placeholder="e.g. ABCDE1234F"
                     maxLength={10}
                     className={cn(
                       'w-full border rounded-lg px-3 py-2 text-xs uppercase tracking-widest transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
-                      errors.pan ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
+                      errors.pan ? 'border-red-400 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
                   <FieldError msg={errors.pan} />
+                  {errors.pan && errors.pan.includes('already registered') && (
+                    <div className="mt-1.5 p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-1.5 text-red-700">
+                      <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-red-600" />
+                      <p className="text-[11px] font-medium leading-tight">
+                        Account creation is blocked because this PAN card is already linked to another customer profile.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Aadhaar / KYC ID *</label>
                   <input
                     value={form.aadhaar_kyc_id ?? ''}
-                    onChange={set('aadhaar_kyc_id')}
+                    onChange={handleAadhaarChange}
+                    onBlur={handleAadhaarBlur}
                     placeholder="12-digit Aadhaar number"
                     maxLength={12}
                     className={cn(
                       'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20',
-                      errors.aadhaar_kyc_id ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
+                      errors.aadhaar_kyc_id ? 'border-red-400 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
                     )}
                   />
                   <FieldError msg={errors.aadhaar_kyc_id} />
+                  {errors.aadhaar_kyc_id && errors.aadhaar_kyc_id.includes('already registered') && (
+                    <div className="mt-1.5 p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-1.5 text-red-700">
+                      <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-red-600" />
+                      <p className="text-[11px] font-medium leading-tight">
+                        Account creation is blocked because this Aadhaar number is already linked to another customer profile.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1135,6 +1365,38 @@ export default function CustomersPage() {
   const [customerFormCompletion, setCustomerFormCompletion] = useState(0)
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('customers_status_filter', 'all')
 
+  // --- Delete to Trash ---
+  const moveToTrash = useMoveCustomerToTrash()
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null)
+  const [deleteIdInput, setDeleteIdInput] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+
+  const openDeleteModal = (c: Customer) => {
+    setDeleteTarget(c)
+    setDeleteIdInput('')
+    setDeleteError('')
+  }
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return
+    if (deleteIdInput.trim() !== deleteTarget.customer_id) {
+      setDeleteError(`Incorrect ID. Please enter "${deleteTarget.customer_id}" to confirm.`)
+      return
+    }
+    moveToTrash.mutate(
+      { customerId: deleteTarget.id },
+      {
+        onSuccess: () => {
+          toast.success(`"${deleteTarget.name}" moved to Trash.`)
+          setDeleteTarget(null)
+        },
+        onError: (err: any) => {
+          setDeleteError(err?.message ?? 'Failed to delete. Please try again.')
+        },
+      }
+    )
+  }
+
   const prefillLeadId = searchParams.get('leadId')
   const [prefilledLeadId, setPrefilledLeadId] = useState<string | null>(null)
 
@@ -1303,7 +1565,7 @@ export default function CustomersPage() {
                 { label: 'Edit Customer', icon: <SquarePen className="h-4 w-4" />, onClick: () => { setEditCustomer(c); setShowModal(true) } },
                 { label: 'Call Phone', icon: <Phone className="h-4 w-4" />, onClick: () => {} },
               ]),
-              { separator: true, label: 'Delete Record', icon: <Trash2 className="h-4 w-4" />, variant: 'danger', onClick: () => {} },
+              { separator: true, label: 'Delete Record', icon: <Trash2 className="h-4 w-4" />, variant: 'danger', onClick: () => openDeleteModal(c) },
             ]}
           />
         )
@@ -1538,6 +1800,70 @@ export default function CustomersPage() {
           onCompletionChange={setCustomerFormCompletion}
         />
       </Modal>
+
+      {/* ─── Delete Confirmation Modal ─── */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-red-50">
+              <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-sm font-extrabold text-slate-900">Delete Customer Record</h2>
+                <p className="text-[11px] text-slate-500 font-medium">This will move the record to Trash</p>
+              </div>
+            </div>
+            {/* Body */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                <p className="text-xs font-bold text-amber-800">
+                  ⚠️ You are about to delete <span className="text-amber-900">"{deleteTarget.name}"</span>.
+                </p>
+                <p className="text-[11px] text-amber-700 mt-0.5">The record will be moved to Trash and can be restored later.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">Enter Customer ID to confirm</label>
+                <input
+                  type="text"
+                  value={deleteIdInput}
+                  autoFocus
+                  onChange={(e) => { setDeleteIdInput(e.target.value); setDeleteError('') }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmDelete() }}
+                  placeholder={deleteTarget.customer_id}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-400 placeholder:text-slate-300"
+                />
+                {deleteError && (
+                  <p className="text-red-600 text-[11px] font-bold mt-1.5 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3 flex-shrink-0" /> {deleteError}
+                  </p>
+                )}
+              </div>
+            </div>
+            {/* Footer */}
+            <div className="flex items-center gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={moveToTrash.isPending}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {moveToTrash.isPending ? (
+                  <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Deleting…</>
+                ) : (
+                  <><Trash2 className="h-3.5 w-3.5" /> Move to Trash</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

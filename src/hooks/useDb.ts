@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
 import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Lead, LeadFollowup, NewCustomerForm } from '@/types'
 import { calculateEMI, generateEMISchedule, calculateLoanSchedule } from '@/utils'
+import { checkCustomerDuplicatesInDb, type CustomerSummary } from '@/utils/customerValidation'
 import dayjs from 'dayjs'
 import { customerProfileService } from '@/services/customerProfileService'
 import type { CustomerSegmentOption } from '@/services/customerProfileService'
@@ -61,8 +62,30 @@ export async function generateNextLoanNumber(): Promise<string> {
   return candidate
 }
 
-export async function generateNextCustomerId(): Promise<string> {
-  const prefix = 'CUS'
+export function getEffectiveBranch(branchName?: string | null): string {
+  if (branchName && typeof branchName === 'string' && branchName.trim()) {
+    return branchName.trim()
+  }
+  try {
+    const state = useAuthStore.getState()
+    if (state.isBranchUser && state.userBranch) return state.userBranch.trim()
+    if (state.user?.branch) return state.user.branch.trim()
+    if (state.selectedBranch) return state.selectedBranch.trim()
+  } catch {
+    // ignore
+  }
+  return ''
+}
+
+export async function generateNextCustomerId(branchName?: string | null): Promise<string> {
+  const effectiveBranch = getEffectiveBranch(branchName)
+  const cleanBranch = effectiveBranch.replace(/[^a-zA-Z0-9]/g, '')
+  const branchCode = cleanBranch.length >= 2
+    ? cleanBranch.slice(0, 2).toUpperCase()
+    : cleanBranch.toUpperCase()
+
+  const prefix = branchCode ? `CUS${branchCode}` : 'CUS'
+
   const { data, error } = await supabase
     .from('customers')
     .select('customer_id')
@@ -77,11 +100,22 @@ export async function generateNextCustomerId(): Promise<string> {
 
   let maxSeq = 0
   for (const item of data) {
-    if (item.customer_id && item.customer_id.startsWith(prefix)) {
-      const numPart = item.customer_id.slice(prefix.length)
-      const num = parseInt(numPart, 10)
-      if (!isNaN(num) && num > maxSeq) {
-        maxSeq = num
+    if (item.customer_id) {
+      if (prefix === 'CUS') {
+        if (/^CUS\d+$/.test(item.customer_id)) {
+          const num = parseInt(item.customer_id.slice(3), 10)
+          if (!isNaN(num) && num > maxSeq) {
+            maxSeq = num
+          }
+        }
+      } else {
+        if (item.customer_id.startsWith(prefix)) {
+          const numPart = item.customer_id.slice(prefix.length)
+          const num = parseInt(numPart, 10)
+          if (!isNaN(num) && num > maxSeq) {
+            maxSeq = num
+          }
+        }
       }
     }
   }
@@ -172,15 +206,42 @@ export function useCustomer(id?: string) {
   })
 }
 
+export function useAllCustomersValidationList() {
+  return useQuery({
+    queryKey: ['allCustomersValidation'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('id, customer_id, name, mobile, pan, aadhaar, status')
+      if (error) throw error
+      return (data || []) as CustomerSummary[]
+    },
+    staleTime: 10_000,
+  })
+}
+
 export function useCreateCustomer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (customerData: Partial<Customer>) => {
-      const customer_id = await generateNextCustomerId()
+      const dupCheck = await checkCustomerDuplicatesInDb(supabase, {
+        mobile: customerData.mobile,
+        pan: customerData.pan,
+        aadhaar: customerData.aadhaar,
+      })
+      if (dupCheck.hasDuplicate) {
+        const dup = dupCheck.duplicateMobile || dupCheck.duplicatePan || dupCheck.duplicateAadhaar
+        throw new Error(
+          `Duplicate profile detected: This ${dup?.field} is already registered to ${dup?.name} (${dup?.customer_id}). Cannot create customer account.`
+        )
+      }
+
+      const effectiveBranch = getEffectiveBranch(customerData.branch)
+      const customer_id = await generateNextCustomerId(effectiveBranch)
 
       const { data, error } = await supabase
         .from('customers')
-        .insert([{ ...customerData, customer_id, status: 'active', kyc_status: 'verified' }])
+        .insert([{ ...customerData, customer_id, branch: customerData.branch || effectiveBranch || null, status: 'active', kyc_status: 'verified' }])
         .select()
         .single()
       if (error) throw error
@@ -188,10 +249,12 @@ export function useCreateCustomer() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['allCustomersValidation'] })
       queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
     },
   })
 }
+
 
 export function useUpdateCustomer() {
   const queryClient = useQueryClient()
@@ -1344,12 +1407,14 @@ export function useConvertLead() {
       }
 
       // ── 2. Insert customer ────────────────────────────────────────────────────
-      const customer_id = await generateNextCustomerId()
+      const effectiveBranch = getEffectiveBranch((lead as any).branch)
+      const customer_id = await generateNextCustomerId(effectiveBranch)
 
       const { data: customer, error: custErr } = await supabase
         .from('customers')
         .insert([{
           customer_id,
+          branch: effectiveBranch || null,
           name: lead.name,
           mobile: lead.phone,
           whatsapp: lead.phone,
@@ -2272,9 +2337,10 @@ export function useApproveLead() {
     mutationFn: async (args: Lead | { lead: Lead; branch?: string | null }) => {
       const lead = 'id' in args ? args : args.lead
       const branch = 'id' in args ? null : (args.branch || null)
+      const effectiveBranch = getEffectiveBranch(branch)
 
-      // 1. Generate customer_id like CUS001
-      const customer_id = await generateNextCustomerId()
+      // 1. Generate customer_id with branch prefix (e.g. CUSAN001, CUSCH001)
+      const customer_id = await generateNextCustomerId(effectiveBranch)
       const now = new Date().toISOString()
 
       const payload = {
@@ -2303,7 +2369,7 @@ export function useApproveLead() {
         gender: null,
         customer_segment: null,
         customer_category: 'New',
-        branch: branch || null,
+        branch: effectiveBranch || null,
         lead_id: lead.id,
         status: 'draft' as const,
         sync_status: 'pending',
@@ -2365,8 +2431,33 @@ export function useCreateNewCustomer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (form: NewCustomerForm) => {
-      // Generate customer_id like CUS001
-      const customer_id = await generateNextCustomerId()
+      // Uniqueness check for mobile, PAN, and Aadhaar
+      const dupCheck = await checkCustomerDuplicatesInDb(supabase, {
+        mobile: form.mobile,
+        pan: form.pan,
+        aadhaar: form.aadhaar_kyc_id,
+      })
+      if (dupCheck.hasDuplicate) {
+        if (dupCheck.duplicateMobile) {
+          throw new Error(
+            `Mobile number is already registered to ${dupCheck.duplicateMobile.name} (${dupCheck.duplicateMobile.customer_id}). Duplicate profiles are not permitted.`
+          )
+        }
+        if (dupCheck.duplicatePan) {
+          throw new Error(
+            `PAN card is already registered to ${dupCheck.duplicatePan.name} (${dupCheck.duplicatePan.customer_id}). Duplicate profiles are not permitted.`
+          )
+        }
+        if (dupCheck.duplicateAadhaar) {
+          throw new Error(
+            `Aadhaar number is already registered to ${dupCheck.duplicateAadhaar.name} (${dupCheck.duplicateAadhaar.customer_id}). Duplicate profiles are not permitted.`
+          )
+        }
+      }
+
+      const effectiveBranch = getEffectiveBranch(form.branch)
+      // Generate customer_id with branch prefix (e.g. CUSCH001, CUSAN001)
+      const customer_id = await generateNextCustomerId(effectiveBranch)
 
       const payload = {
         customer_id,
@@ -2394,7 +2485,7 @@ export function useCreateNewCustomer() {
         gender: form.gender || null,
         customer_segment: form.customer_segment || null,
         customer_category: form.customer_category || null,
-        branch: form.branch || null,
+        branch: form.branch || effectiveBranch || null,
         lead_id: form.lead_id || null,
         status: 'active' as const,
         sync_status: 'synced',
@@ -2426,6 +2517,7 @@ export function useCreateNewCustomer() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['allCustomersValidation'] })
       queryClient.invalidateQueries({ queryKey: ['leads'] })
       queryClient.invalidateQueries({ queryKey: ['approvedLeads'] })
       queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
@@ -2439,7 +2531,32 @@ export function useSaveDraftCustomer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (form: Partial<NewCustomerForm> & { full_name: string; mobile: string }) => {
-      const customer_id = await generateNextCustomerId()
+      // Uniqueness check for mobile, PAN, and Aadhaar even in drafts
+      const dupCheck = await checkCustomerDuplicatesInDb(supabase, {
+        mobile: form.mobile,
+        pan: form.pan,
+        aadhaar: form.aadhaar_kyc_id,
+      })
+      if (dupCheck.hasDuplicate) {
+        if (dupCheck.duplicateMobile) {
+          throw new Error(
+            `Mobile number is already registered to ${dupCheck.duplicateMobile.name} (${dupCheck.duplicateMobile.customer_id}). Duplicate profiles are not permitted.`
+          )
+        }
+        if (dupCheck.duplicatePan) {
+          throw new Error(
+            `PAN card is already registered to ${dupCheck.duplicatePan.name} (${dupCheck.duplicatePan.customer_id}). Duplicate profiles are not permitted.`
+          )
+        }
+        if (dupCheck.duplicateAadhaar) {
+          throw new Error(
+            `Aadhaar number is already registered to ${dupCheck.duplicateAadhaar.name} (${dupCheck.duplicateAadhaar.customer_id}). Duplicate profiles are not permitted.`
+          )
+        }
+      }
+
+      const effectiveBranch = getEffectiveBranch(form.branch)
+      const customer_id = await generateNextCustomerId(effectiveBranch)
       const now = new Date().toISOString()
 
       const payload: Record<string, any> = {
@@ -2468,7 +2585,7 @@ export function useSaveDraftCustomer() {
         gender: form.gender || null,
         customer_segment: form.customer_segment || null,
         customer_category: form.customer_category || null,
-        branch: form.branch || null,
+        branch: form.branch || effectiveBranch || null,
         lead_id: form.lead_id || null,
         status: 'draft' as const,
         sync_status: 'pending',
@@ -2486,6 +2603,7 @@ export function useSaveDraftCustomer() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['allCustomersValidation'] })
     },
   })
 }
@@ -2504,6 +2622,34 @@ export function useUpdateDraftCustomer() {
       form: Partial<NewCustomerForm>
       finalize: boolean // true = Create Customer (active); false = re-save draft
     }) => {
+      // Uniqueness check excluding current customer
+      const dupCheck = await checkCustomerDuplicatesInDb(
+        supabase,
+        {
+          mobile: form.mobile,
+          pan: form.pan,
+          aadhaar: form.aadhaar_kyc_id,
+        },
+        id
+      )
+      if (dupCheck.hasDuplicate) {
+        if (dupCheck.duplicateMobile) {
+          throw new Error(
+            `Mobile number is already registered to ${dupCheck.duplicateMobile.name} (${dupCheck.duplicateMobile.customer_id}). Duplicate profiles are not permitted.`
+          )
+        }
+        if (dupCheck.duplicatePan) {
+          throw new Error(
+            `PAN card is already registered to ${dupCheck.duplicatePan.name} (${dupCheck.duplicatePan.customer_id}). Duplicate profiles are not permitted.`
+          )
+        }
+        if (dupCheck.duplicateAadhaar) {
+          throw new Error(
+            `Aadhaar number is already registered to ${dupCheck.duplicateAadhaar.name} (${dupCheck.duplicateAadhaar.customer_id}). Duplicate profiles are not permitted.`
+          )
+        }
+      }
+
       const kycStatusValue = finalize ? ('verified' as const) : ('pending' as const)
 
       const payload: Record<string, any> = {
@@ -2561,12 +2707,58 @@ export function useUpdateDraftCustomer() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['allCustomersValidation'] })
       queryClient.invalidateQueries({ queryKey: ['customers', variables.id] })
       if (variables.finalize) {
         queryClient.invalidateQueries({ queryKey: ['leads'] })
         queryClient.invalidateQueries({ queryKey: ['approvedLeads'] })
         queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
       }
+    },
+  })
+}
+
+
+// ─── Customer Trash Hooks ─────────────────────────────────────────────────────
+
+export function useMoveCustomerToTrash() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ customerId, deletedBy }: { customerId: string; deletedBy?: string }) =>
+      customerProfileService.moveToTrash(customerId, deletedBy),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['customerTrash'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
+    },
+  })
+}
+
+export function useCustomerTrash() {
+  return useQuery({
+    queryKey: ['customerTrash'],
+    queryFn: () => customerProfileService.getTrash(),
+  })
+}
+
+export function useRestoreFromTrash() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (trashId: string) => customerProfileService.restoreFromTrash(trashId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerTrash'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
+    },
+  })
+}
+
+export function usePermanentlyDeleteFromTrash() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (trashId: string) => customerProfileService.permanentlyDelete(trashId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerTrash'] })
     },
   })
 }

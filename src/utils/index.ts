@@ -177,3 +177,6 @@ export function maskAadhaar(aadhaar: string): string {
 export function maskPAN(pan: string): string {
   return pan.slice(0, 2) + 'XXXXXX' + pan.slice(-2)
 }
+
+export * from './customerValidation'
+

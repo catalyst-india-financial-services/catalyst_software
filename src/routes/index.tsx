@@ -13,6 +13,7 @@ import ReportsPage from '@/features/reports/ReportsPage'
 import LoginPage from '@/features/auth/LoginPage'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { AdminProtectedRoute } from '@/components/AdminProtectedRoute'
+import TrashPage from '@/features/customers/TrashPage'
 
 export const router = createBrowserRouter([
   {
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
           { path: '/reports', element: <ReportsPage /> },
           { path: '/leads', element: <LeadsPage /> },
           { path: '/settings', element: <SettingsPage /> },
+          { path: '/trash', element: <TrashPage /> },
           // Admin-only authentication route
           {
             element: <AdminProtectedRoute />,

@@ -190,6 +190,15 @@ export interface CustomerActivity {
   created_at: string
 }
 
+export interface CustomerTrashRecord {
+  id: string
+  original_id: string
+  customer_id: string
+  snapshot: ExtendedCustomer
+  deleted_by?: string | null
+  deleted_at: string
+}
+
 // --- Customer Profile Service (100% Supabase   no mock data) ---
 export const customerProfileService = {
 
@@ -449,5 +458,88 @@ export const customerProfileService = {
 
     if (error) throw error
     return data as LoanPurposeOption
+  },
+
+  // 14. Trash — Move customer to trash (soft-delete)
+  async moveToTrash(customerId: string, deletedBy?: string): Promise<void> {
+    // Fetch the full customer snapshot first
+    const { data: customerData, error: fetchError } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customerId)
+      .maybeSingle()
+
+    if (fetchError) throw fetchError
+    if (!customerData) throw new Error('Customer not found')
+
+    // Insert snapshot into customer_trash
+    const { error: insertError } = await supabase
+      .from('customer_trash')
+      .insert([{
+        original_id: customerData.id,
+        customer_id: customerData.customer_id,
+        snapshot: customerData,
+        deleted_by: deletedBy ?? null,
+      }])
+
+    if (insertError) throw insertError
+
+    // Hard-delete from customers table
+    const { error: deleteError } = await supabase
+      .from('customers')
+      .delete()
+      .eq('id', customerId)
+
+    if (deleteError) throw deleteError
+  },
+
+  // 15. Trash — Fetch all trashed customers
+  async getTrash(): Promise<CustomerTrashRecord[]> {
+    const { data, error } = await supabase
+      .from('customer_trash')
+      .select('*')
+      .order('deleted_at', { ascending: false })
+
+    if (error) throw error
+    return (data ?? []) as CustomerTrashRecord[]
+  },
+
+  // 16. Trash — Restore customer from trash back to customers table
+  async restoreFromTrash(trashId: string): Promise<void> {
+    // Fetch the trash record
+    const { data: trashRecord, error: fetchError } = await supabase
+      .from('customer_trash')
+      .select('*')
+      .eq('id', trashId)
+      .maybeSingle()
+
+    if (fetchError) throw fetchError
+    if (!trashRecord) throw new Error('Trash record not found')
+
+    // Re-insert the snapshot into customers
+    const snapshot = trashRecord.snapshot as Record<string, unknown>
+    const { error: insertError } = await supabase
+      .from('customers')
+      .insert([snapshot])
+
+    if (insertError) throw insertError
+
+    // Remove from trash
+    const { error: deleteError } = await supabase
+      .from('customer_trash')
+      .delete()
+      .eq('id', trashId)
+
+    if (deleteError) throw deleteError
+  },
+
+  // 17. Trash — Permanently delete from trash
+  async permanentlyDelete(trashId: string): Promise<void> {
+    const { error } = await supabase
+      .from('customer_trash')
+      .delete()
+      .eq('id', trashId)
+
+    if (error) throw error
   },
 }

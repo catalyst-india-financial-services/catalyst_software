@@ -7,7 +7,7 @@ import { Avatar, Tooltip } from '@/components/ui'
 import {
   LayoutDashboard, Users, WalletCards, ArrowLeftRight, Settings2,
   LogOut, PanelLeftClose, PanelLeftOpen, DollarSign, X, UserPlus, Building2,
-  FileText
+  FileText, Trash2
 } from 'lucide-react'
 
 interface NavItem {
@@ -24,6 +24,7 @@ const navItems: NavItem[] = [
   { path: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { path: '/reports', label: 'Reports', icon: FileText },
   { path: '/settings', label: 'Settings', icon: Settings2 },
+  { path: '/trash', label: 'Trash', icon: Trash2 },
 ]
 
 function SidebarContent({ collapsed }: { collapsed: boolean }) {

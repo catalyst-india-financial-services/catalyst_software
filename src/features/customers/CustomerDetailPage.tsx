@@ -21,13 +21,15 @@ import {
   useSaveCustomerCommunication, useCustomerFollowups, useSaveCustomerFollowup, useCustomerNotes,
   useSaveCustomerNote, useDeleteCustomerNote, useCustomerActivities, useSaveCustomerActivity,
   useCustomerSegmentOptions, useAddCustomerSegmentOption,
-  useCustomerLoans, useLoanSchedule, useCustomerPaymentsForLoan, useCustomerIncomeRecords, useCreatePayment
+  useCustomerLoans, useLoanSchedule, useCustomerPaymentsForLoan, useCustomerIncomeRecords, useCreatePayment,
+  useMoveCustomerToTrash, useAllCustomersValidationList
 } from '@/hooks/useDb'
 import {
   Button, Card, CardHeader, CardTitle, CardBody, Avatar, StatusBadge, Badge,
   Input, Select, Textarea
 } from '@/components/ui'
 import { formatCurrency, formatDate, maskAadhaar, maskPAN, cn } from '@/utils'
+import { checkCustomerDuplicatesFromList } from '@/utils/customerValidation'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, LineChart, Line
@@ -186,6 +188,7 @@ export default function CustomerDetailPage() {
   const { data: notes = [], isLoading: isNotesLoading } = useCustomerNotes(customerId)
   const { data: activities = [], isLoading: isActsLoading } = useCustomerActivities(customerId)
   const { data: segmentOptions = [] } = useCustomerSegmentOptions()
+  const { data: allCustomersValidation = [] } = useAllCustomersValidationList()
 
   // --- Mutations ---
   const updateProfile = useUpdateCustomerProfile()
@@ -202,6 +205,15 @@ export default function CustomerDetailPage() {
   const deleteNote = useDeleteCustomerNote()
   const saveActivity = useSaveCustomerActivity()
   const addSegmentOption = useAddCustomerSegmentOption()
+  const moveToTrash = useMoveCustomerToTrash()
+
+  // --- Delete Record Modal State ---
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [deleteIdInput, setDeleteIdInput] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+
+  // --- Actions Dropdown State ---
+  const [isActionsOpen, setIsActionsOpen] = useState(false)
 
   // --- Branch ownership guard ---
   // Redirect branch users if they try to access a customer from another branch via URL
@@ -225,6 +237,41 @@ export default function CustomerDetailPage() {
     }
     return false
   }, [isEditing, formData, customer])
+
+  // --- Active Tab State ---
+  const [activeTab, setActiveTab] = useState<string>('basic')
+
+  // --- UI Filter & Search States ---
+  const [projectSearch, setProjectSearch] = useState('')
+  const [projectStatusFilter, setProjectStatusFilter] = useState('all')
+  const [noteSearch, setNoteSearch] = useState('')
+
+  // --- Modal Open States ---
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false)
+  const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false)
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false)
+  const [isCommModalOpen, setIsCommModalOpen] = useState(false)
+  const [isFollowupModalOpen, setIsFollowupModalOpen] = useState(false)
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false)
+  const [isManageSegmentsOpen, setIsManageSegmentsOpen] = useState(false)
+  const [newSegmentName, setNewSegmentName] = useState('')
+
+  // --- Form Data States ---
+  const [profileForm, setProfileForm] = useState<any>(null)
+  const [projectForm, setProjectForm] = useState<any>({ project_name: '', project_id: '', start_date: '', end_date: '', status: 'Running', amount: '', progress: 0, assigned_employee: '' })
+  const [quotationForm, setQuotationForm] = useState<any>({ quotation_number: '', date: '', amount: '', status: 'Pending', converted: false })
+  const [invoiceForm, setInvoiceForm] = useState<any>({ invoice_number: '', invoice_date: '', due_date: '', amount: '', paid: 0 })
+  const [paymentForm, setPaymentForm] = useState<any>({ payment_date: '', amount: '', payment_method: 'UPI', reference_number: '', collected_by: '', status: 'Success' })
+  const [docForm, setDocForm] = useState<any>({ document_name: '', document_type: 'Agreement', file_url: '#', file_size: '1.2 MB' })
+  const [commForm, setCommForm] = useState<any>({ type: 'Call', date: '', time: '', employee: '', description: '', status: 'Completed' })
+  const [followupForm, setFollowupForm] = useState<any>({ followup_date: '', reminder_date: '', reminder_time: '', customer_response: '', next_action: '', assigned_staff: '', status: 'pending' })
+  const [noteForm, setNoteForm] = useState<any>({ content: '', is_pinned: false })
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   // Canvas Image Compression Helper
   const compressImage = (file: File): Promise<string> => {
@@ -376,6 +423,36 @@ export default function CustomerDetailPage() {
       setIsEditing(false)
       toast.info('No changes detected.')
       return
+    }
+
+    // Verify duplicate credentials if mobile, pan, or aadhaar was modified
+    if (patchPayload.mobile || patchPayload.pan || patchPayload.aadhaar) {
+      const dup = checkCustomerDuplicatesFromList(
+        {
+          mobile: patchPayload.mobile ?? customer.mobile,
+          pan: patchPayload.pan ?? customer.pan,
+          aadhaar: patchPayload.aadhaar ?? customer.aadhaar,
+        },
+        allCustomersValidation,
+        customerId
+      )
+      if (dup.hasDuplicate) {
+        const dupErrors: Record<string, string> = {}
+        if (patchPayload.mobile && dup.duplicateMobile) {
+          dupErrors.mobile = `Mobile number is already registered to ${dup.duplicateMobile.name} (${dup.duplicateMobile.customer_id})`
+        }
+        if (patchPayload.pan && dup.duplicatePan) {
+          dupErrors.pan = `PAN card is already registered to ${dup.duplicatePan.name} (${dup.duplicatePan.customer_id})`
+        }
+        if (patchPayload.aadhaar && dup.duplicateAadhaar) {
+          dupErrors.aadhaar = `Aadhaar is already registered to ${dup.duplicateAadhaar.name} (${dup.duplicateAadhaar.customer_id})`
+        }
+        if (Object.keys(dupErrors).length > 0) {
+          setValidationErrors(dupErrors)
+          toast.error('Cannot save: Duplicate mobile, PAN, or Aadhaar is already registered to another customer.')
+          return
+        }
+      }
     }
 
     try {
@@ -552,39 +629,7 @@ export default function CustomerDetailPage() {
   }
 
   // --- Active Tab State ---
-  const [activeTab, setActiveTab] = useState<string>('basic')
-
-  // --- UI Filter & Search States ---
-  const [projectSearch, setProjectSearch] = useState('')
-  const [projectStatusFilter, setProjectStatusFilter] = useState('all')
-  const [noteSearch, setNoteSearch] = useState('')
-
-  // --- Modal Open States ---
-  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
-  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false)
-  const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false)
-  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
-  const [isDocModalOpen, setIsDocModalOpen] = useState(false)
-  const [isCommModalOpen, setIsCommModalOpen] = useState(false)
-  const [isFollowupModalOpen, setIsFollowupModalOpen] = useState(false)
-  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false)
-  const [isManageSegmentsOpen, setIsManageSegmentsOpen] = useState(false)
-  const [newSegmentName, setNewSegmentName] = useState('')
-
-  // --- Form Data States ---
-  const [profileForm, setProfileForm] = useState<any>(null)
-  const [projectForm, setProjectForm] = useState<any>({ project_name: '', project_id: '', start_date: '', end_date: '', status: 'Running', amount: '', progress: 0, assigned_employee: '' })
-  const [quotationForm, setQuotationForm] = useState<any>({ quotation_number: '', date: '', amount: '', status: 'Pending', converted: false })
-  const [invoiceForm, setInvoiceForm] = useState<any>({ invoice_number: '', invoice_date: '', due_date: '', amount: '', paid: 0 })
-  const [paymentForm, setPaymentForm] = useState<any>({ payment_date: '', amount: '', payment_method: 'UPI', reference_number: '', collected_by: '', status: 'Success' })
-  const [docForm, setDocForm] = useState<any>({ document_name: '', document_type: 'Agreement', file_url: '#', file_size: '1.2 MB' })
-  const [commForm, setCommForm] = useState<any>({ type: 'Call', date: '', time: '', employee: '', description: '', status: 'Completed' })
-  const [followupForm, setFollowupForm] = useState<any>({ followup_date: '', reminder_date: '', reminder_time: '', customer_response: '', next_action: '', assigned_staff: '', status: 'pending' })
-  const [noteForm, setNoteForm] = useState<any>({ content: '', is_pinned: false })
-
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  // (moved to top of component with other state declarations)
 
   useEffect(() => {
     if (activeTab && tabRefs.current[activeTab]) {
@@ -595,6 +640,34 @@ export default function CustomerDetailPage() {
       })
     }
   }, [activeTab])
+
+  const handleDeleteRecord = () => {
+    setIsActionsOpen(false)
+    setDeleteIdInput('')
+    setDeleteError('')
+    setIsDeleteModalOpen(true)
+  }
+
+  const handleConfirmDelete = () => {
+    if (!customer) return
+    if (deleteIdInput.trim() !== customer.customer_id) {
+      setDeleteError(`Incorrect Customer ID. Please enter "${customer.customer_id}" to confirm.`)
+      return
+    }
+    moveToTrash.mutate(
+      { customerId: customer.id, deletedBy: user?.full_name ?? undefined },
+      {
+        onSuccess: () => {
+          setIsDeleteModalOpen(false)
+          toast.success(`Customer "${customer.name}" moved to Trash.`)
+          navigate('/customers')
+        },
+        onError: (err: any) => {
+          setDeleteError(err?.message ?? 'Failed to delete customer. Please try again.')
+        },
+      }
+    )
+  }
 
   // --- Check Loading ---
   const isGlobalLoading = isCustLoading || isProjLoading || isQuotsLoading || isInvsLoading || isPaysLoading || isDocsLoading || isCommsLoading || isFupsLoading || isNotesLoading || isActsLoading
@@ -1308,22 +1381,55 @@ export default function CustomerDetailPage() {
               </Button>
             )}
 
-            <div className="relative group flex-1 xl:flex-none">
-              <Button variant="default" size="sm" className="w-full flex items-center justify-center gap-2">
+            <div className="relative flex-1 xl:flex-none">
+              <Button
+                variant="default"
+                size="sm"
+                className="w-full flex items-center justify-center gap-2"
+                onClick={() => setIsActionsOpen((o) => !o)}
+              >
                 Actions <MoreVertical className="h-4 w-4" />
               </Button>
-              <div className="absolute right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 w-48 hidden group-hover:block z-50 transition-all">
-                <button onClick={handleExportPDF} className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-bold flex items-center gap-2">
-                  <DocIcon className="h-4 w-4 text-red-500" /> Export PDF Report
-                </button>
-                <button onClick={handleExportExcel} className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-bold flex items-center gap-2">
-                  <FileSpreadsheet className="h-4 w-4 text-emerald-500" /> Export Excel Sheet
-                </button>
-                <button onClick={handlePrint} className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-bold flex items-center gap-2">
-                  <Printer className="h-4 w-4 text-slate-500" /> Print Profile
-                </button>
-              </div>
+              {isActionsOpen && (
+                <>
+                  {/* Invisible overlay — click outside dropdown to close */}
+                  <div
+                    className="fixed inset-0 z-[9998]"
+                    onClick={() => setIsActionsOpen(false)}
+                  />
+                  {/* Dropdown — above overlay */}
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 w-48 z-[9999]">
+                    <button
+                      onClick={() => { setIsActionsOpen(false); handleExportPDF() }}
+                      className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-bold flex items-center gap-2"
+                    >
+                      <DocIcon className="h-4 w-4 text-red-500" /> Export PDF Report
+                    </button>
+                    <button
+                      onClick={() => { setIsActionsOpen(false); handleExportExcel() }}
+                      className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-bold flex items-center gap-2"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-emerald-500" /> Export Excel Sheet
+                    </button>
+                    <button
+                      onClick={() => { setIsActionsOpen(false); handlePrint() }}
+                      className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-bold flex items-center gap-2"
+                    >
+                      <Printer className="h-4 w-4 text-slate-500" /> Print Profile
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* Standalone Delete Record button — always visible */}
+            <button
+              type="button"
+              onClick={handleDeleteRecord}
+              className="flex-1 xl:flex-none flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors print:hidden"
+            >
+              <Trash2 className="h-4 w-4" /> Delete Record
+            </button>
           </div>
         </div>
 
@@ -2785,6 +2891,84 @@ export default function CustomerDetailPage() {
               >
                 + Add Segment
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Delete Record Confirmation Modal ─── */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-red-50">
+              <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-sm font-extrabold text-slate-900">Delete Customer Record</h2>
+                <p className="text-[11px] text-slate-500 font-medium">This action will move the record to Trash</p>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                <p className="text-xs font-bold text-amber-800">
+                  ⚠️ You are about to delete <span className="text-amber-900">"{customer?.name}"</span>.
+                </p>
+                <p className="text-[11px] text-amber-700 mt-0.5">
+                  The record will be moved to Trash and can be restored later.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Enter Customer ID to confirm
+                </label>
+                <input
+                  type="text"
+                  value={deleteIdInput}
+                  onChange={(e) => {
+                    setDeleteIdInput(e.target.value)
+                    setDeleteError('')
+                  }}
+                  placeholder={customer?.customer_id ?? 'Customer ID'}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-400 placeholder:text-slate-300"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmDelete() }}
+                />
+                {deleteError && (
+                  <p className="text-red-600 text-[11px] font-bold mt-1.5 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3 flex-shrink-0" /> {deleteError}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50">
+              <button
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={moveToTrash.isPending}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {moveToTrash.isPending ? (
+                  <>
+                    <RefreshCcw className="h-3.5 w-3.5 animate-spin" /> Deleting…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" /> Move to Trash
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
