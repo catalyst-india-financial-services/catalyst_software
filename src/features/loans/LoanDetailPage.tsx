@@ -7,7 +7,7 @@ import {
   AlertTriangle, Eye, Trash2, Upload, Printer, FileSpreadsheet, Lock,
   IndianRupee, CalendarDays, Coins, HelpCircle, FileDown, Plus, Info,
   Banknote, Landmark, ShieldCheck, Activity, Search, ShieldAlert as InsuranceIcon,
-  Check, X, SquarePen, LayoutDashboard
+  Check, X, SquarePen, LayoutDashboard, ArrowUpRight
 } from 'lucide-react'
 import {
   useLoan, useCustomer, useLoanSchedule, usePayments, useCreatePayment,
@@ -42,10 +42,18 @@ export default function LoanDetailPage() {
   const { data: baseCustomer, isLoading: isCustomerLoading } = useCustomer(loan?.customer_id)
   const customer = baseCustomer as ExtendedCustomer | undefined
 
-  // --- Derived Status and KYC ---
+  // --- Derived Status, KYC and Disbursement ---
   const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
   const kycStatus = isKycVerified ? 'verified' : 'pending'
-  const derivedStatus = isKycVerified && loan?.status !== 'draft' ? 'active' : (loan?.status || 'draft')
+  const isDisbursed = (Number(loan?.disbursed_amount) || 0) > 0
+  const derivedStatus = useMemo(() => {
+    if (!loan) return 'draft'
+    if (loan.status === 'draft') return 'draft'
+    if (loan.status === 'closed') return 'closed'
+    if (!isDisbursed) return 'pending'
+    if (loan.status === 'overdue') return 'overdue'
+    return 'active'
+  }, [loan, isDisbursed])
   const { data: emiSchedule = [], isLoading: isScheduleLoading, refetch: refetchSchedule } = useLoanSchedule(loanId)
 
   const { data: payments = [], isLoading: isPaymentsLoading, refetch: refetchPayments } = usePayments(loanId)
@@ -641,9 +649,9 @@ export default function LoanDetailPage() {
                 derivedStatus === 'active' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
                 derivedStatus === 'overdue' && 'bg-red-50 text-red-700 border-red-200 animate-pulse',
                 derivedStatus === 'closed' && 'bg-slate-100 text-slate-600 border-slate-200',
-                derivedStatus === 'pending' && 'bg-amber-50 text-amber-700 border-amber-250'
+                (derivedStatus === 'pending' || derivedStatus === 'draft') && 'bg-amber-50 text-amber-700 border-amber-250'
               )}>
-                {derivedStatus}
+                {!isDisbursed && loan.status !== 'draft' ? 'Pending Disbursement' : derivedStatus}
               </span>
             </div>
 
@@ -661,8 +669,19 @@ export default function LoanDetailPage() {
 
         <div className="flex items-center gap-2.5 w-full sm:w-auto print:hidden">
           <Button
-            onClick={() => setIsEmiModalOpen(true)}
-            className="flex-1 sm:flex-none bg-brand-600 hover:bg-brand-700 text-white font-bold"
+            onClick={() => {
+              if (!isDisbursed) {
+                toast.error('Cannot collect EMI: This loan has not been disbursed yet. Please record disbursement in Transactions first.')
+                return
+              }
+              setIsEmiModalOpen(true)
+            }}
+            className={cn(
+              "flex-1 sm:flex-none font-bold",
+              !isDisbursed
+                ? "bg-slate-200 text-slate-500 hover:bg-slate-200"
+                : "bg-brand-600 hover:bg-brand-700 text-white"
+            )}
             disabled={loan.status === 'closed'}
           >
             <Coins className="h-4 w-4" /> Collect EMI
@@ -697,6 +716,32 @@ export default function LoanDetailPage() {
           ================================================== */}
       {activeTab === 'overview' && (
         <>
+          {/* Pending Disbursement Alert Banner */}
+          {!isDisbursed && (
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 flex-shrink-0">
+                  <Banknote className="h-6 w-6" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-extrabold text-amber-950 uppercase tracking-wider">
+                    Loan Sanctioned — Pending Disbursement
+                  </h4>
+                  <p className="text-xs text-amber-800 mt-0.5 font-medium">
+                    Sanctioned Principal: <strong>{formatCurrency(loan.loan_amount || 0)}</strong>. Outstanding principal will be reflected once disbursement is recorded in Transactions.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => navigate(`/transactions?action=disburse&customer=${loan.customer_id}&loan=${loan.id}`)}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs whitespace-nowrap self-start sm:self-auto shadow-xs"
+              >
+                <ArrowUpRight className="h-4 w-4" /> Record Disbursement
+              </Button>
+            </div>
+          )}
+
           {/* ==================================================
               3. FINANCIAL SUMMARY CARDS
               ================================================== */}
@@ -709,8 +754,20 @@ export default function LoanDetailPage() {
               <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
                 {[
                   { label: 'Loan Amount', value: formatCurrency(loan.loan_amount || 0), subtitle: 'Sanctioned base principal', color: 'text-slate-900', icon: Banknote },
-                  { label: 'Outstanding Principal', value: formatCurrency(loan.remaining_balance), subtitle: 'Balance base amount', color: 'text-slate-900', icon: Landmark },
-                  { label: 'Outstanding Interest', value: formatCurrency(outstandingInterest), subtitle: 'Overdue unpaid interest', color: 'text-amber-600', icon: TrendingDown },
+                  {
+                    label: 'Outstanding Principal',
+                    value: isDisbursed ? formatCurrency(loan.remaining_balance) : '₹0',
+                    subtitle: isDisbursed ? 'Balance base amount' : 'Pending disbursement',
+                    color: isDisbursed ? 'text-slate-900' : 'text-slate-400',
+                    icon: Landmark
+                  },
+                  {
+                    label: 'Outstanding Interest',
+                    value: isDisbursed ? formatCurrency(outstandingInterest) : '₹0',
+                    subtitle: isDisbursed ? 'Overdue unpaid interest' : 'No interest until disbursed',
+                    color: isDisbursed ? 'text-amber-600' : 'text-slate-400',
+                    icon: TrendingDown
+                  },
                   { 
                     label: 'EMI (Monthly)', 
                     value: isComp && compP1 && compP2 ? `${formatCurrency(compP1.emi_amount)} / ${formatCurrency(compP2.emi_amount)}` : formatCurrency(loan.emi_amount), 
@@ -752,13 +809,13 @@ export default function LoanDetailPage() {
             {[
               {
                 label: 'DPD (Days Past Due)',
-                value: dpd > 0 ? `${dpd} Days` : '0 Days',
-                badgeColor: dpd > 0 ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                value: isDisbursed && dpd > 0 ? `${dpd} Days` : '0 Days',
+                badgeColor: isDisbursed && dpd > 0 ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
               },
               {
                 label: 'Next EMI Due',
-                value: nextEmi ? formatDate(nextEmi.due_date) : 'Fully Paid',
-                badgeColor: nextEmi ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                value: !isDisbursed ? 'Pending Disb.' : (nextEmi ? formatDate(nextEmi.due_date) : 'Fully Paid'),
+                badgeColor: !isDisbursed ? 'bg-amber-50 text-amber-700 border-amber-200' : (nextEmi ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200')
               },
               {
                 label: 'EMI Amount',
@@ -767,9 +824,9 @@ export default function LoanDetailPage() {
               },
               {
                 label: 'Account Status',
-                value: derivedStatus.toUpperCase(),
-                badgeColor: derivedStatus === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                  derivedStatus === 'overdue' ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' : 'bg-slate-100 text-slate-600 border-slate-200'
+                value: !isDisbursed ? (loan.status === 'draft' ? 'DRAFT' : 'PENDING DISBURSEMENT') : derivedStatus.toUpperCase(),
+                badgeColor: !isDisbursed ? 'bg-amber-50 text-amber-700 border-amber-200' : (derivedStatus === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  derivedStatus === 'overdue' ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' : 'bg-slate-100 text-slate-600 border-slate-200')
               },
               {
                 label: 'Document Status',

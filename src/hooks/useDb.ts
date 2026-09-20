@@ -220,6 +220,21 @@ export function useAllCustomersValidationList() {
   })
 }
 
+export function useAllCustomers() {
+  return useQuery({
+    queryKey: ['customers', 'all'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data || []) as Customer[]
+    },
+    staleTime: 30_000,
+  })
+}
+
 export function useCreateCustomer() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -445,7 +460,10 @@ export function useCreateLoan() {
 
         total_interest = Math.max(0, emi_amount * emi_count - (loanData.loan_amount || 0))
       }
-      const disbursed_amount = (loanData.loan_amount || 0) - (loanData.processing_fee || 0)
+      // When a loan is first created, it has NOT been disbursed yet!
+      // Outstanding principal (remaining_balance) and disbursed_amount must be 0
+      // until disbursement is recorded in the Transactions page.
+      const initialStatus = loanData.status === 'draft' ? 'draft' as const : 'pending' as const
 
       let attempts = 0
       let lastError: any = null
@@ -470,18 +488,17 @@ export function useCreateLoan() {
           emi_amount: isNaN(emi_amount) ? 0 : emi_amount,
           emi_count: isNaN(emi_count) ? 12 : emi_count,
           remaining_emi: isNaN(emi_count) ? 12 : emi_count,
-          remaining_balance: loanData.loan_amount ?? 0,
+          remaining_balance: 0,
           total_interest: isNaN(total_interest) ? 0 : total_interest,
-          disbursed_amount: isNaN(disbursed_amount) ? 0 : disbursed_amount,
-          // Use 'active' as fallback if status is 'draft' (pre-migration 00009 databases don't support 'draft')
-          status: (loanData.status === 'draft' || loanData.status === 'pending') ? 'active' as const : loanData.status,
+          disbursed_amount: 0,
+          status: initialStatus,
           sync_status: 'synced' as const,
         }
 
         // Extended fields — only exist after migration 00009
         const extendedLoanFields = {
           ...baseLoanFields,
-          status: loanData.status, // override with real status after migration
+          status: initialStatus,
           sanctioned_amount: loanData.sanctioned_amount,
           loan_product: loanData.loan_product,
           loan_category: loanData.loan_category,
@@ -2212,11 +2229,105 @@ export function useCreateTransaction() {
         .select()
         .single()
       if (error) throw error
+
+      // 1. When recording a disbursement, disburse funds to the loan and activate it
+      if (txn.txn_type === 'disbursement') {
+        const targetLoanId = txn.loan_id
+        if (targetLoanId) {
+          const { data: currentLoan } = await supabase
+            .from('loans')
+            .select('id, disbursed_amount, remaining_balance, loan_amount')
+            .eq('id', targetLoanId)
+            .maybeSingle()
+
+          if (currentLoan) {
+            const newDisbursed = (Number(currentLoan.disbursed_amount) || 0) + Number(txn.amount)
+            const newRemaining = (Number(currentLoan.remaining_balance) || 0) + Number(txn.amount)
+            await supabase
+              .from('loans')
+              .update({
+                disbursed_amount: newDisbursed,
+                remaining_balance: newRemaining,
+                status: 'active',
+                loan_date: txn.date || new Date().toISOString().split('T')[0],
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', targetLoanId)
+          }
+        } else if (txn.customer_id) {
+          // If no specific loan_id passed, check if customer has a pending/undisbursed loan
+          const { data: pendingLoans } = await supabase
+            .from('loans')
+            .select('id, disbursed_amount, remaining_balance, loan_amount')
+            .eq('customer_id', txn.customer_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+
+          if (pendingLoans && pendingLoans.length > 0) {
+            const target = pendingLoans[0]
+            const newDisbursed = (Number(target.disbursed_amount) || 0) + Number(txn.amount)
+            const newRemaining = (Number(target.remaining_balance) || 0) + Number(txn.amount)
+            await supabase
+              .from('loans')
+              .update({
+                disbursed_amount: newDisbursed,
+                remaining_balance: newRemaining,
+                status: 'active',
+                loan_date: txn.date || new Date().toISOString().split('T')[0],
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', target.id)
+          }
+        }
+      } else if (txn.txn_type === 'repayment' && txn.loan_id) {
+        // 2. When recording repayment with loan_id, reduce outstanding principal
+        const principalPaid = Number(txn.principal) || Number(txn.amount) || 0
+        if (principalPaid > 0) {
+          const { data: currentLoan } = await supabase
+            .from('loans')
+            .select('id, remaining_balance')
+            .eq('id', txn.loan_id)
+            .maybeSingle()
+
+          if (currentLoan) {
+            const newRemaining = Math.max(0, (Number(currentLoan.remaining_balance) || 0) - principalPaid)
+            await supabase
+              .from('loans')
+              .update({
+                remaining_balance: newRemaining,
+                status: newRemaining === 0 ? 'closed' : 'active',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', txn.loan_id)
+          }
+        }
+      }
+
+      // 3. Update bank account balance
+      if (txn.bank_account_id) {
+        const { data: bankAcc } = await supabase
+          .from('bank_accounts')
+          .select('id, balance')
+          .eq('id', txn.bank_account_id)
+          .maybeSingle()
+        if (bankAcc) {
+          const delta = txn.direction === 'debit' ? -Number(txn.amount) : Number(txn.amount)
+          await supabase
+            .from('bank_accounts')
+            .update({
+              balance: (Number(bankAcc.balance) || 0) + delta,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', txn.bank_account_id)
+        }
+      }
+
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['bank_accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['loans'] })
       queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
     },
   })

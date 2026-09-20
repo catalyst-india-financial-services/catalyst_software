@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowDownLeft, ArrowUpRight, Landmark, Wallet, Plus, X,
@@ -112,7 +113,17 @@ function AddBankAccountModal({ onClose }: { onClose: () => void }) {
 }
 
 // ─── Transaction Form Modal ────────────────────────────────────────────────────
-function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void }) {
+function TxnFormModal({
+  type,
+  onClose,
+  defaultCustomerId,
+  defaultLoanId
+}: {
+  type: TxnType
+  onClose: () => void
+  defaultCustomerId?: string
+  defaultLoanId?: string
+}) {
   const { user } = useAuthStore()
   const { data: bankAccounts = [] } = useBankAccounts()
   const { data: customers = [] } = useCustomers()
@@ -123,8 +134,8 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
   const [form, setForm] = useState({
     date: new Date().toISOString().split('T')[0],
     bank_account_id: bankAccounts[0]?.id || '',
-    customer_id: '',
-    loan_id: '',
+    customer_id: defaultCustomerId || '',
+    loan_id: defaultLoanId || '',
     amount: '',
     principal: '',
     interest: '',
@@ -145,11 +156,47 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
     }
   }, [bankAccounts, form.bank_account_id])
 
+  const customerLoans = useMemo(() => {
+    return loans.filter(l => l.customer_id === form.customer_id)
+  }, [loans, form.customer_id])
+
+  // When customer is selected, auto-select their pending loan and auto-fill amount for disbursement
+  useEffect(() => {
+    if (type === 'disbursement' && form.customer_id && customerLoans.length > 0) {
+      const pendingLoan = customerLoans.find(l => (Number(l.disbursed_amount) || 0) <= 0) || customerLoans[0]
+      if (pendingLoan && (!form.loan_id || !customerLoans.some(l => l.id === form.loan_id))) {
+        const pendingAmt = Math.max(0, (pendingLoan.loan_amount || 0) - (pendingLoan.disbursed_amount || 0))
+        setForm(prev => ({
+          ...prev,
+          loan_id: pendingLoan.id,
+          amount: pendingAmt > 0 ? pendingAmt.toString() : (pendingLoan.loan_amount?.toString() || '')
+        }))
+      }
+    }
+  }, [type, form.customer_id, customerLoans])
+
+  const handleLoanChange = (loanId: string) => {
+    const selectedLoan = customerLoans.find(l => l.id === loanId)
+    if (selectedLoan && type === 'disbursement') {
+      const pendingAmt = Math.max(0, (selectedLoan.loan_amount || 0) - (selectedLoan.disbursed_amount || 0))
+      setForm(prev => ({
+        ...prev,
+        loan_id: loanId,
+        amount: pendingAmt > 0 ? pendingAmt.toString() : (selectedLoan.loan_amount?.toString() || '')
+      }))
+    } else {
+      setForm(prev => ({ ...prev, loan_id: loanId }))
+    }
+  }
+
   const handleSubmit = async () => {
     if (!form.bank_account_id) { toast.error('Please select a bank account'); return }
     if (!form.amount || parseFloat(form.amount) <= 0) { toast.error('Please enter a valid amount'); return }
     if ((type === 'disbursement' || type === 'repayment') && !form.customer_id) {
       toast.error('Please select a customer'); return
+    }
+    if (type === 'disbursement' && !form.loan_id) {
+      toast.error('Please select the Loan / Account to disburse'); return
     }
     setLoading(true)
     try {
@@ -171,7 +218,7 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
         created_by: user?.full_name || 'Admin',
         is_reversed: false,
       })
-      toast.success(`${cfg.label} recorded successfully`)
+      toast.success(`${cfg.label} recorded successfully! Loan account has been activated with outstanding principal.`)
       onClose()
     } catch (err: any) {
       toast.error(err?.message || `Failed to record ${type}`)
@@ -179,8 +226,6 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
       setLoading(false)
     }
   }
-
-  const customerLoans = loans.filter(l => l.customer_id === form.customer_id)
 
   return (
     <div className="space-y-4">
@@ -202,16 +247,36 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
           <>
             <div className="col-span-2">
               <Select label="Customer *" value={form.customer_id}
-                onChange={e => setForm({ ...form, customer_id: e.target.value, loan_id: '' })}
+                onChange={e => setForm({ ...form, customer_id: e.target.value, loan_id: '', amount: '' })}
                 options={customers.map(c => ({ value: c.id, label: `${c.name} — ${c.customer_id}` }))}
                 placeholder="Select customer" />
             </div>
             {form.customer_id && (
               <div className="col-span-2">
-                <Select label="Loan / Account Number" value={form.loan_id}
-                  onChange={e => setForm({ ...form, loan_id: e.target.value })}
-                  options={customerLoans.map(l => ({ value: l.id, label: l.loan_number }))}
-                  placeholder="Select loan (optional)" />
+                <Select
+                  label={type === 'disbursement' ? "Loan / Account to Disburse *" : "Loan / Account Number"}
+                  value={form.loan_id}
+                  onChange={e => handleLoanChange(e.target.value)}
+                  options={customerLoans.map(l => {
+                    const isDisbursed = (Number(l.disbursed_amount) || 0) > 0
+                    const pending = Math.max(0, (l.loan_amount || 0) - (l.disbursed_amount || 0))
+                    return {
+                      value: l.id,
+                      label: `${l.loan_number} (${formatCurrency(l.loan_amount || 0)}) — ${isDisbursed ? 'Active (Disbursed)' : 'Pending Disbursement: ' + formatCurrency(pending)}`
+                    }
+                  })}
+                  placeholder={customerLoans.length === 0 ? "No loan accounts found for customer" : "Select loan account"}
+                />
+                {customerLoans.length === 0 && (
+                  <p className="text-[11px] text-amber-600 font-medium mt-1">
+                    ⚠️ This customer does not have any loan accounts created yet.
+                  </p>
+                )}
+                {type === 'disbursement' && form.loan_id && (
+                  <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2 mt-1.5 flex items-center gap-1.5">
+                    <span>✓</span> Recording disbursement will disburse funds, activate the loan account, and record the Outstanding Principal.
+                  </p>
+                )}
               </div>
             )}
           </>
@@ -505,10 +570,16 @@ function BankAccountsTab({ accounts, onAdd, txns }: { accounts: BankAccount[]; o
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function TransactionsPage() {
-  const [activeTab, setActiveTab] = useState('overview')
-  const [modal, setModal] = useState<null | 'disbursement' | 'repayment' | 'expense' | 'deposit' | 'bank-account'>(null)
+  const [searchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState(searchParams.get('action') === 'disburse' ? 'disbursement' : 'overview')
+  const [modal, setModal] = useState<null | 'disbursement' | 'repayment' | 'expense' | 'deposit' | 'bank-account'>(
+    searchParams.get('action') === 'disburse' ? 'disbursement' : null
+  )
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+
+  const paramCustomerId = searchParams.get('customer') || undefined
+  const paramLoanId = searchParams.get('loan') || undefined
 
   const { data: bankAccounts = [], isError: acctError } = useBankAccounts()
   const { data: allTxns = [], isError: txnError, isLoading: txnLoading } = useTransactions(
@@ -726,7 +797,12 @@ export default function TransactionsPage() {
         <AddBankAccountModal onClose={() => setModal(null)} />
       </Modal>
       <Modal isOpen={modal === 'disbursement'} onClose={() => setModal(null)} title="Record Disbursement" size="lg">
-        <TxnFormModal type="disbursement" onClose={() => setModal(null)} />
+        <TxnFormModal
+          type="disbursement"
+          onClose={() => setModal(null)}
+          defaultCustomerId={paramCustomerId}
+          defaultLoanId={paramLoanId}
+        />
       </Modal>
       <Modal isOpen={modal === 'repayment'} onClose={() => setModal(null)} title="Record Repayment" size="lg">
         <TxnFormModal type="repayment" onClose={() => setModal(null)} />

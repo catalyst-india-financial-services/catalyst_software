@@ -5,8 +5,8 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, createColumnHelper, type SortingState
 } from '@tanstack/react-table'
-import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useLoans, useCustomers, useCreateLoan, useDeleteLoan, useUpdateLoan, useLoanPurposeOptions, useAddLoanPurposeOption } from '@/hooks/useDb'
+import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2, ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { useLoans, useCustomers, useAllCustomers, useCreateLoan, useDeleteLoan, useUpdateLoan, useLoanPurposeOptions, useAddLoanPurposeOption } from '@/hooks/useDb'
 import { useAuthStore } from '@/store/authStore'
 import type { Loan } from '@/types'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
@@ -63,6 +63,7 @@ function isLoanFieldFilled(value: unknown) {
 
 function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose: () => void; onCompletionChange?: (completion: number) => void }) {
   const { data: customers = [] } = useCustomers()
+  const { data: allCustomers = [] } = useAllCustomers()
   const activeCustomers = customers.filter(c => c.status === 'active')
   const createLoan = useCreateLoan()
   const updateLoan = useUpdateLoan()
@@ -72,6 +73,12 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState<'draft' | 'create' | null>(null)
   const [showCustModal, setShowCustModal] = useState(false)
+  const [custModalTarget, setCustModalTarget] = useState<'borrower' | 'guarantor' | null>(null)
+  const [customerIdMode, setCustomerIdMode] = useState<'dropdown' | 'manual'>('dropdown')
+  const [manualCustIdInput, setManualCustIdInput] = useState('')
+  const [isManualSuggestionsOpen, setIsManualSuggestionsOpen] = useState(false)
+  const manualInputRef = useRef<HTMLInputElement>(null)
+  const suggestionsRef = useRef<HTMLDivElement>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const steps = [
     { id: 1, label: 'Customer Details', desc: 'Borrower & product selection' },
@@ -154,10 +161,79 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
     }))
   }, [formData.loan_product])
 
-  // Lookups
-  const selectedCustomer = useMemo(() => customers.find(c => c.id === formData.customer_id), [customers, formData.customer_id])
-  const selectedGuarantor = useMemo(() => customers.find(c => c.id === formData.guarantor_customer_id), [customers, formData.guarantor_customer_id])
-  const selectedSecurityOwner = useMemo(() => customers.find(c => c.id === formData.security_owner_id), [customers, formData.security_owner_id])
+  // Lookups — search across allCustomers (unfiltered) or branch customers
+  const selectedCustomer = useMemo(() => {
+    if (!formData.customer_id) return null
+    return allCustomers.find(c => c.id === formData.customer_id) || customers.find(c => c.id === formData.customer_id) || null
+  }, [allCustomers, customers, formData.customer_id])
+
+  const selectedGuarantor = useMemo(() => {
+    if (!formData.guarantor_customer_id) return null
+    return allCustomers.find(c => c.id === formData.guarantor_customer_id) || customers.find(c => c.id === formData.guarantor_customer_id) || null
+  }, [allCustomers, customers, formData.guarantor_customer_id])
+
+  const selectedSecurityOwner = useMemo(() => {
+    if (!formData.security_owner_id) return null
+    return allCustomers.find(c => c.id === formData.security_owner_id) || customers.find(c => c.id === formData.security_owner_id) || null
+  }, [allCustomers, customers, formData.security_owner_id])
+
+  // Sync manual input with selected customer when in dropdown mode
+  useEffect(() => {
+    if (selectedCustomer?.customer_id && !manualCustIdInput) {
+      setManualCustIdInput(selectedCustomer.customer_id)
+    }
+  }, [selectedCustomer?.customer_id])
+
+  // Click outside to close manual suggestions
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(event.target as Node) &&
+        manualInputRef.current &&
+        !manualInputRef.current.contains(event.target as Node)
+      ) {
+        setIsManualSuggestionsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Filtered customers for manual autocomplete
+  const manualMatches = useMemo(() => {
+    const query = manualCustIdInput.trim().toLowerCase()
+    if (!query) return []
+    return allCustomers
+      .filter(c => c.status !== 'blocked')
+      .filter(c =>
+        (c.customer_id && c.customer_id.toLowerCase().includes(query)) ||
+        (c.name && c.name.toLowerCase().includes(query)) ||
+        (c.mobile && c.mobile.includes(query))
+      )
+      .slice(0, 8)
+  }, [allCustomers, manualCustIdInput])
+
+  const exactCustomerMatch = useMemo(() => {
+    const query = manualCustIdInput.trim().toUpperCase()
+    if (!query) return null
+    return allCustomers.find(c => c.customer_id && c.customer_id.toUpperCase() === query) || null
+  }, [allCustomers, manualCustIdInput])
+
+  // Options for branch dropdown, including selected external customer if any
+  const dropdownCustomerOptions = useMemo(() => {
+    const opts = activeCustomers.map(c => ({
+      value: c.id,
+      label: `${c.customer_id} — ${c.name}`
+    }))
+    if (selectedCustomer && !activeCustomers.some(c => c.id === selectedCustomer.id)) {
+      opts.unshift({
+        value: selectedCustomer.id,
+        label: `${selectedCustomer.customer_id} — ${selectedCustomer.name}${selectedCustomer.branch ? ` (${selectedCustomer.branch})` : ''}`
+      })
+    }
+    return opts
+  }, [activeCustomers, selectedCustomer])
 
   const { data: loanPurposeOptions = [] } = useLoanPurposeOptions()
   const addLoanPurposeOption = useAddLoanPurposeOption()
@@ -506,25 +582,287 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Select
-                    label="Customer ID *"
-                    value={formData.customer_id}
-                    onChange={e => {
-                      setFormData({ ...formData, customer_id: e.target.value })
-                      if (errors.customer_id) {
-                        setErrors(prev => {
-                          const next = { ...prev }
-                          delete next.customer_id
-                          return next
-                        })
-                      }
-                    }}
-                     options={activeCustomers.map(c => ({ value: c.id, label: `${c.customer_id} — ${c.name}` }))}
-                    placeholder="Select borrower customer"
-                  />
-                  <FieldError msg={errors.customer_id} />
+                  {/* Customer ID Header with Dropdown / Manual Mode Switcher & + New button */}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      Customer ID *
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex bg-slate-100 p-0.5 rounded-md border border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setCustomerIdMode('dropdown')}
+                          className={cn(
+                            'px-2 py-0.5 text-[10px] font-semibold rounded transition-colors',
+                            customerIdMode === 'dropdown'
+                              ? 'bg-white text-brand-700 shadow-sm'
+                              : 'text-slate-500 hover:text-slate-800'
+                          )}
+                        >
+                          Branch List
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomerIdMode('manual')
+                            setTimeout(() => manualInputRef.current?.focus(), 50)
+                          }}
+                          className={cn(
+                            'px-2 py-0.5 text-[10px] font-semibold rounded transition-colors',
+                            customerIdMode === 'manual'
+                              ? 'bg-white text-brand-700 shadow-sm'
+                              : 'text-slate-500 hover:text-slate-800'
+                          )}
+                        >
+                          Manual Entry
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mode 1: Branch Dropdown */}
+                  {customerIdMode === 'dropdown' ? (
+                    <div>
+                      <Select
+                        value={formData.customer_id}
+                        onChange={e => {
+                          const val = e.target.value
+                          if (val === '__MANUAL__') {
+                            setCustomerIdMode('manual')
+                            setTimeout(() => manualInputRef.current?.focus(), 50)
+                            return
+                          }
+                          setFormData(prev => ({ ...prev, customer_id: val }))
+                          const matched = allCustomers.find(c => c.id === val) || customers.find(c => c.id === val)
+                          if (matched?.customer_id) {
+                            setManualCustIdInput(matched.customer_id)
+                          }
+                          if (errors.customer_id) {
+                            setErrors(prev => {
+                              const next = { ...prev }
+                              delete next.customer_id
+                              return next
+                            })
+                          }
+                        }}
+                        options={[
+                          ...dropdownCustomerOptions,
+                          { value: '__MANUAL__', label: '✏️ Enter Customer ID manually...' }
+                        ]}
+                        placeholder="Select borrower customer"
+                      />
+                      <FieldError msg={errors.customer_id} />
+                      <p className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
+                        <span>Showing {activeBranch || 'branch'} customers</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomerIdMode('manual')
+                            setTimeout(() => manualInputRef.current?.focus(), 50)
+                          }}
+                          className="text-brand-600 hover:underline font-medium"
+                        >
+                          Type ID manually
+                        </button>
+                      </p>
+                    </div>
+                  ) : (
+                    /* Mode 2: Manual Customer ID Entry & Search */
+                    <div className="relative">
+                      <div className="relative">
+                        <input
+                          ref={manualInputRef}
+                          type="text"
+                          value={manualCustIdInput}
+                          onChange={e => {
+                            const val = e.target.value
+                            setManualCustIdInput(val)
+                            setIsManualSuggestionsOpen(true)
+                            const query = val.trim().toUpperCase()
+                            const match = allCustomers.find(c => c.customer_id?.toUpperCase() === query)
+                            if (match) {
+                              setFormData(prev => ({ ...prev, customer_id: match.id }))
+                              if (errors.customer_id) {
+                                setErrors(prev => {
+                                  const next = { ...prev }
+                                  delete next.customer_id
+                                  return next
+                                })
+                              }
+                            } else if (formData.customer_id) {
+                              setFormData(prev => ({ ...prev, customer_id: '' }))
+                            }
+                          }}
+                          onFocus={() => {
+                            if (manualCustIdInput.trim()) {
+                              setIsManualSuggestionsOpen(true)
+                            }
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              if (exactCustomerMatch) {
+                                setFormData(prev => ({ ...prev, customer_id: exactCustomerMatch.id }))
+                                setManualCustIdInput(exactCustomerMatch.customer_id || '')
+                                setIsManualSuggestionsOpen(false)
+                                if (errors.customer_id) {
+                                  setErrors(prev => {
+                                    const next = { ...prev }
+                                    delete next.customer_id
+                                    return next
+                                  })
+                                }
+                              } else if (manualMatches.length > 0) {
+                                const pick = manualMatches[0]
+                                setFormData(prev => ({ ...prev, customer_id: pick.id }))
+                                setManualCustIdInput(pick.customer_id || '')
+                                setIsManualSuggestionsOpen(false)
+                                if (errors.customer_id) {
+                                  setErrors(prev => {
+                                    const next = { ...prev }
+                                    delete next.customer_id
+                                    return next
+                                  })
+                                }
+                              }
+                            } else if (e.key === 'Escape') {
+                              setIsManualSuggestionsOpen(false)
+                            }
+                          }}
+                          placeholder="Type Customer ID (e.g. CUS109) or Name"
+                          className={cn(
+                            'w-full border rounded-lg pl-8 pr-8 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 font-medium text-slate-800 placeholder:text-slate-400 bg-white',
+                            errors.customer_id ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
+                          )}
+                        />
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                        {manualCustIdInput && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setManualCustIdInput('')
+                              setFormData(prev => ({ ...prev, customer_id: '' }))
+                              setIsManualSuggestionsOpen(false)
+                              manualInputRef.current?.focus()
+                            }}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <FieldError msg={errors.customer_id} />
+
+                      {/* Suggestions list popup */}
+                      {isManualSuggestionsOpen && manualMatches.length > 0 && (
+                        <div
+                          ref={suggestionsRef}
+                          className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-52 overflow-y-auto py-1 divide-y divide-slate-100"
+                        >
+                          <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 flex items-center justify-between">
+                            <span>Matching Customers ({manualMatches.length})</span>
+                            <span className="font-normal lowercase text-[9px]">click to select</span>
+                          </div>
+                          {manualMatches.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setFormData(prev => ({ ...prev, customer_id: c.id }))
+                                setManualCustIdInput(c.customer_id || '')
+                                setIsManualSuggestionsOpen(false)
+                                if (errors.customer_id) {
+                                  setErrors(prev => {
+                                    const next = { ...prev }
+                                    delete next.customer_id
+                                    return next
+                                  })
+                                }
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-brand-50/60 transition-colors flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-xs text-brand-700">{c.customer_id}</span>
+                                  <span className="text-slate-300">•</span>
+                                  <span className="font-semibold text-xs text-slate-800 truncate">{c.name}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                                  {c.mobile && <span>📱 {c.mobile}</span>}
+                                  {c.branch && (
+                                    <span className="bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-medium">
+                                      {c.branch}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {c.id === formData.customer_id && (
+                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                  Selected
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Verified selected customer card in manual mode */}
+                      {selectedCustomer && (
+                        <div className="mt-1.5 p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-900 animate-in fade-in duration-150">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                            <div className="truncate">
+                              <span className="font-bold">{selectedCustomer.customer_id}</span>
+                              <span className="mx-1 text-emerald-400">•</span>
+                              <span className="font-medium">{selectedCustomer.name}</span>
+                              {selectedCustomer.branch && (
+                                <span className="ml-1.5 text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-medium">
+                                  {selectedCustomer.branch}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData(prev => ({ ...prev, customer_id: '' }))
+                              setManualCustIdInput('')
+                              manualInputRef.current?.focus()
+                            }}
+                            className="text-[10px] text-emerald-700 hover:text-red-600 font-semibold ml-2 underline flex-shrink-0"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Not found state in manual mode */}
+                      {!selectedCustomer && manualCustIdInput.trim().length > 0 && manualMatches.length === 0 && (
+                        <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs flex items-center justify-between gap-2 animate-in fade-in duration-150">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                            <span className="text-amber-800 truncate text-[11px]">
+                              No customer with ID <strong>"{manualCustIdInput}"</strong>
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustModalTarget('borrower')
+                              setShowCustModal(true)
+                            }}
+                            className="whitespace-nowrap px-2 py-0.5 text-[10px] font-bold text-brand-700 bg-white border border-brand-300 hover:bg-brand-50 rounded shadow-sm flex items-center gap-1 flex-shrink-0"
+                          >
+                            <Plus className="h-2.5 w-2.5" />
+                            Register Now
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                
+
                 <div>
                   <Input
                     label="Customer Name"
@@ -532,6 +870,14 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                     disabled
                     placeholder="Automatically populated"
                   />
+                  {selectedCustomer && (
+                    <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-2">
+                      {selectedCustomer.mobile && <span>📱 {selectedCustomer.mobile}</span>}
+                      {selectedCustomer.branch && (
+                        <span className="text-slate-600 font-medium">🏢 {selectedCustomer.branch} Branch</span>
+                      )}
+                    </p>
+                  )}
                 </div>
 
                 <Select
@@ -1143,7 +1489,16 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                 <div className="space-y-3">
                   <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200/60">
                     <span className="text-xs font-semibold text-slate-600">Borrower requires a registered guarantor.</span>
-                    <Button variant="outline" size="sm" className="h-7 text-[10px]" type="button" onClick={() => setShowCustModal(true)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[10px]"
+                      type="button"
+                      onClick={() => {
+                        setCustModalTarget('guarantor')
+                        setShowCustModal(true)
+                      }}
+                    >
                       <Plus className="h-3 w-3" /> Register New Guarantor
                     </Button>
                   </div>
@@ -1596,21 +1951,45 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
         </div>
       </div>
 
-      {/* Sub-modal: Create Customer */}
+      {/* Sub-modal: Create Customer (Borrower or Guarantor) */}
       <Modal
         isOpen={showCustModal}
-        onClose={() => setShowCustModal(false)}
-        title="Register New Customer"
+        onClose={() => {
+          setShowCustModal(false)
+          setCustModalTarget(null)
+        }}
+        title={custModalTarget === 'borrower' ? "Register New Borrower Customer" : "Register New Guarantor Customer"}
         size="xl"
       >
         <CreateCustomerModal
-          onClose={() => setShowCustModal(false)}
+          onClose={() => {
+            setShowCustModal(false)
+            setCustModalTarget(null)
+          }}
           onSuccess={(c) => {
-            setFormData(prev => ({
-              ...prev,
-              guarantor_customer_id: c.id,
-            }))
-            toast.success(`Registered and selected customer: ${c.name}`)
+            if (custModalTarget === 'borrower') {
+              setFormData(prev => ({
+                ...prev,
+                customer_id: c.id,
+              }))
+              setManualCustIdInput(c.customer_id || '')
+              if (errors.customer_id) {
+                setErrors(prev => {
+                  const next = { ...prev }
+                  delete next.customer_id
+                  return next
+                })
+              }
+              toast.success(`Registered and selected borrower: ${c.name} (${c.customer_id})`)
+            } else {
+              setFormData(prev => ({
+                ...prev,
+                guarantor_customer_id: c.id,
+              }))
+              toast.success(`Registered and selected guarantor: ${c.name}`)
+            }
+            setShowCustModal(false)
+            setCustModalTarget(null)
           }}
         />
       </Modal>
@@ -1635,6 +2014,7 @@ export default function LoansPage() {
 
   const { data: loans = [], isLoading } = useLoans()
   const { data: customers = [] } = useCustomers()
+  const { data: allCustomers = [] } = useAllCustomers()
 
   const deleteLoan = useDeleteLoan()
 
@@ -1761,6 +2141,16 @@ export default function LoansPage() {
     columnHelper.accessor('remaining_balance', {
       header: 'Outstanding',
       cell: (info) => {
+        const loan = info.row.original
+        const isDisbursed = (Number(loan.disbursed_amount) || 0) > 0
+        if (!isDisbursed) {
+          return (
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-slate-400">₹0</span>
+              <span className="text-[9px] text-amber-600 font-semibold tracking-tight uppercase">Pending Disb.</span>
+            </div>
+          )
+        }
         const val = info.getValue()
         return <span className="text-xs font-bold amount-display text-slate-800">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
       },
@@ -1774,11 +2164,21 @@ export default function LoansPage() {
       header: 'Status',
       cell: (info) => {
         const loan = info.row.original
-        const customer = customers.find(c => c.id === loan.customer_id)
-        const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
-        const isSubmitted = loan.status !== 'draft'
-        const status = isKycVerified && isSubmitted ? 'active' : loan.status
-        return <StatusBadge status={status} />
+        const isDisbursed = (Number(loan.disbursed_amount) || 0) > 0
+
+        if (loan.status === 'draft') {
+          return <StatusBadge status="draft" label="Draft" />
+        }
+        if (!isDisbursed) {
+          return <StatusBadge status="pending" label="Pending Disb." />
+        }
+        if (loan.status === 'closed') {
+          return <StatusBadge status="closed" label="Closed" />
+        }
+        if (loan.status === 'overdue') {
+          return <StatusBadge status="overdue" label="Overdue" />
+        }
+        return <StatusBadge status="active" label="Active" />
       },
     }),
     columnHelper.display({
@@ -1786,7 +2186,7 @@ export default function LoansPage() {
       header: 'KYC',
       cell: (info) => {
         const loan = info.row.original
-        const customer = customers.find(c => c.id === loan.customer_id)
+        const customer = allCustomers.find(c => c.id === loan.customer_id) || customers.find(c => c.id === loan.customer_id)
         const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
         const kycStatus = isKycVerified ? 'verified' : 'pending'
         const kycLabel = isKycVerified ? 'Verified' : 'Pending'
@@ -1824,7 +2224,7 @@ export default function LoansPage() {
         />
       ),
     }),
-  ], [navigate, customers])
+  ], [navigate, customers, allCustomers])
 
   const table = useReactTable({
     data: filteredData,
