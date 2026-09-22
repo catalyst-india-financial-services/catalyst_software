@@ -5,7 +5,7 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, createColumnHelper, type SortingState
 } from '@tanstack/react-table'
-import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2, ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2, ChevronDown, ChevronLeft, ChevronRight, Search, X, Building2 } from 'lucide-react'
 import { useLoans, useCustomers, useAllCustomers, useCreateLoan, useDeleteLoan, useUpdateLoan, useLoanPurposeOptions, useAddLoanPurposeOption } from '@/hooks/useDb'
 import { useAuthStore } from '@/store/authStore'
 import type { Loan } from '@/types'
@@ -2005,12 +2005,22 @@ function FieldError({ msg }: { msg?: string }) {
 
 export default function LoansPage() {
   const navigate = useNavigate()
-  const [sorting, setSorting] = useLocalStorage<SortingState>('loans_sorting', [])
+  // Default and enforce sorting by Date (latest first)
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'loan_date', desc: true }])
   const [globalFilter, setGlobalFilter] = useLocalStorage<string>('loans_search', '')
   const [showModal, setShowModal] = useState(false)
   const [editLoan, setEditLoan] = useState<Loan | undefined>()
   const [loanFormCompletion, setLoanFormCompletion] = useState(0)
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('loans_status_filter', 'all')
+
+  // Clear any stale column sorting from previous browser sessions
+  useEffect(() => {
+    try {
+      localStorage.removeItem('loans_sorting')
+    } catch {
+      // ignore
+    }
+  }, [])
 
   const { data: loans = [], isLoading } = useLoans()
   const { data: customers = [] } = useCustomers()
@@ -2027,10 +2037,14 @@ export default function LoansPage() {
     }
   }
 
-  const filteredData = useMemo(() =>
-    loans.filter((l) => statusFilter === 'all' || l.status === statusFilter),
-    [loans, statusFilter]
-  )
+  const filteredData = useMemo(() => {
+    const list = loans.filter((l) => statusFilter === 'all' || l.status === statusFilter)
+    return [...list].sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.loan_date ? new Date(a.loan_date).getTime() : 0)
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.loan_date ? new Date(b.loan_date).getTime() : 0)
+      return timeB - timeA
+    })
+  }, [loans, statusFilter])
 
   // Horizontal scroll arrows state & handlers
   const tableContainerRef = useRef<HTMLDivElement>(null)
@@ -2158,7 +2172,25 @@ export default function LoansPage() {
 
     columnHelper.accessor('loan_date', {
       header: 'Date',
+      sortingFn: (rowA, rowB) => {
+        const timeA = rowA.original.created_at ? new Date(rowA.original.created_at).getTime() : (rowA.original.loan_date ? new Date(rowA.original.loan_date).getTime() : 0)
+        const timeB = rowB.original.created_at ? new Date(rowB.original.created_at).getTime() : (rowB.original.loan_date ? new Date(rowB.original.loan_date).getTime() : 0)
+        return timeA - timeB
+      },
       cell: (info) => <span className="text-xs text-slate-400 font-medium">{formatDate(info.getValue())}</span>,
+    }),
+    columnHelper.accessor('branch', {
+      header: 'Branch',
+      cell: (info) => {
+        const val = info.getValue()
+        if (!val) return <span className="text-xs text-slate-400">Unassigned</span>
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200/60 whitespace-nowrap">
+            <Building2 className="h-3 w-3 text-violet-500" />
+            {val}
+          </span>
+        )
+      },
     }),
     columnHelper.accessor('status', {
       header: 'Status',

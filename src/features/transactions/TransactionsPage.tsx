@@ -160,34 +160,62 @@ function TxnFormModal({
     return loans.filter(l => l.customer_id === form.customer_id)
   }, [loans, form.customer_id])
 
-  // When customer is selected, auto-select their pending loan and auto-fill amount for disbursement
+  const selectedLoan = useMemo(() => {
+    return customerLoans.find(l => l.id === form.loan_id)
+  }, [customerLoans, form.loan_id])
+
+  const disbursementStats = useMemo(() => {
+    if (!selectedLoan || type !== 'disbursement') return null
+    const sanctioned = Number(selectedLoan.loan_amount) || 0
+    const disbursed = Number(selectedLoan.disbursed_amount) || 0
+    const remaining = Math.max(0, sanctioned - disbursed)
+    const isFullyDisbursed = remaining <= 0 && sanctioned > 0
+    return { sanctioned, disbursed, remaining, isFullyDisbursed }
+  }, [selectedLoan, type])
+
+  // When customer is selected, auto-select their loan with remaining balance and auto-fill amount for disbursement
   useEffect(() => {
     if (type === 'disbursement' && form.customer_id && customerLoans.length > 0) {
-      const pendingLoan = customerLoans.find(l => (Number(l.disbursed_amount) || 0) <= 0) || customerLoans[0]
+      const pendingLoan = customerLoans.find(l => {
+        const sanctioned = Number(l.loan_amount) || 0
+        const disbursed = Number(l.disbursed_amount) || 0
+        return (sanctioned - disbursed) > 0
+      }) || customerLoans[0]
+
       if (pendingLoan && (!form.loan_id || !customerLoans.some(l => l.id === form.loan_id))) {
-        const pendingAmt = Math.max(0, (pendingLoan.loan_amount || 0) - (pendingLoan.disbursed_amount || 0))
+        const sanctioned = Number(pendingLoan.loan_amount) || 0
+        const disbursed = Number(pendingLoan.disbursed_amount) || 0
+        const pendingAmt = Math.max(0, sanctioned - disbursed)
         setForm(prev => ({
           ...prev,
           loan_id: pendingLoan.id,
-          amount: pendingAmt > 0 ? pendingAmt.toString() : (pendingLoan.loan_amount?.toString() || '')
+          amount: pendingAmt > 0 ? pendingAmt.toString() : ''
         }))
       }
     }
   }, [type, form.customer_id, customerLoans])
 
   const handleLoanChange = (loanId: string) => {
-    const selectedLoan = customerLoans.find(l => l.id === loanId)
-    if (selectedLoan && type === 'disbursement') {
-      const pendingAmt = Math.max(0, (selectedLoan.loan_amount || 0) - (selectedLoan.disbursed_amount || 0))
+    const sLoan = customerLoans.find(l => l.id === loanId)
+    if (sLoan && type === 'disbursement') {
+      const sanctioned = Number(sLoan.loan_amount) || 0
+      const disbursed = Number(sLoan.disbursed_amount) || 0
+      const pendingAmt = Math.max(0, sanctioned - disbursed)
       setForm(prev => ({
         ...prev,
         loan_id: loanId,
-        amount: pendingAmt > 0 ? pendingAmt.toString() : (selectedLoan.loan_amount?.toString() || '')
+        amount: pendingAmt > 0 ? pendingAmt.toString() : ''
       }))
     } else {
       setForm(prev => ({ ...prev, loan_id: loanId }))
     }
   }
+
+  const isDisbursementOverLimit = useMemo(() => {
+    if (type !== 'disbursement' || !disbursementStats) return false
+    const amt = parseFloat(form.amount)
+    return !isNaN(amt) && amt > disbursementStats.remaining
+  }, [type, disbursementStats, form.amount])
 
   const handleSubmit = async () => {
     if (!form.bank_account_id) { toast.error('Please select a bank account'); return }
@@ -197,6 +225,17 @@ function TxnFormModal({
     }
     if (type === 'disbursement' && !form.loan_id) {
       toast.error('Please select the Loan / Account to disburse'); return
+    }
+    if (type === 'disbursement' && disbursementStats) {
+      if (disbursementStats.isFullyDisbursed) {
+        toast.error('This loan is already 100% disbursed. No additional disbursements are permitted.')
+        return
+      }
+      const enteredAmt = parseFloat(form.amount)
+      if (enteredAmt > disbursementStats.remaining) {
+        toast.error(`Disbursement amount (${formatCurrency(enteredAmt)}) cannot exceed remaining limit of ${formatCurrency(disbursementStats.remaining)}.`)
+        return
+      }
     }
     setLoading(true)
     try {
@@ -218,7 +257,7 @@ function TxnFormModal({
         created_by: user?.full_name || 'Admin',
         is_reversed: false,
       })
-      toast.success(`${cfg.label} recorded successfully! Loan account has been activated with outstanding principal.`)
+      toast.success(`${cfg.label} recorded successfully! Loan account has been updated.`)
       onClose()
     } catch (err: any) {
       toast.error(err?.message || `Failed to record ${type}`)
@@ -252,17 +291,26 @@ function TxnFormModal({
                 placeholder="Select customer" />
             </div>
             {form.customer_id && (
-              <div className="col-span-2">
+              <div className="col-span-2 space-y-2">
                 <Select
                   label={type === 'disbursement' ? "Loan / Account to Disburse *" : "Loan / Account Number"}
                   value={form.loan_id}
                   onChange={e => handleLoanChange(e.target.value)}
                   options={customerLoans.map(l => {
-                    const isDisbursed = (Number(l.disbursed_amount) || 0) > 0
-                    const pending = Math.max(0, (l.loan_amount || 0) - (l.disbursed_amount || 0))
+                    const sanctioned = Number(l.loan_amount) || 0
+                    const disbursed = Number(l.disbursed_amount) || 0
+                    const pending = Math.max(0, sanctioned - disbursed)
+                    let statusLabel = ''
+                    if (disbursed <= 0) {
+                      statusLabel = `Pending Full: ${formatCurrency(sanctioned)}`
+                    } else if (pending > 0) {
+                      statusLabel = `Partially Disbursed: ${formatCurrency(disbursed)} / ${formatCurrency(sanctioned)} (${formatCurrency(pending)} remaining)`
+                    } else {
+                      statusLabel = `Fully Disbursed: ${formatCurrency(disbursed)} / ${formatCurrency(sanctioned)} [COMPLETED]`
+                    }
                     return {
                       value: l.id,
-                      label: `${l.loan_number} (${formatCurrency(l.loan_amount || 0)}) — ${isDisbursed ? 'Active (Disbursed)' : 'Pending Disbursement: ' + formatCurrency(pending)}`
+                      label: `${l.loan_number} (${formatCurrency(sanctioned)}) — ${statusLabel}`
                     }
                   })}
                   placeholder={customerLoans.length === 0 ? "No loan accounts found for customer" : "Select loan account"}
@@ -272,10 +320,36 @@ function TxnFormModal({
                     ⚠️ This customer does not have any loan accounts created yet.
                   </p>
                 )}
-                {type === 'disbursement' && form.loan_id && (
-                  <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2 mt-1.5 flex items-center gap-1.5">
-                    <span>✓</span> Recording disbursement will disburse funds, activate the loan account, and record the Outstanding Principal.
-                  </p>
+                {type === 'disbursement' && selectedLoan && disbursementStats && (
+                  <div className="space-y-2 pt-1">
+                    <div className="grid grid-cols-3 gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Sanctioned</span>
+                        <span className="font-mono font-bold text-slate-700">{formatCurrency(disbursementStats.sanctioned)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Disbursed</span>
+                        <span className="font-mono font-bold text-amber-600">{formatCurrency(disbursementStats.disbursed)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Remaining Limit</span>
+                        <span className={cn("font-mono font-bold", disbursementStats.remaining > 0 ? "text-emerald-600" : "text-red-600")}>
+                          {formatCurrency(disbursementStats.remaining)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {disbursementStats.isFullyDisbursed ? (
+                      <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-xs text-red-700 font-medium">
+                        <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+                        <span>This loan has already been 100% disbursed. Additional disbursements are blocked.</span>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-center gap-1.5 font-medium">
+                        <span>✓</span> {disbursementStats.disbursed > 0 ? `Recording part disbursement (Up to ${formatCurrency(disbursementStats.remaining)} available).` : 'Recording initial disbursement will disburse funds, activate the loan account, and record the Outstanding Principal.'}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -298,10 +372,21 @@ function TxnFormModal({
           </div>
         )}
 
-        <div className={type === 'repayment' ? 'col-span-2' : 'col-span-2'}>
-          <Input label="Total Amount (₹) *" type="number" value={form.amount}
+        <div className="col-span-2">
+          <Input
+            label={type === 'disbursement' ? `Disbursement Amount (₹) *` : "Total Amount (₹) *"}
+            type="number"
+            value={form.amount}
+            disabled={type === 'disbursement' && !!disbursementStats?.isFullyDisbursed}
             onChange={e => setForm({ ...form, amount: e.target.value })}
-            placeholder="Enter amount" />
+            placeholder={type === 'disbursement' && disbursementStats ? `Max ${formatCurrency(disbursementStats.remaining)}` : "Enter amount"}
+          />
+          {isDisbursementOverLimit && (
+            <p className="text-xs text-red-600 font-medium mt-1 flex items-center gap-1">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              Disbursement cannot exceed remaining limit of {formatCurrency(disbursementStats?.remaining || 0)}.
+            </p>
+          )}
         </div>
 
         {type === 'repayment' && (
@@ -330,7 +415,11 @@ function TxnFormModal({
 
       <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
         <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
-        <Button onClick={handleSubmit} loading={loading}>
+        <Button
+          onClick={handleSubmit}
+          loading={loading}
+          disabled={loading || (type === 'disbursement' && !!disbursementStats?.isFullyDisbursed) || isDisbursementOverLimit}
+        >
           Record {cfg.label}
         </Button>
       </div>

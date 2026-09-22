@@ -12,7 +12,7 @@ import {
 import {
   useLoan, useCustomer, useLoanSchedule, usePayments, useCreatePayment,
   useUpdateLoan, useCustomerDocuments, useSaveCustomerDocument,
-  useDeleteCustomerDocument, useCustomerIncomeRecords
+  useDeleteCustomerDocument, useCustomerIncomeRecords, useTransactions
 } from '@/hooks/useDb'
 import {
   loadScheduleRevisions,
@@ -46,6 +46,8 @@ export default function LoanDetailPage() {
   const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
   const kycStatus = isKycVerified ? 'verified' : 'pending'
   const isDisbursed = (Number(loan?.disbursed_amount) || 0) > 0
+  const isPartiallyDisbursed = isDisbursed && (Number(loan?.disbursed_amount) || 0) < (Number(loan?.loan_amount) || 0)
+  const remainingToDisburse = Math.max(0, (Number(loan?.loan_amount) || 0) - (Number(loan?.disbursed_amount) || 0))
   const derivedStatus = useMemo(() => {
     if (!loan) return 'draft'
     if (loan.status === 'draft') return 'draft'
@@ -60,6 +62,9 @@ export default function LoanDetailPage() {
 
   // Custom query for income / transaction Integration
   const { data: incomeRecords = [], isLoading: isIncomeLoading, refetch: refetchIncome } = useCustomerIncomeRecords(loan?.customer_id, loanId)
+
+  // Transactions ledger history (disbursements, part payments, repayments)
+  const { data: loanTransactions = [], refetch: refetchTransactions } = useTransactions({ loan_id: loanId })
 
   // Customer documents
   const { data: documents = [], refetch: refetchDocs } = useCustomerDocuments(loan?.customer_id || '')
@@ -236,8 +241,35 @@ export default function LoanDetailPage() {
       }
     })
 
-    // 3. Add Loan Sanction Disbursement (if loan is active or closed)
-    if (loan && (loan.status === 'active' || loan.status === 'closed' || loan.disbursed_amount)) {
+    // 3. Disbursements - Show individual part payments recorded in transactions
+    const disbursementTxns = loanTransactions.filter(t => t.txn_type === 'disbursement')
+
+    if (disbursementTxns.length > 0) {
+      // Sort disbursements chronologically to number part payments if multiple
+      const sortedDisb = [...disbursementTxns].sort(
+        (a, b) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf()
+      )
+      sortedDisb.forEach((t, idx) => {
+        const partLabel = sortedDisb.length > 1 ? ` (Part ${idx + 1} of ${sortedDisb.length})` : ''
+        const accLabel = t.bank_account_name ? ` [${t.bank_account_name}]` : ''
+        const refLabel = t.reference_number ? ` (Ref: ${t.reference_number})` : ''
+        const desc = t.description 
+          ? `${t.description}${accLabel}${refLabel}`
+          : `Loan Disbursement to Customer${partLabel} (${loan?.loan_type?.toUpperCase() || 'REGULAR'} Loan - ${loan?.loan_number || ''})${accLabel}${refLabel}`
+
+        list.push({
+          id: t.txn_id || t.id,
+          date: t.date,
+          type: 'Disbursement',
+          category: 'Disbursement',
+          description: desc,
+          credit: null,
+          debit: t.amount,
+          status: 'posted',
+        })
+      })
+    } else if (loan && (loan.status === 'active' || loan.status === 'closed' || loan.disbursed_amount)) {
+      // Fallback for legacy records without individual transaction entries
       list.push({
         id: `DSB-${loan.loan_number}`,
         date: loan.loan_date,
@@ -245,13 +277,30 @@ export default function LoanDetailPage() {
         category: 'Disbursement',
         description: `Loan Sanction Disbursement to Customer (${loan.loan_type?.toUpperCase()} Loan - ${loan.loan_number})`,
         credit: null,
-        debit: loan.disbursed_amount || loan.loan_amount || 0,
+        debit: Math.min(loan.loan_amount || Infinity, loan.disbursed_amount || loan.loan_amount || 0),
         status: 'posted',
       })
     }
 
+    // 4. Standalone repayments recorded in transactions table
+    const standaloneRepayments = loanTransactions.filter(
+      t => t.txn_type === 'repayment' && !payments.some(p => p.receipt_number === t.txn_id || p.id === t.id)
+    )
+    standaloneRepayments.forEach((t) => {
+      list.push({
+        id: t.txn_id || t.id,
+        date: t.date,
+        type: 'Repayment',
+        category: 'Repayment',
+        description: t.description || `Repayment Collection${t.reference_number ? ` (Ref: ${t.reference_number})` : ''}`,
+        credit: t.amount,
+        debit: null,
+        status: 'posted',
+      })
+    })
+
     return list.sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf())
-  }, [payments, incomeRecords, loan])
+  }, [payments, incomeRecords, loan, loanTransactions])
 
   const filteredLedgerEntries = useMemo(() => {
     return ledgerEntries.filter(r => {
@@ -742,6 +791,32 @@ export default function LoanDetailPage() {
             </div>
           )}
 
+          {/* Partially Disbursed Alert Banner */}
+          {isPartiallyDisbursed && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/90 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 flex-shrink-0">
+                  <Banknote className="h-6 w-6" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-extrabold text-blue-950 uppercase tracking-wider">
+                    Partially Disbursed — {formatCurrency(loan.disbursed_amount || 0)} of {formatCurrency(loan.loan_amount || 0)}
+                  </h4>
+                  <p className="text-xs text-blue-800 mt-0.5 font-medium">
+                    Remaining Disbursable Limit: <strong>{formatCurrency(remainingToDisburse)}</strong>. Part payments recorded in transaction history.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => navigate(`/transactions?action=disburse&customer=${loan.customer_id}&loan=${loan.id}`)}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs whitespace-nowrap self-start sm:self-auto shadow-xs"
+              >
+                <ArrowUpRight className="h-4 w-4" /> Disburse Remaining ({formatCurrency(remainingToDisburse)})
+              </Button>
+            </div>
+          )}
+
           {/* ==================================================
               3. FINANCIAL SUMMARY CARDS
               ================================================== */}
@@ -756,8 +831,8 @@ export default function LoanDetailPage() {
                   { label: 'Loan Amount', value: formatCurrency(loan.loan_amount || 0), subtitle: 'Sanctioned base principal', color: 'text-slate-900', icon: Banknote },
                   {
                     label: 'Outstanding Principal',
-                    value: isDisbursed ? formatCurrency(loan.remaining_balance) : '₹0',
-                    subtitle: isDisbursed ? 'Balance base amount' : 'Pending disbursement',
+                    value: isDisbursed ? formatCurrency(Math.min(loan.loan_amount || Infinity, loan.remaining_balance)) : '₹0',
+                    subtitle: isDisbursed ? (isPartiallyDisbursed ? `Partially disbursed (${formatCurrency(loan.disbursed_amount || 0)})` : 'Balance base amount') : 'Pending disbursement',
                     color: isDisbursed ? 'text-slate-900' : 'text-slate-400',
                     icon: Landmark
                   },
@@ -877,7 +952,7 @@ export default function LoanDetailPage() {
                   <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3">Principal Repayment Schedule Progress</h3>
                   <div className="flex justify-between items-center text-xs font-bold mb-2">
                     <span className="text-slate-600">Total Principal Paid: {formatCurrency(paymentsRollup.totalPrincipalPaid)}</span>
-                    <span className="text-brand-600">Remaining Balance: {formatCurrency(loan.remaining_balance)}</span>
+                    <span className="text-brand-600">Remaining Balance: {formatCurrency(Math.min(loan.loan_amount || Infinity, loan.remaining_balance))}</span>
                   </div>
                   <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
                     <div
@@ -1243,7 +1318,7 @@ export default function LoanDetailPage() {
                     <CardTitle>Internal Ledger Accounting</CardTitle>
                     <p className="text-xs text-slate-500 mt-0.5">Complete account cash flow showing all collections (Principal + Interest) and disbursements</p>
                   </div>
-                  <div className="flex gap-2 w-full sm:w-auto">
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                     <input
                       type="text"
                       placeholder="Search transactions..."
@@ -1258,11 +1333,22 @@ export default function LoanDetailPage() {
                         { value: 'all', label: 'All Categories' },
                         { value: 'EMI Collection', label: 'EMI Collection' },
                         { value: 'Disbursement', label: 'Disbursement' },
+                        { value: 'Repayment', label: 'Repayment' },
                         { value: 'interest', label: 'Interest' },
                         { value: 'penalty', label: 'Penalty' }
                       ]}
                       className="w-36 h-9 border border-slate-200 text-xs rounded-xl"
                     />
+                    {(isPartiallyDisbursed || !isDisbursed) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate(`/transactions?action=disburse&customer=${loan?.customer_id}&loan=${loan?.id}`)}
+                        className="h-9 border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold whitespace-nowrap"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Disburse {remainingToDisburse > 0 ? `(${formatCurrency(remainingToDisburse)})` : ''}
+                      </Button>
+                    )}
                   </div>
                 </CardHeader>
                 <div className="overflow-x-auto">
@@ -1290,8 +1376,9 @@ export default function LoanDetailPage() {
                               <span className={cn(
                                 'px-2 py-0.5 rounded-md text-[10px] font-extrabold',
                                 r.type === 'EMI Collection' && 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+                                r.type === 'Repayment' && 'bg-emerald-50 text-emerald-700 border border-emerald-200',
                                 r.type === 'Disbursement' && 'bg-red-50 text-red-700 border border-red-200',
-                                r.type !== 'EMI Collection' && r.type !== 'Disbursement' && 'bg-slate-100 text-slate-700'
+                                r.type !== 'EMI Collection' && r.type !== 'Disbursement' && r.type !== 'Repayment' && 'bg-slate-100 text-slate-700'
                               )}>
                                 {r.type}
                               </span>

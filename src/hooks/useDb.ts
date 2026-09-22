@@ -2120,6 +2120,8 @@ export function useTransactions(filters?: {
   bank_account_id?: string
   date_from?: string
   date_to?: string
+  loan_id?: string
+  customer_id?: string
 }) {
   const branchFilter = useBranchFilter()
   return useQuery({
@@ -2144,6 +2146,8 @@ export function useTransactions(filters?: {
       if (filters?.bank_account_id) query = (query as any).eq('bank_account_id', filters.bank_account_id)
       if (filters?.date_from) query = (query as any).gte('date', filters.date_from)
       if (filters?.date_to) query = (query as any).lte('date', filters.date_to)
+      if (filters?.loan_id) query = (query as any).eq('loan_id', filters.loan_id)
+      if (filters?.customer_id) query = (query as any).eq('customer_id', filters.customer_id)
 
       let paymentQuery = supabase
         .from('emi_payments')
@@ -2151,6 +2155,8 @@ export function useTransactions(filters?: {
         .order('payment_date', { ascending: false })
       if (filters?.date_from) paymentQuery = (paymentQuery as any).gte('payment_date', filters.date_from)
       if (filters?.date_to) paymentQuery = (paymentQuery as any).lte('payment_date', filters.date_to)
+      if (filters?.loan_id) paymentQuery = (paymentQuery as any).eq('loan_id', filters.loan_id)
+      if (filters?.customer_id) paymentQuery = (paymentQuery as any).eq('customer_id', filters.customer_id)
 
       const [{ data: txnsData, error: txnErr }, { data: emiPays, error: payErr }] = await Promise.all([
         query,
@@ -2222,62 +2228,83 @@ export function useCreateTransaction() {
         } catch {}
       }
 
+      // Pre-validation for disbursements: strictly enforce loan amount limit
+      let resolvedLoanId = txn.loan_id
+      let targetLoanData: { id: string; loan_number: string; loan_amount: number; disbursed_amount: number; remaining_balance: number } | null = null
+
+      if (txn.txn_type === 'disbursement') {
+        if (!resolvedLoanId && txn.customer_id) {
+          const { data: pendingLoans } = await supabase
+            .from('loans')
+            .select('id, loan_number, disbursed_amount, remaining_balance, loan_amount')
+            .eq('customer_id', txn.customer_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+          if (pendingLoans && pendingLoans.length > 0) {
+            resolvedLoanId = pendingLoans[0].id
+            targetLoanData = pendingLoans[0] as any
+          }
+        } else if (resolvedLoanId) {
+          const { data: currentLoan } = await supabase
+            .from('loans')
+            .select('id, loan_number, disbursed_amount, remaining_balance, loan_amount')
+            .eq('id', resolvedLoanId)
+            .maybeSingle()
+          targetLoanData = currentLoan as any
+        }
+
+        if (targetLoanData) {
+          const currentDisbursed = Number(targetLoanData.disbursed_amount) || 0
+          const sanctionedAmount = Number(targetLoanData.loan_amount) || 0
+          const remainingDisbursable = Math.max(0, sanctionedAmount - currentDisbursed)
+
+          if (sanctionedAmount > 0 && remainingDisbursable <= 0) {
+            throw new Error(`Loan ${targetLoanData.loan_number} is already fully disbursed (₹${sanctionedAmount.toLocaleString('en-IN')}). No further disbursements are permitted.`)
+          }
+
+          if (sanctionedAmount > 0 && Number(txn.amount) > remainingDisbursable) {
+            throw new Error(`Disbursement amount (₹${Number(txn.amount).toLocaleString('en-IN')}) cannot exceed the remaining loan limit of ₹${remainingDisbursable.toLocaleString('en-IN')} (Sanctioned: ₹${sanctionedAmount.toLocaleString('en-IN')}, Disbursed: ₹${currentDisbursed.toLocaleString('en-IN')}).`)
+          }
+        }
+      }
+
       const txn_id = await generateNextTxnId()
       const { data, error } = await supabase
         .from('transactions')
-        .insert({ ...txn, txn_id })
+        .insert({
+          ...txn,
+          loan_id: resolvedLoanId || txn.loan_id,
+          txn_id
+        })
         .select()
         .single()
       if (error) throw error
 
       // 1. When recording a disbursement, disburse funds to the loan and activate it
-      if (txn.txn_type === 'disbursement') {
-        const targetLoanId = txn.loan_id
-        if (targetLoanId) {
-          const { data: currentLoan } = await supabase
-            .from('loans')
-            .select('id, disbursed_amount, remaining_balance, loan_amount')
-            .eq('id', targetLoanId)
-            .maybeSingle()
+      if (txn.txn_type === 'disbursement' && resolvedLoanId) {
+        const { data: currentLoan } = await supabase
+          .from('loans')
+          .select('id, disbursed_amount, remaining_balance, loan_amount')
+          .eq('id', resolvedLoanId)
+          .maybeSingle()
 
-          if (currentLoan) {
-            const newDisbursed = (Number(currentLoan.disbursed_amount) || 0) + Number(txn.amount)
-            const newRemaining = (Number(currentLoan.remaining_balance) || 0) + Number(txn.amount)
-            await supabase
-              .from('loans')
-              .update({
-                disbursed_amount: newDisbursed,
-                remaining_balance: newRemaining,
-                status: 'active',
-                loan_date: txn.date || new Date().toISOString().split('T')[0],
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', targetLoanId)
-          }
-        } else if (txn.customer_id) {
-          // If no specific loan_id passed, check if customer has a pending/undisbursed loan
-          const { data: pendingLoans } = await supabase
-            .from('loans')
-            .select('id, disbursed_amount, remaining_balance, loan_amount')
-            .eq('customer_id', txn.customer_id)
-            .order('created_at', { ascending: false })
-            .limit(1)
+        if (currentLoan) {
+          const sanctioned = Number(currentLoan.loan_amount) || 0
+          const currentDisbursed = Number(currentLoan.disbursed_amount) || 0
+          const currentRemaining = Number(currentLoan.remaining_balance) || 0
+          const newDisbursed = sanctioned > 0 ? Math.min(sanctioned, currentDisbursed + Number(txn.amount)) : (currentDisbursed + Number(txn.amount))
+          const newRemaining = sanctioned > 0 ? Math.min(sanctioned, currentRemaining + Number(txn.amount)) : (currentRemaining + Number(txn.amount))
 
-          if (pendingLoans && pendingLoans.length > 0) {
-            const target = pendingLoans[0]
-            const newDisbursed = (Number(target.disbursed_amount) || 0) + Number(txn.amount)
-            const newRemaining = (Number(target.remaining_balance) || 0) + Number(txn.amount)
-            await supabase
-              .from('loans')
-              .update({
-                disbursed_amount: newDisbursed,
-                remaining_balance: newRemaining,
-                status: 'active',
-                loan_date: txn.date || new Date().toISOString().split('T')[0],
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', target.id)
-          }
+          await supabase
+            .from('loans')
+            .update({
+              disbursed_amount: newDisbursed,
+              remaining_balance: newRemaining,
+              status: 'active',
+              loan_date: txn.date || new Date().toISOString().split('T')[0],
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', resolvedLoanId)
         }
       } else if (txn.txn_type === 'repayment' && txn.loan_id) {
         // 2. When recording repayment with loan_id, reduce outstanding principal

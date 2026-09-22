@@ -8,7 +8,7 @@ import {
 import {
   Plus, Download, Eye, SquarePen, Trash2, Phone, SlidersHorizontal,
   UserPlus, ChevronDown, CheckCircle2, ClipboardList, X, AlertCircle,
-  RefreshCw, ArrowRight, Lock, ChevronLeft, ChevronRight, AlertTriangle
+  RefreshCw, ArrowRight, Lock, ChevronLeft, ChevronRight, AlertTriangle, Building2
 } from 'lucide-react'
 import {
   useCustomers, useUpdateCustomer,
@@ -1532,6 +1532,19 @@ export default function CustomersPage() {
           )
         }
         return <StatusBadge status={status} />
+      },
+    }),
+    columnHelper.accessor('branch', {
+      header: 'Branch',
+      cell: (info) => {
+        const val = info.getValue()
+        if (!val) return <span className="text-xs text-slate-400">Unassigned</span>
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200/60 whitespace-nowrap">
+            <Building2 className="h-3 w-3 text-violet-500" />
+            {val}
+          </span>
+        )
       },
     }),
     columnHelper.accessor('created_at', {

@@ -11,7 +11,8 @@ import {
   Sparkles, Pin, Check, X, Printer, FileSpreadsheet, Lock, MoreVertical, Globe, Languages, Pencil,
   WalletCards, Banknote, BadgeIndianRupee, Target, Info, Bell, ChevronRight,
   LayoutDashboard, List, BookOpen, Receipt, Shield, FolderOpen, Zap, RefreshCcw,
-  CircleDollarSign, IndianRupee, ArrowUpCircle, CalendarClock, ClipboardList, Percent
+  CircleDollarSign, IndianRupee, ArrowUpCircle, CalendarClock, ClipboardList, Percent,
+  Landmark, ArrowUpRight
 } from 'lucide-react'
 import {
   useCustomerProfile, useUpdateCustomerProfile, useCustomerProjects, useSaveCustomerProject,
@@ -22,7 +23,7 @@ import {
   useSaveCustomerNote, useDeleteCustomerNote, useCustomerActivities, useSaveCustomerActivity,
   useCustomerSegmentOptions, useAddCustomerSegmentOption,
   useCustomerLoans, useLoanSchedule, useCustomerPaymentsForLoan, useCustomerIncomeRecords, useCreatePayment,
-  useMoveCustomerToTrash, useAllCustomersValidationList
+  useMoveCustomerToTrash, useAllCustomersValidationList, useTransactions
 } from '@/hooks/useDb'
 import {
   Button, Card, CardHeader, CardTitle, CardBody, Avatar, StatusBadge, Badge,
@@ -178,11 +179,25 @@ export default function CustomerDetailPage() {
 
   // --- Dynamic Queries ---
   const { data: customer, isLoading: isCustLoading, refetch: refetchCust } = useCustomerProfile(customerId)
+  const { data: customerLoans = [], isLoading: isLoansLoading, refetch: refetchLoans } = useCustomerLoans(customerId)
+  const { data: customerEmiPayments = [], isLoading: isEmiPaymentsLoading, refetch: refetchEmiPayments } = useCustomerPaymentsForLoan(customerId)
+  const { data: customerTransactions = [], isLoading: isTxnsLoading, refetch: refetchTxns } = useTransactions({ customer_id: customerId })
+
+  // Active Operating Branch filter from store
+  const { isBranchUser: authIsBranch, userBranch: authUserBranch, selectedBranch: authSelectedBranch } = useAuthStore()
+  const activeBranch = authIsBranch ? authUserBranch : authSelectedBranch
+
+  // Loans filtered by active operating branch if selected, otherwise all loans
+  const branchFilteredLoans = useMemo(() => {
+    if (!activeBranch) return customerLoans
+    return customerLoans.filter(l => l.branch?.trim().toLowerCase() === activeBranch.trim().toLowerCase())
+  }, [customerLoans, activeBranch])
+
   const { data: projects = [], isLoading: isProjLoading } = useCustomerProjects(customerId)
   const { data: quotations = [], isLoading: isQuotsLoading } = useCustomerQuotations(customerId)
   const { data: invoices = [], isLoading: isInvsLoading } = useCustomerInvoices(customerId)
   const { data: payments = [], isLoading: isPaysLoading } = useCustomerPayments(customerId)
-  const { data: documents = [], isLoading: isDocsLoading } = useCustomerDocuments(customerId)
+  const { data: documents = [], isLoading: isDocsLoading, refetch: refetchDocs } = useCustomerDocuments(customerId)
   const { data: communications = [], isLoading: isCommsLoading } = useCustomerCommunications(customerId)
   const { data: followups = [], isLoading: isFupsLoading } = useCustomerFollowups(customerId)
   const { data: notes = [], isLoading: isNotesLoading } = useCustomerNotes(customerId)
@@ -672,22 +687,62 @@ export default function CustomerDetailPage() {
   // --- Check Loading ---
   const isGlobalLoading = isCustLoading || isProjLoading || isQuotsLoading || isInvsLoading || isPaysLoading || isDocsLoading || isCommsLoading || isFupsLoading || isNotesLoading || isActsLoading
 
-  // --- Dynamic Stats calculation ---
+  // --- Dynamic Stats calculation from real loan and collection records ---
   const totalOutstanding = useMemo(() => {
+    if (customerLoans.length > 0) {
+      return branchFilteredLoans.reduce((sum, l) => {
+        const disbursed = Number(l.disbursed_amount) || 0
+        if (disbursed <= 0 || l.status === 'pending') return sum
+        const sanctioned = Number(l.loan_amount || l.sanctioned_amount) || 0
+        const remaining = Number(l.remaining_balance) || 0
+        const effectiveLimit = sanctioned > 0 ? Math.min(sanctioned, disbursed) : disbursed
+        const effectiveOutstanding = Math.min(effectiveLimit, remaining > 0 ? remaining : effectiveLimit)
+        return sum + effectiveOutstanding
+      }, 0)
+    }
     return invoices.reduce((sum, inv) => sum + Number(inv.pending), 0)
-  }, [invoices])
+  }, [branchFilteredLoans, customerLoans, invoices])
 
   const totalPaid = useMemo(() => {
+    if (customerLoans.length > 0 || customerEmiPayments.length > 0) {
+      const loanPayments = customerEmiPayments.reduce((sum, p) => sum + (Number(p.amount_paid) || 0), 0)
+      const repaymentTxns = customerTransactions
+        .filter(t => t.txn_type === 'repayment' && !customerEmiPayments.some(p => p.receipt_number === t.txn_id || p.id === t.id))
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
+      return loanPayments + repaymentTxns
+    }
     return payments.filter(p => p.status === 'Success').reduce((sum, p) => sum + Number(p.amount), 0)
-  }, [payments])
+  }, [customerLoans, customerEmiPayments, customerTransactions, payments])
+
+  const totalDisbursed = useMemo(() => {
+    return branchFilteredLoans.reduce((sum, l) => {
+      const sanctioned = Number(l.loan_amount || l.sanctioned_amount) || 0
+      const disbursed = Number(l.disbursed_amount) || 0
+      return sum + (sanctioned > 0 ? Math.min(sanctioned, disbursed) : disbursed)
+    }, 0)
+  }, [branchFilteredLoans])
+
+  const totalSanctioned = useMemo(() => {
+    return branchFilteredLoans.reduce((sum, l) => sum + (Number(l.loan_amount || l.sanctioned_amount) || 0), 0)
+  }, [branchFilteredLoans])
+
+  const activeLoansCount = useMemo(() => {
+    return branchFilteredLoans.filter((l) => l.status === 'active').length
+  }, [branchFilteredLoans])
+
+  const pendingLoansCount = useMemo(() => {
+    return branchFilteredLoans.filter((l) => l.status === 'pending' || (Number(l.disbursed_amount) || 0) < (Number(l.loan_amount) || 0)).length
+  }, [branchFilteredLoans])
 
   const activeProjectsCount = useMemo(() => {
+    if (customerLoans.length > 0) return activeLoansCount
     return projects.filter((p) => p.status === 'Running').length
-  }, [projects])
+  }, [customerLoans, activeLoansCount, projects])
 
   const pendingPaymentsCount = useMemo(() => {
+    if (customerLoans.length > 0) return pendingLoansCount
     return invoices.filter((inv) => Number(inv.pending) > 0).length
-  }, [invoices])
+  }, [customerLoans, pendingLoansCount, invoices])
 
   const lastActivityText = useMemo(() => {
     if (activities.length === 0) return 'None'
@@ -1066,6 +1121,7 @@ export default function CustomerDetailPage() {
         <div className="flex-1 overflow-x-auto flex gap-1 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth select-none">
           {[
             { id: 'basic', label: 'Basic Info', icon: UserCheck },
+            { id: 'loans', label: `Loan Accounts (${branchFilteredLoans.length})`, icon: Landmark },
             { id: 'address', label: 'Address', icon: MapPin },
             { id: 'kyc', label: 'KYC Verification', icon: ShieldCheck },
             { id: 'company', label: 'Company Details', icon: Building2 },
@@ -1442,7 +1498,7 @@ export default function CustomerDetailPage() {
               <TrendingDown className="h-4 w-4 text-red-500" />
             </div>
             <p className="text-lg font-extrabold text-slate-900 mt-2 font-mono">{formatCurrency(totalOutstanding)}</p>
-            <span className="text-[9px] font-bold text-red-500 uppercase">Pending</span>
+            <span className="text-[9px] font-bold text-red-500 uppercase">{activeBranch ? `${activeBranch} Branch` : 'All Branches'}</span>
           </div>
 
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 shadow-2xs hover:shadow-sm transition-all">
@@ -1451,25 +1507,25 @@ export default function CustomerDetailPage() {
               <TrendingUp className="h-4 w-4 text-emerald-500" />
             </div>
             <p className="text-lg font-extrabold text-slate-900 mt-2 font-mono">{formatCurrency(totalPaid)}</p>
-            <span className="text-[9px] font-bold text-emerald-500 uppercase">Received</span>
+            <span className="text-[9px] font-bold text-emerald-500 uppercase">Received Collections</span>
           </div>
 
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 shadow-2xs hover:shadow-sm transition-all">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Loan Available</span>
-              <Briefcase className="h-4 w-4 text-blue-500" />
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Loan Accounts</span>
+              <Landmark className="h-4 w-4 text-blue-500" />
             </div>
-            <p className="text-lg font-extrabold text-slate-900 mt-2 font-mono">{activeProjectsCount}</p>
-            <span className="text-[9px] font-bold text-blue-500 uppercase">Running</span>
+            <p className="text-lg font-extrabold text-slate-900 mt-2 font-mono">{branchFilteredLoans.length}</p>
+            <span className="text-[9px] font-bold text-blue-500 uppercase">{activeLoansCount} Active · {pendingLoansCount} Pending</span>
           </div>
 
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 shadow-2xs hover:shadow-sm transition-all">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Pending Payments</span>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Disbursed Amount</span>
               <CreditCard className="h-4 w-4 text-amber-500" />
             </div>
-            <p className="text-lg font-extrabold text-slate-900 mt-2 font-mono">{pendingPaymentsCount}</p>
-            <span className="text-[9px] font-bold text-amber-500 uppercase">Invoices</span>
+            <p className="text-lg font-extrabold text-slate-900 mt-2 font-mono">{formatCurrency(totalDisbursed)}</p>
+            <span className="text-[9px] font-bold text-amber-500 uppercase">of {formatCurrency(totalSanctioned)} Sanctioned</span>
           </div>
 
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 shadow-2xs hover:shadow-sm transition-all">
@@ -1576,6 +1632,169 @@ export default function CustomerDetailPage() {
                 </div>
               </CardBody>
             </Card>
+          )}
+
+          {/* TAB: LOAN ACCOUNTS */}
+          {activeTab === 'loans' && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
+                      <Landmark className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-bold text-slate-900">
+                        Loan Facilities &amp; Accounts
+                      </CardTitle>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {activeBranch ? `Filtered by ${activeBranch} Branch` : 'Showing facilities across all branches'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => navigate('/loans')}
+                      variant="outline"
+                      className="text-xs flex items-center gap-1.5"
+                    >
+                      <List className="h-3.5 w-3.5" /> All Loans Register
+                    </Button>
+                  </div>
+                </CardHeader>
+
+                <CardBody className="p-0">
+                  {branchFilteredLoans.length === 0 ? (
+                    <div className="text-center py-12 px-4">
+                      <Landmark className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                      <h4 className="text-sm font-bold text-slate-700">No Loan Accounts Found</h4>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                        {activeBranch
+                          ? `This customer does not have any loans registered under ${activeBranch} Branch.`
+                          : 'This customer currently has no registered loan accounts.'}
+                      </p>
+                      {activeBranch && customerLoans.length > 0 && (
+                        <p className="text-xs text-brand-600 font-semibold mt-2">
+                          ({customerLoans.length} loan{customerLoans.length > 1 ? 's' : ''} exist in other branches. Switch to "All Branches" in header to view.)
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50/80 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">
+                          <tr>
+                            <th className="py-3 px-4">Loan Account</th>
+                            <th className="py-3 px-4">Branch</th>
+                            <th className="py-3 px-4">Sanctioned</th>
+                            <th className="py-3 px-4">Disbursed</th>
+                            <th className="py-3 px-4">Outstanding</th>
+                            <th className="py-3 px-4">EMI &amp; Tenure</th>
+                            <th className="py-3 px-4">Status</th>
+                            <th className="py-3 px-4 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {branchFilteredLoans.map((l) => {
+                            const sanctioned = Number(l.loan_amount || l.sanctioned_amount || 0)
+                            const rawDisbursed = Number(l.disbursed_amount || 0)
+                            const disbursed = sanctioned > 0 ? Math.min(sanctioned, rawDisbursed) : rawDisbursed
+                            const rawRemaining = Number(l.remaining_balance || 0)
+                            const remaining = l.status === 'pending' || disbursed <= 0 ? 0 : Math.min(disbursed, rawRemaining > 0 ? rawRemaining : disbursed)
+                            const emi = Number(l.emi_amount || 0)
+                            const disbPct = sanctioned > 0 ? Math.min(100, Math.round((disbursed / sanctioned) * 100)) : 0
+
+                            return (
+                              <tr key={l.id} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="py-3.5 px-4 font-medium">
+                                  <button
+                                    onClick={() => navigate(`/loans/${l.id}`)}
+                                    className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1.5 cursor-pointer text-xs"
+                                  >
+                                    {l.loan_number}
+                                    <ArrowUpRight className="h-3 w-3 text-blue-400" />
+                                  </button>
+                                  <p className="text-[11px] text-slate-400 mt-0.5 font-medium">
+                                    {l.loan_product || 'Regular Loan'} · {formatDate(l.loan_date || l.created_at)}
+                                  </p>
+                                </td>
+                                <td className="py-3.5 px-4">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200/60">
+                                    <Building2 className="h-3 w-3 text-violet-500" />
+                                    {l.branch || 'Unassigned'}
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-4 font-mono font-bold text-slate-800 text-xs">
+                                  {formatCurrency(sanctioned)}
+                                </td>
+                                <td className="py-3.5 px-4">
+                                  <div className="font-mono font-bold text-slate-800 text-xs">
+                                    {formatCurrency(disbursed)}
+                                  </div>
+                                  <div className="w-24 bg-slate-100 rounded-full h-1.5 mt-1 overflow-hidden">
+                                    <div
+                                      className={cn(
+                                        "h-full rounded-full",
+                                        disbPct >= 100 ? "bg-emerald-500" : "bg-blue-500"
+                                      )}
+                                      style={{ width: `${disbPct}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[9px] font-bold text-slate-400">{disbPct}% Disbursed</span>
+                                </td>
+                                <td className="py-3.5 px-4 font-mono font-bold text-red-600 text-xs">
+                                  {formatCurrency(remaining)}
+                                </td>
+                                <td className="py-3.5 px-4">
+                                  <div className="font-mono font-bold text-slate-800 text-xs">
+                                    {formatCurrency(emi)} <span className="text-[10px] font-normal text-slate-400">/ mo</span>
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 font-medium">
+                                    {l.duration_months} Months ({l.interest_rate}% {l.interest_type})
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-4">
+                                  <StatusBadge status={l.status} />
+                                </td>
+                                <td className="py-3.5 px-4 text-right">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => navigate(`/loans/${l.id}`)}
+                                    className="text-xs h-7 px-3 text-slate-700 hover:text-blue-600 cursor-pointer"
+                                  >
+                                    View Account
+                                  </Button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardBody>
+              </Card>
+
+              {/* Summary Stats Bottom Card */}
+              {branchFilteredLoans.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Sanctioned Principal</span>
+                    <p className="text-base font-extrabold text-slate-900 font-mono mt-1">{formatCurrency(totalSanctioned)}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Disbursed Capital</span>
+                    <p className="text-base font-extrabold text-blue-600 font-mono mt-1">{formatCurrency(totalDisbursed)}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Net Outstanding Balance</span>
+                    <p className="text-base font-extrabold text-red-500 font-mono mt-1">{formatCurrency(totalOutstanding)}</p>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* TAB 2: ADDRESS */}
@@ -1736,22 +1955,47 @@ export default function CustomerDetailPage() {
 
                   {renderEditableField('Advance Received', 'advance_received', 'number', undefined, 'Enter Advance Amount')}
 
-                  <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl py-2.5">
-                    <p className="text-[10px] uppercase font-bold text-slate-400">Total Business Value</p>
-                    <p className="text-lg font-extrabold text-slate-800 font-mono mt-1">
-                      {formatCurrency(projects.reduce((sum, p) => sum + Number(p.amount), 0))}
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl py-2.5">
-                    <p className="text-[10px] uppercase font-bold text-slate-400">Total Orders</p>
-                    <p className="text-lg font-extrabold text-slate-800 font-mono mt-1">{projects.length}</p>
-                  </div>
-                  <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl py-2.5">
-                    <p className="text-[10px] uppercase font-bold text-slate-400">Avg Order Value</p>
-                    <p className="text-lg font-extrabold text-slate-800 font-mono mt-1">
-                      {projects.length > 0 ? formatCurrency(projects.reduce((sum, p) => sum + Number(p.amount), 0) / projects.length) : 'N/A'}
-                    </p>
-                  </div>
+                  {customerLoans.length > 0 ? (
+                    <>
+                      <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl py-2.5">
+                        <p className="text-[10px] uppercase font-bold text-slate-400">Total Sanctioned</p>
+                        <p className="text-lg font-extrabold text-blue-600 font-mono mt-1">
+                          {formatCurrency(totalSanctioned)}
+                        </p>
+                      </div>
+                      <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl py-2.5">
+                        <p className="text-[10px] uppercase font-bold text-slate-400">Total Disbursed</p>
+                        <p className="text-lg font-extrabold text-slate-800 font-mono mt-1">
+                          {formatCurrency(totalDisbursed)}
+                        </p>
+                      </div>
+                      <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl py-2.5">
+                        <p className="text-[10px] uppercase font-bold text-slate-400">Total Collections</p>
+                        <p className="text-lg font-extrabold text-emerald-600 font-mono mt-1">
+                          {formatCurrency(totalPaid)}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl py-2.5">
+                        <p className="text-[10px] uppercase font-bold text-slate-400">Total Business Value</p>
+                        <p className="text-lg font-extrabold text-slate-800 font-mono mt-1">
+                          {formatCurrency(projects.reduce((sum, p) => sum + Number(p.amount), 0))}
+                        </p>
+                      </div>
+                      <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl py-2.5">
+                        <p className="text-[10px] uppercase font-bold text-slate-400">Total Orders</p>
+                        <p className="text-lg font-extrabold text-slate-800 font-mono mt-1">{projects.length}</p>
+                      </div>
+                      <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl py-2.5">
+                        <p className="text-[10px] uppercase font-bold text-slate-400">Avg Order Value</p>
+                        <p className="text-lg font-extrabold text-slate-800 font-mono mt-1">
+                          {projects.length > 0 ? formatCurrency(projects.reduce((sum, p) => sum + Number(p.amount), 0) / projects.length) : 'N/A'}
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="pt-6 border-t border-slate-100">
@@ -2502,30 +2746,65 @@ export default function CustomerDetailPage() {
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-3">Dashboard Indicators</h3>
 
               <div className="space-y-3">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-500">Invoices Generated</span>
-                  <span className="font-bold text-slate-800">{invoices.length}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-500">Invoices Pending</span>
-                  <span className="font-bold text-slate-800">{invoices.filter(i => Number(i.pending) > 0).length}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-500">Total Collection</span>
-                  <span className="font-bold text-emerald-600 font-mono">{formatCurrency(totalPaid)}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-500">Pending Collection</span>
-                  <span className="font-bold text-red-500 font-mono">{formatCurrency(totalOutstanding)}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-500">Total Logged Comms</span>
-                  <span className="font-bold text-slate-800">{communications.length}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-500">Customer Lifetime Value</span>
-                  <span className="font-bold text-blue-600 font-mono">{formatCurrency(totalPaid + totalOutstanding)}</span>
-                </div>
+                {customerLoans.length > 0 ? (
+                  <>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Loan Facilities</span>
+                      <span className="font-bold text-slate-800">{branchFilteredLoans.length}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Active Facilities</span>
+                      <span className="font-bold text-emerald-600">{activeLoansCount}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Pending Disbursement</span>
+                      <span className="font-bold text-amber-600">{pendingLoansCount}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Total Sanctioned</span>
+                      <span className="font-bold text-blue-600 font-mono">{formatCurrency(totalSanctioned)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Total Disbursed</span>
+                      <span className="font-bold text-slate-800 font-mono">{formatCurrency(totalDisbursed)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Pending Collection</span>
+                      <span className="font-bold text-red-500 font-mono">{formatCurrency(totalOutstanding)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Total Collections</span>
+                      <span className="font-bold text-emerald-600 font-mono">{formatCurrency(totalPaid)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Invoices Generated</span>
+                      <span className="font-bold text-slate-800">{invoices.length}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Invoices Pending</span>
+                      <span className="font-bold text-slate-800">{invoices.filter(i => Number(i.pending) > 0).length}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Total Collection</span>
+                      <span className="font-bold text-emerald-600 font-mono">{formatCurrency(totalPaid)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Pending Collection</span>
+                      <span className="font-bold text-red-500 font-mono">{formatCurrency(totalOutstanding)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Total Logged Comms</span>
+                      <span className="font-bold text-slate-800">{communications.length}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-slate-500">Customer Lifetime Value</span>
+                      <span className="font-bold text-blue-600 font-mono">{formatCurrency(totalPaid + totalOutstanding)}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </Card>
 
