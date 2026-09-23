@@ -632,7 +632,7 @@ export default function LoanDetailPage() {
     )
   }
 
-  if (!loan) {
+  if (!loan || !customer) {
     return (
       <div className="p-6 flex flex-col items-center justify-center min-h-[400px] text-center">
         <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3 text-slate-400">
