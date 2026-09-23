@@ -1,15 +1,15 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowDownLeft, ArrowUpRight, Landmark, Wallet, Plus, X,
   TrendingDown, TrendingUp, IndianRupee, LayoutDashboard, Banknote,
   ShoppingBag, ArrowLeftRight, ChevronDown, AlertCircle, RefreshCw,
-  CalendarDays, FileText, Building2, Filter
+  CalendarDays, FileText, Building2, Filter, Search, CheckCircle2
 } from 'lucide-react'
 import {
   useBankAccounts, useCreateBankAccount, useTransactions, useCreateTransaction,
-  useCustomers, useLoans
+  useCustomers, useAllCustomers, useLoans, useCustomerLoans
 } from '@/hooks/useDb'
 import { useAuthStore } from '@/store/authStore'
 import { Button, Card, Input, Select, Modal, EmptyState, Badge } from '@/components/ui'
@@ -124,10 +124,11 @@ function TxnFormModal({
   defaultCustomerId?: string
   defaultLoanId?: string
 }) {
-  const { user } = useAuthStore()
+  const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
+  const activeBranch = isBranchUser ? userBranch : selectedBranch
   const { data: bankAccounts = [] } = useBankAccounts()
   const { data: customers = [] } = useCustomers()
-  const { data: loans = [] } = useLoans()
+  const { data: allCustomers = [] } = useAllCustomers()
   const createTxn = useCreateTransaction()
   const [loading, setLoading] = useState(false)
 
@@ -146,6 +147,77 @@ function TxnFormModal({
     deposit_type: DEPOSIT_TYPES[0],
   })
 
+  // Customer ID mode and manual entry states
+  const [customerIdMode, setCustomerIdMode] = useState<'dropdown' | 'manual'>('dropdown')
+  const [manualCustIdInput, setManualCustIdInput] = useState('')
+  const [isManualSuggestionsOpen, setIsManualSuggestionsOpen] = useState(false)
+  const manualInputRef = useRef<HTMLInputElement>(null)
+  const suggestionsRef = useRef<HTMLDivElement>(null)
+
+  // Direct query for customer's loans
+  const { data: directCustLoans = [] } = useCustomerLoans(form.customer_id)
+  const { data: loans = [] } = useLoans()
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(e.target as Node) &&
+        manualInputRef.current &&
+        !manualInputRef.current.contains(e.target as Node)
+      ) {
+        setIsManualSuggestionsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const selectedCustomer = useMemo(() => {
+    if (!form.customer_id) return null
+    return allCustomers.find(c => c.id === form.customer_id) || customers.find(c => c.id === form.customer_id) || null
+  }, [form.customer_id, allCustomers, customers])
+
+  useEffect(() => {
+    if (selectedCustomer?.customer_id && !manualCustIdInput) {
+      setManualCustIdInput(selectedCustomer.customer_id)
+    }
+  }, [selectedCustomer?.customer_id])
+
+  const manualMatches = useMemo(() => {
+    const query = manualCustIdInput.trim().toLowerCase()
+    if (!query) return []
+    return allCustomers
+      .filter(c => c.status !== 'blocked')
+      .filter(c =>
+        (c.customer_id && c.customer_id.toLowerCase().includes(query)) ||
+        (c.name && c.name.toLowerCase().includes(query)) ||
+        (c.mobile && c.mobile.includes(query))
+      )
+      .slice(0, 8)
+  }, [allCustomers, manualCustIdInput])
+
+  const exactCustomerMatch = useMemo(() => {
+    const query = manualCustIdInput.trim().toUpperCase()
+    if (!query) return null
+    return allCustomers.find(c => c.customer_id && c.customer_id.toUpperCase() === query) || null
+  }, [allCustomers, manualCustIdInput])
+
+  const dropdownCustomerOptions = useMemo(() => {
+    const opts = customers.map(c => ({
+      value: c.id,
+      label: `${c.customer_id ? `${c.customer_id} — ` : ''}${c.name}${c.branch ? ` (${c.branch})` : ''}`
+    }))
+    if (selectedCustomer && !customers.some(c => c.id === selectedCustomer.id)) {
+      opts.unshift({
+        value: selectedCustomer.id,
+        label: `${selectedCustomer.customer_id ? `${selectedCustomer.customer_id} — ` : ''}${selectedCustomer.name}${selectedCustomer.branch ? ` (${selectedCustomer.branch})` : ''}`
+      })
+    }
+    return opts
+  }, [customers, selectedCustomer])
+
   const cfg = TXN_CONFIG[type]
   const isDebit = type === 'disbursement' || type === 'expense'
 
@@ -157,8 +229,13 @@ function TxnFormModal({
   }, [bankAccounts, form.bank_account_id])
 
   const customerLoans = useMemo(() => {
-    return loans.filter(l => l.customer_id === form.customer_id)
-  }, [loans, form.customer_id])
+    const pool = directCustLoans.length > 0 ? directCustLoans : loans.filter(l => l.customer_id === form.customer_id)
+    if (activeBranch) {
+      const branchOnly = pool.filter(l => l.branch?.toLowerCase() === activeBranch.toLowerCase())
+      return branchOnly.length > 0 ? branchOnly : pool
+    }
+    return pool
+  }, [directCustLoans, loans, form.customer_id, activeBranch])
 
   const selectedLoan = useMemo(() => {
     return customerLoans.find(l => l.id === form.loan_id)
@@ -285,10 +362,233 @@ function TxnFormModal({
         {(type === 'disbursement' || type === 'repayment') && (
           <>
             <div className="col-span-2">
-              <Select label="Customer *" value={form.customer_id}
-                onChange={e => setForm({ ...form, customer_id: e.target.value, loan_id: '', amount: '' })}
-                options={customers.map(c => ({ value: c.id, label: `${c.name} — ${c.customer_id}` }))}
-                placeholder="Select customer" />
+              {/* Customer ID Header with Dropdown / Manual Mode Switcher */}
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-slate-700">
+                  Customer *
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setCustomerIdMode('dropdown')}
+                      className={cn(
+                        'px-2.5 py-1 text-xs font-semibold rounded-md transition-colors',
+                        customerIdMode === 'dropdown'
+                          ? 'bg-white text-brand-700 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-800'
+                      )}
+                    >
+                      Branch List
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerIdMode('manual')
+                        setTimeout(() => manualInputRef.current?.focus(), 50)
+                      }}
+                      className={cn(
+                        'px-2.5 py-1 text-xs font-semibold rounded-md transition-colors',
+                        customerIdMode === 'manual'
+                          ? 'bg-white text-brand-700 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-800'
+                      )}
+                    >
+                      Manual Entry
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Mode 1: Dropdown */}
+              {customerIdMode === 'dropdown' ? (
+                <div>
+                  <Select
+                    value={form.customer_id}
+                    onChange={e => {
+                      const val = e.target.value
+                      if (val === '__MANUAL__') {
+                        setCustomerIdMode('manual')
+                        setTimeout(() => manualInputRef.current?.focus(), 50)
+                        return
+                      }
+                      setForm(prev => ({ ...prev, customer_id: val, loan_id: '', amount: '' }))
+                      const matched = allCustomers.find(c => c.id === val) || customers.find(c => c.id === val)
+                      if (matched?.customer_id) {
+                        setManualCustIdInput(matched.customer_id)
+                      }
+                    }}
+                    options={[
+                      ...dropdownCustomerOptions,
+                      { value: '__MANUAL__', label: '✏️ Enter Customer ID manually...' }
+                    ]}
+                    placeholder="Select customer"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
+                    <span>Showing {activeBranch ? `${activeBranch} Branch` : 'all'} customers</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerIdMode('manual')
+                        setTimeout(() => manualInputRef.current?.focus(), 50)
+                      }}
+                      className="text-brand-600 hover:underline font-medium"
+                    >
+                      Type ID manually
+                    </button>
+                  </p>
+                </div>
+              ) : (
+                /* Mode 2: Manual Customer ID Entry & Search */
+                <div className="relative">
+                  <div className="relative">
+                    <input
+                      ref={manualInputRef}
+                      type="text"
+                      value={manualCustIdInput}
+                      onChange={e => {
+                        const val = e.target.value
+                        setManualCustIdInput(val)
+                        setIsManualSuggestionsOpen(true)
+                        const query = val.trim().toUpperCase()
+                        const match = allCustomers.find(c => c.customer_id?.toUpperCase() === query)
+                        if (match) {
+                          setForm(prev => ({ ...prev, customer_id: match.id, loan_id: '', amount: '' }))
+                        } else if (form.customer_id) {
+                          setForm(prev => ({ ...prev, customer_id: '', loan_id: '', amount: '' }))
+                        }
+                      }}
+                      onFocus={() => {
+                        if (manualCustIdInput.trim()) {
+                          setIsManualSuggestionsOpen(true)
+                        }
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          if (exactCustomerMatch) {
+                            setForm(prev => ({ ...prev, customer_id: exactCustomerMatch.id, loan_id: '', amount: '' }))
+                            setManualCustIdInput(exactCustomerMatch.customer_id || '')
+                            setIsManualSuggestionsOpen(false)
+                          } else if (manualMatches.length > 0) {
+                            const pick = manualMatches[0]
+                            setForm(prev => ({ ...prev, customer_id: pick.id, loan_id: '', amount: '' }))
+                            setManualCustIdInput(pick.customer_id || '')
+                            setIsManualSuggestionsOpen(false)
+                          }
+                        } else if (e.key === 'Escape') {
+                          setIsManualSuggestionsOpen(false)
+                        }
+                      }}
+                      placeholder="Type Customer ID (e.g. CUS001) or Name / Mobile"
+                      className="w-full border rounded-lg pl-8 pr-8 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 font-medium text-slate-800 placeholder:text-slate-400 bg-white border-slate-200 hover:border-slate-300"
+                    />
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                    {manualCustIdInput && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualCustIdInput('')
+                          setForm(prev => ({ ...prev, customer_id: '', loan_id: '', amount: '' }))
+                          setIsManualSuggestionsOpen(false)
+                          manualInputRef.current?.focus()
+                        }}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Suggestions list popup */}
+                  {isManualSuggestionsOpen && manualMatches.length > 0 && (
+                    <div
+                      ref={suggestionsRef}
+                      className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-52 overflow-y-auto py-1 divide-y divide-slate-100"
+                    >
+                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 flex items-center justify-between">
+                        <span>Matching Customers ({manualMatches.length})</span>
+                        <span className="font-normal lowercase text-[9px]">click to select</span>
+                      </div>
+                      {manualMatches.map(c => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setForm(prev => ({
+                              ...prev,
+                              customer_id: c.id,
+                              loan_id: '',
+                              amount: ''
+                            }))
+                            setManualCustIdInput(c.customer_id || '')
+                            setIsManualSuggestionsOpen(false)
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-brand-50/60 transition-colors flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-xs text-brand-700">{c.customer_id}</span>
+                              <span className="text-slate-300">•</span>
+                              <span className="font-semibold text-xs text-slate-800 truncate">{c.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                              {c.mobile && <span>📱 {c.mobile}</span>}
+                              {c.branch && (
+                                <span className="bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-medium">
+                                  {c.branch} Branch
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {c.id === form.customer_id && (
+                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                              Selected
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Verified selected customer card in manual mode */}
+                  {selectedCustomer && (
+                    <div className="mt-1.5 p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-900 animate-in fade-in duration-150">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                        <div className="truncate">
+                          <span className="font-bold">{selectedCustomer.customer_id}</span>
+                          <span className="mx-1 text-emerald-400">•</span>
+                          <span className="font-medium">{selectedCustomer.name}</span>
+                          {selectedCustomer.branch && (
+                            <span className="ml-1.5 text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-medium">
+                              {selectedCustomer.branch} Branch
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm(prev => ({ ...prev, customer_id: '', loan_id: '', amount: '' }))
+                          setManualCustIdInput('')
+                          manualInputRef.current?.focus()
+                        }}
+                        className="text-[10px] text-emerald-700 hover:text-red-600 font-semibold ml-2 underline flex-shrink-0 cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
+
+                  {!selectedCustomer && manualCustIdInput.trim().length > 0 && manualMatches.length === 0 && (
+                    <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1.5 text-xs text-amber-800">
+                      <AlertCircle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+                      <span>No customer found matching "{manualCustIdInput}". Check the ID or switch to Branch List.</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             {form.customer_id && (
               <div className="col-span-2 space-y-2">

@@ -187,11 +187,18 @@ export default function CustomerDetailPage() {
   const { isBranchUser: authIsBranch, userBranch: authUserBranch, selectedBranch: authSelectedBranch } = useAuthStore()
   const activeBranch = authIsBranch ? authUserBranch : authSelectedBranch
 
+  const [loanViewScope, setLoanViewScope] = useState<'all' | 'branch'>('all')
+
   // Loans filtered by active operating branch if selected, otherwise all loans
   const branchFilteredLoans = useMemo(() => {
     if (!activeBranch) return customerLoans
     return customerLoans.filter(l => l.branch?.trim().toLowerCase() === activeBranch.trim().toLowerCase())
   }, [customerLoans, activeBranch])
+
+  const displayedCustomerLoans = useMemo(() => {
+    if (loanViewScope === 'all' || !activeBranch) return customerLoans
+    return branchFilteredLoans
+  }, [loanViewScope, activeBranch, customerLoans, branchFilteredLoans])
 
   const { data: projects = [], isLoading: isProjLoading } = useCustomerProjects(customerId)
   const { data: quotations = [], isLoading: isQuotsLoading } = useCustomerQuotations(customerId)
@@ -1648,11 +1655,37 @@ export default function CustomerDetailPage() {
                         Loan Facilities &amp; Accounts
                       </CardTitle>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {activeBranch ? `Filtered by ${activeBranch} Branch` : 'Showing facilities across all branches'}
+                        {loanViewScope === 'all' || !activeBranch
+                          ? `Showing all facilities across branches (${customerLoans.length})`
+                          : `Filtered by ${activeBranch} Branch (${branchFilteredLoans.length})`}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {activeBranch && customerLoans.some(l => l.branch?.toLowerCase() !== activeBranch.toLowerCase()) && (
+                      <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => setLoanViewScope('all')}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md transition-colors",
+                            loanViewScope === 'all' ? "bg-white text-slate-900 shadow-2xs font-bold" : "text-slate-500 hover:text-slate-800"
+                          )}
+                        >
+                          All Branches ({customerLoans.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLoanViewScope('branch')}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md transition-colors",
+                            loanViewScope === 'branch' ? "bg-white text-slate-900 shadow-2xs font-bold" : "text-slate-500 hover:text-slate-800"
+                          )}
+                        >
+                          {activeBranch} ({branchFilteredLoans.length})
+                        </button>
+                      </div>
+                    )}
                     <Button
                       size="sm"
                       onClick={() => navigate('/loans')}
@@ -1665,19 +1698,23 @@ export default function CustomerDetailPage() {
                 </CardHeader>
 
                 <CardBody className="p-0">
-                  {branchFilteredLoans.length === 0 ? (
+                  {displayedCustomerLoans.length === 0 ? (
                     <div className="text-center py-12 px-4">
                       <Landmark className="h-12 w-12 text-slate-300 mx-auto mb-3" />
                       <h4 className="text-sm font-bold text-slate-700">No Loan Accounts Found</h4>
                       <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                        {activeBranch
+                        {loanViewScope === 'branch' && activeBranch
                           ? `This customer does not have any loans registered under ${activeBranch} Branch.`
                           : 'This customer currently has no registered loan accounts.'}
                       </p>
-                      {activeBranch && customerLoans.length > 0 && (
-                        <p className="text-xs text-brand-600 font-semibold mt-2">
-                          ({customerLoans.length} loan{customerLoans.length > 1 ? 's' : ''} exist in other branches. Switch to "All Branches" in header to view.)
-                        </p>
+                      {loanViewScope === 'branch' && activeBranch && customerLoans.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setLoanViewScope('all')}
+                          className="text-xs text-brand-600 font-semibold mt-2 hover:underline cursor-pointer"
+                        >
+                          ({customerLoans.length} loan{customerLoans.length > 1 ? 's' : ''} exist in other branches. Click here to view all.)
+                        </button>
                       )}
                     </div>
                   ) : (
@@ -1696,7 +1733,7 @@ export default function CustomerDetailPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {branchFilteredLoans.map((l) => {
+                          {displayedCustomerLoans.map((l) => {
                             const sanctioned = Number(l.loan_amount || l.sanctioned_amount || 0)
                             const rawDisbursed = Number(l.disbursed_amount || 0)
                             const disbursed = sanctioned > 0 ? Math.min(sanctioned, rawDisbursed) : rawDisbursed

@@ -632,8 +632,11 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                             setTimeout(() => manualInputRef.current?.focus(), 50)
                             return
                           }
-                          setFormData(prev => ({ ...prev, customer_id: val }))
                           const matched = allCustomers.find(c => c.id === val) || customers.find(c => c.id === val)
+                          setFormData(prev => ({
+                            ...prev,
+                            customer_id: val,
+                          }))
                           if (matched?.customer_id) {
                             setManualCustIdInput(matched.customer_id)
                           }
@@ -769,7 +772,10 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                               key={c.id}
                               type="button"
                               onClick={() => {
-                                setFormData(prev => ({ ...prev, customer_id: c.id }))
+                                setFormData(prev => ({
+                                  ...prev,
+                                  customer_id: c.id,
+                                }))
                                 setManualCustIdInput(c.customer_id || '')
                                 setIsManualSuggestionsOpen(false)
                                 if (errors.customer_id) {
@@ -995,7 +1001,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                     label="Branch *"
                     value={formData.branch}
                     onChange={e => setFormData({ ...formData, branch: e.target.value })}
-                    disabled={!!activeBranch}
+                    disabled={isBranchUser && !!userBranch}
                     options={[
                       { value: 'Head Office', label: 'Head Office' },
                       { value: 'Aniyapuram', label: 'Aniyapuram Branch' },
@@ -1003,7 +1009,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                       { value: 'Namakkal', label: 'Namakkal Branch' }
                     ]}
                   />
-                  {activeBranch && (
+                  {isBranchUser && userBranch && (
                     <p className="text-[10px] text-amber-600 font-medium mt-1 flex items-center gap-1">
                       Auto-set to your branch. Cannot be changed.
                     </p>

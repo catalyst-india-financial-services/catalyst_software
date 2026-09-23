@@ -187,9 +187,8 @@ export function useCustomers() {
 }
 
 export function useCustomer(id?: string) {
-  const branchFilter = useBranchFilter()
   return useQuery({
-    queryKey: ['customers', id, branchFilter],
+    queryKey: ['customers', id],
     queryFn: async () => {
       if (!id) return null
       const { data, error } = await supabase
@@ -198,9 +197,7 @@ export function useCustomer(id?: string) {
         .eq('id', id)
         .maybeSingle()
       if (error) throw error
-      // Branch ownership guard: branch user cannot view other branch's customer
-      if (branchFilter && data && data.branch !== branchFilter) return null
-      return data as Customer | null
+      return (data || null) as Customer | null
     },
     enabled: !!id,
   })
@@ -322,9 +319,10 @@ export function useLoans() {
 }
 
 export function useLoan(id?: string) {
-  const branchFilter = useBranchFilter()
+  const isBranchUser = useAuthStore((s) => s.isBranchUser)
+  const userBranch = useAuthStore((s) => s.userBranch)
   return useQuery({
-    queryKey: ['loans', id, branchFilter],
+    queryKey: ['loans', id],
     queryFn: async () => {
       if (!id) return null
       const { data, error } = await supabase
@@ -334,8 +332,8 @@ export function useLoan(id?: string) {
         .maybeSingle()
       if (error) throw error
       if (!data) return null
-      // Branch ownership guard: branch user cannot view other branch's loan
-      if (branchFilter && data.branch !== branchFilter) return null
+      // Branch ownership guard: branch staff cannot view another branch's loan
+      if (isBranchUser && userBranch && data.branch !== userBranch) return null
       return {
         ...data,
         customer_name: (data as any).customer?.name || 'Unknown',
@@ -704,8 +702,8 @@ export function usePayments(loanId?: string) {
         loan_number: p.loans?.loan_number || 'Unknown',
         _loan_branch: p.loans?.branch || null,
       })) as (EMIPayment & { customer_name: string; loan_number: string; _loan_branch?: string | null })[]
-      // Client-side branch filter: only show payments for loans belonging to this branch
-      if (branchFilter) {
+      // Client-side branch filter: only show payments for loans belonging to this branch when not querying a specific loan
+      if (branchFilter && !loanId) {
         results = results.filter(p => p._loan_branch === branchFilter)
       }
       return results
@@ -2205,8 +2203,8 @@ export function useTransactions(filters?: {
         (a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf()
       ) as (import('@/types').Transaction & { _loan_branch?: string | null; _customer_branch?: string | null })[]
 
-      // Client-side branch filter: show transactions for this branch's loans/customers
-      if (branchFilter) {
+      // Client-side branch filter: show transactions for this branch's loans/customers when not querying a specific loan or customer
+      if (branchFilter && !filters?.loan_id && !filters?.customer_id) {
         results = results.filter(t => t._loan_branch === branchFilter || t._customer_branch === branchFilter)
       }
       return results
