@@ -270,6 +270,8 @@ function LoanForm({
     return 'unrequested'
   }, [isCrossBranchCustomer, selectedCustomer, existingBranchAccessRecord])
 
+  const isFieldsLocked = isCrossBranchCustomer && crossBranchApprovalStatus !== 'approved'
+
   const handleSendCrossBranchRequest = async () => {
     if (!selectedCustomer || !customerBaseBranch) return
     setIsRequestingPermission(true)
@@ -1113,6 +1115,7 @@ function LoanForm({
 
                 <Select
                   label="Loan Product *"
+                  disabled={isFieldsLocked}
                   value={formData.loan_product}
                   onChange={e => setFormData({ ...formData, loan_product: e.target.value })}
                   options={[
@@ -1128,6 +1131,7 @@ function LoanForm({
 
                 <Select
                   label="Loan Category / Segment *"
+                  disabled={isFieldsLocked}
                   value={formData.loan_category}
                   onChange={e => setFormData({ ...formData, loan_category: e.target.value })}
                   options={[
@@ -1142,11 +1146,12 @@ function LoanForm({
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Loan Purpose *</label>
                   <div className="relative">
                     <select
+                      disabled={isFieldsLocked}
                       value={formData.loan_purpose}
                       onChange={e => setFormData({ ...formData, loan_purpose: e.target.value })}
                       className={cn(
                         'w-full border rounded-lg px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white font-medium text-slate-700',
-                        errors.loan_purpose ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300'
+                        isFieldsLocked ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : (errors.loan_purpose ? 'border-red-300 bg-red-50/20' : 'border-slate-200 hover:border-slate-300')
                       )}
                     >
                       <option value="">Select loan purpose</option>
@@ -1157,7 +1162,7 @@ function LoanForm({
                     <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                   </div>
                   <FieldError msg={errors.loan_purpose} />
-                  {!isAddingPurpose ? (
+                  {!isFieldsLocked && (!isAddingPurpose ? (
                     <button
                       type="button"
                       onClick={() => setIsAddingPurpose(true)}
@@ -1218,7 +1223,7 @@ function LoanForm({
                         Cancel
                       </button>
                     </div>
-                  )}
+                  ))}
                 </div>
 
                 <div>
@@ -1244,6 +1249,7 @@ function LoanForm({
                 <Input
                   label="Account Opening Date *"
                   type="date"
+                  disabled={isFieldsLocked}
                   value={formData.account_opening_date}
                   onChange={e => setFormData({ ...formData, account_opening_date: e.target.value })}
                   error={errors.account_opening_date}
@@ -2265,10 +2271,10 @@ export default function LoansPage() {
     const currentTarget = normalize(activeBranch)
     return allBranchAccess.filter(r => {
       if (r.access_status !== 'PENDING') return false
-      if (user?.role === 'admin' || user?.role === 'manager' || !isBranchUser) return true
+      if (!currentTarget) return true
       return normalize(r.base_branch) === currentTarget
     }).length
-  }, [allBranchAccess, user, isBranchUser, activeBranch])
+  }, [allBranchAccess, activeBranch])
 
   useEffect(() => {
     if (shouldOpenNewLoan) {

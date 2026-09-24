@@ -61,17 +61,15 @@ export function InterBranchRequestsModal({
 
   // Incoming: where this branch is the base_branch (needs to grant permission to other branches)
   const incomingRequests = useMemo(() => {
-    if (isAdmin && !isBranchUser) return allRequests
     if (!currentBranchNorm) return allRequests
     return allRequests.filter(r => normalize(r.base_branch) === currentBranchNorm)
-  }, [allRequests, currentBranchNorm, isAdmin, isBranchUser])
+  }, [allRequests, currentBranchNorm])
 
   // Outgoing: where this branch is the requesting branch (sent to other branches)
   const outgoingRequests = useMemo(() => {
-    if (isAdmin && !isBranchUser) return allRequests
     if (!currentBranchNorm) return allRequests
     return allRequests.filter(r => normalize(r.branch_id) === currentBranchNorm)
-  }, [allRequests, currentBranchNorm, isAdmin, isBranchUser])
+  }, [allRequests, currentBranchNorm])
 
   const currentList = activeTab === 'incoming' ? incomingRequests : outgoingRequests
 

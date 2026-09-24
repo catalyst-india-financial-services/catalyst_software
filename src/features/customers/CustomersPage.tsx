@@ -1551,10 +1551,10 @@ export default function CustomersPage() {
     const currentTarget = normalize(activeBranch)
     return allBranchAccess.filter(r => {
       if (r.access_status !== 'PENDING') return false
-      if (user?.role === 'admin' || user?.role === 'manager' || !isBranchUser) return true
+      if (!currentTarget) return true
       return normalize(r.base_branch) === currentTarget
     }).length
-  }, [allBranchAccess, user, isBranchUser, activeBranch])
+  }, [allBranchAccess, activeBranch])
 
   // Clear any stale column sorting from previous browser sessions
   useEffect(() => {
