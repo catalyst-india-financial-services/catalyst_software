@@ -113,22 +113,11 @@ function AddBankAccountModal({ onClose }: { onClose: () => void }) {
 }
 
 // ─── Transaction Form Modal ────────────────────────────────────────────────────
-function TxnFormModal({
-  type,
-  onClose,
-  defaultCustomerId,
-  defaultLoanId
-}: {
-  type: TxnType
-  onClose: () => void
-  defaultCustomerId?: string
-  defaultLoanId?: string
-}) {
-  const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
-  const activeBranch = isBranchUser ? userBranch : selectedBranch
+function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void }) {
+  const { user } = useAuthStore()
   const { data: bankAccounts = [] } = useBankAccounts()
   const { data: customers = [] } = useCustomers()
-  const { data: allCustomers = [] } = useAllCustomers()
+  const { data: loans = [] } = useLoans()
   const createTxn = useCreateTransaction()
   const [loading, setLoading] = useState(false)
 
@@ -228,91 +217,11 @@ function TxnFormModal({
     }
   }, [bankAccounts, form.bank_account_id])
 
-  const customerLoans = useMemo(() => {
-    const pool = directCustLoans.length > 0 ? directCustLoans : loans.filter(l => l.customer_id === form.customer_id)
-    if (activeBranch) {
-      const branchOnly = pool.filter(l => l.branch?.toLowerCase() === activeBranch.toLowerCase())
-      return branchOnly.length > 0 ? branchOnly : pool
-    }
-    return pool
-  }, [directCustLoans, loans, form.customer_id, activeBranch])
-
-  const selectedLoan = useMemo(() => {
-    return customerLoans.find(l => l.id === form.loan_id)
-  }, [customerLoans, form.loan_id])
-
-  const disbursementStats = useMemo(() => {
-    if (!selectedLoan || type !== 'disbursement') return null
-    const sanctioned = Number(selectedLoan.loan_amount) || 0
-    const disbursed = Number(selectedLoan.disbursed_amount) || 0
-    const remaining = Math.max(0, sanctioned - disbursed)
-    const isFullyDisbursed = remaining <= 0 && sanctioned > 0
-    return { sanctioned, disbursed, remaining, isFullyDisbursed }
-  }, [selectedLoan, type])
-
-  // When customer is selected, auto-select their loan with remaining balance and auto-fill amount for disbursement
-  useEffect(() => {
-    if (type === 'disbursement' && form.customer_id && customerLoans.length > 0) {
-      const pendingLoan = customerLoans.find(l => {
-        const sanctioned = Number(l.loan_amount) || 0
-        const disbursed = Number(l.disbursed_amount) || 0
-        return (sanctioned - disbursed) > 0
-      }) || customerLoans[0]
-
-      if (pendingLoan && (!form.loan_id || !customerLoans.some(l => l.id === form.loan_id))) {
-        const sanctioned = Number(pendingLoan.loan_amount) || 0
-        const disbursed = Number(pendingLoan.disbursed_amount) || 0
-        const pendingAmt = Math.max(0, sanctioned - disbursed)
-        setForm(prev => ({
-          ...prev,
-          loan_id: pendingLoan.id,
-          amount: pendingAmt > 0 ? pendingAmt.toString() : ''
-        }))
-      }
-    }
-  }, [type, form.customer_id, customerLoans])
-
-  const handleLoanChange = (loanId: string) => {
-    const sLoan = customerLoans.find(l => l.id === loanId)
-    if (sLoan && type === 'disbursement') {
-      const sanctioned = Number(sLoan.loan_amount) || 0
-      const disbursed = Number(sLoan.disbursed_amount) || 0
-      const pendingAmt = Math.max(0, sanctioned - disbursed)
-      setForm(prev => ({
-        ...prev,
-        loan_id: loanId,
-        amount: pendingAmt > 0 ? pendingAmt.toString() : ''
-      }))
-    } else {
-      setForm(prev => ({ ...prev, loan_id: loanId }))
-    }
-  }
-
-  const isDisbursementOverLimit = useMemo(() => {
-    if (type !== 'disbursement' || !disbursementStats) return false
-    const amt = parseFloat(form.amount)
-    return !isNaN(amt) && amt > disbursementStats.remaining
-  }, [type, disbursementStats, form.amount])
-
   const handleSubmit = async () => {
     if (!form.bank_account_id) { toast.error('Please select a bank account'); return }
     if (!form.amount || parseFloat(form.amount) <= 0) { toast.error('Please enter a valid amount'); return }
     if ((type === 'disbursement' || type === 'repayment') && !form.customer_id) {
       toast.error('Please select a customer'); return
-    }
-    if (type === 'disbursement' && !form.loan_id) {
-      toast.error('Please select the Loan / Account to disburse'); return
-    }
-    if (type === 'disbursement' && disbursementStats) {
-      if (disbursementStats.isFullyDisbursed) {
-        toast.error('This loan is already 100% disbursed. No additional disbursements are permitted.')
-        return
-      }
-      const enteredAmt = parseFloat(form.amount)
-      if (enteredAmt > disbursementStats.remaining) {
-        toast.error(`Disbursement amount (${formatCurrency(enteredAmt)}) cannot exceed remaining limit of ${formatCurrency(disbursementStats.remaining)}.`)
-        return
-      }
     }
     setLoading(true)
     try {
@@ -321,7 +230,7 @@ function TxnFormModal({
         direction: isDebit ? 'debit' : 'credit',
         amount: parseFloat(form.amount),
         bank_account_id: form.bank_account_id,
-        customer_id: form.customer_id || undefined,
+        customer_id: targetCustomerId || undefined,
         loan_id: form.loan_id || undefined,
         date: form.date,
         reference_number: form.reference_number || undefined,
@@ -359,298 +268,54 @@ function TxnFormModal({
           options={bankAccounts.map(a => ({ value: a.id, label: a.name }))}
           placeholder="Select account" />
 
-        {(type === 'disbursement' || type === 'repayment') && (
+        {/* ── DISBURSEMENT FLOW: Direct Branch Loan Selection with Customer Name ── */}
+        {type === 'disbursement' && (
           <>
-            <div className="col-span-2">
-              {/* Customer ID Header with Dropdown / Manual Mode Switcher */}
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-slate-700">
-                  Customer *
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setCustomerIdMode('dropdown')}
-                      className={cn(
-                        'px-2.5 py-1 text-xs font-semibold rounded-md transition-colors',
-                        customerIdMode === 'dropdown'
-                          ? 'bg-white text-brand-700 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800'
-                      )}
-                    >
-                      Branch List
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCustomerIdMode('manual')
-                        setTimeout(() => manualInputRef.current?.focus(), 50)
-                      }}
-                      className={cn(
-                        'px-2.5 py-1 text-xs font-semibold rounded-md transition-colors',
-                        customerIdMode === 'manual'
-                          ? 'bg-white text-brand-700 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800'
-                      )}
-                    >
-                      Manual Entry
-                    </button>
+            {/* Branch Selector / Indicator */}
+            {!isBranchUser ? (
+              <div className="col-span-2">
+                <Select
+                  label="Select Branch *"
+                  value={formBranch}
+                  onChange={e => {
+                    const nextBranch = e.target.value
+                    setFormBranch(nextBranch)
+                    setForm(prev => ({ ...prev, loan_id: '', customer_id: '', amount: '', description: '' }))
+                  }}
+                  options={[
+                    { value: 'Aniyapuram', label: 'Aniyapuram Branch' },
+                    { value: 'Vallipuram', label: 'Vallipuram Branch' },
+                    { value: 'Namakkal', label: 'Namakkal Branch' },
+                  ]}
+                />
+              </div>
+            ) : (
+              <div className="col-span-2">
+                <div className="flex items-center justify-between px-3.5 py-2.5 bg-violet-50/70 border border-violet-200/80 rounded-xl">
+                  <div className="flex items-center gap-2 text-xs font-bold text-violet-700">
+                    <Building2 className="h-4 w-4 text-violet-600" />
+                    <span>Branch: {userBranch} Branch</span>
                   </div>
+                  <Badge variant="outline" className="text-[10px] font-bold text-violet-600 bg-white border-violet-200">
+                    Branch Level
+                  </Badge>
                 </div>
               </div>
+            )}
 
-              {/* Mode 1: Dropdown */}
-              {customerIdMode === 'dropdown' ? (
-                <div>
-                  <Select
-                    value={form.customer_id}
-                    onChange={e => {
-                      const val = e.target.value
-                      if (val === '__MANUAL__') {
-                        setCustomerIdMode('manual')
-                        setTimeout(() => manualInputRef.current?.focus(), 50)
-                        return
-                      }
-                      setForm(prev => ({ ...prev, customer_id: val, loan_id: '', amount: '' }))
-                      const matched = allCustomers.find(c => c.id === val) || customers.find(c => c.id === val)
-                      if (matched?.customer_id) {
-                        setManualCustIdInput(matched.customer_id)
-                      }
-                    }}
-                    options={[
-                      ...dropdownCustomerOptions,
-                      { value: '__MANUAL__', label: '✏️ Enter Customer ID manually...' }
-                    ]}
-                    placeholder="Select customer"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
-                    <span>Showing {activeBranch ? `${activeBranch} Branch` : 'all'} customers</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCustomerIdMode('manual')
-                        setTimeout(() => manualInputRef.current?.focus(), 50)
-                      }}
-                      className="text-brand-600 hover:underline font-medium"
-                    >
-                      Type ID manually
-                    </button>
-                  </p>
-                </div>
-              ) : (
-                /* Mode 2: Manual Customer ID Entry & Search */
-                <div className="relative">
-                  <div className="relative">
-                    <input
-                      ref={manualInputRef}
-                      type="text"
-                      value={manualCustIdInput}
-                      onChange={e => {
-                        const val = e.target.value
-                        setManualCustIdInput(val)
-                        setIsManualSuggestionsOpen(true)
-                        const query = val.trim().toUpperCase()
-                        const match = allCustomers.find(c => c.customer_id?.toUpperCase() === query)
-                        if (match) {
-                          setForm(prev => ({ ...prev, customer_id: match.id, loan_id: '', amount: '' }))
-                        } else if (form.customer_id) {
-                          setForm(prev => ({ ...prev, customer_id: '', loan_id: '', amount: '' }))
-                        }
-                      }}
-                      onFocus={() => {
-                        if (manualCustIdInput.trim()) {
-                          setIsManualSuggestionsOpen(true)
-                        }
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          if (exactCustomerMatch) {
-                            setForm(prev => ({ ...prev, customer_id: exactCustomerMatch.id, loan_id: '', amount: '' }))
-                            setManualCustIdInput(exactCustomerMatch.customer_id || '')
-                            setIsManualSuggestionsOpen(false)
-                          } else if (manualMatches.length > 0) {
-                            const pick = manualMatches[0]
-                            setForm(prev => ({ ...prev, customer_id: pick.id, loan_id: '', amount: '' }))
-                            setManualCustIdInput(pick.customer_id || '')
-                            setIsManualSuggestionsOpen(false)
-                          }
-                        } else if (e.key === 'Escape') {
-                          setIsManualSuggestionsOpen(false)
-                        }
-                      }}
-                      placeholder="Type Customer ID (e.g. CUS001) or Name / Mobile"
-                      className="w-full border rounded-lg pl-8 pr-8 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 font-medium text-slate-800 placeholder:text-slate-400 bg-white border-slate-200 hover:border-slate-300"
-                    />
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-                    {manualCustIdInput && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setManualCustIdInput('')
-                          setForm(prev => ({ ...prev, customer_id: '', loan_id: '', amount: '' }))
-                          setIsManualSuggestionsOpen(false)
-                          manualInputRef.current?.focus()
-                        }}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Suggestions list popup */}
-                  {isManualSuggestionsOpen && manualMatches.length > 0 && (
-                    <div
-                      ref={suggestionsRef}
-                      className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-52 overflow-y-auto py-1 divide-y divide-slate-100"
-                    >
-                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 flex items-center justify-between">
-                        <span>Matching Customers ({manualMatches.length})</span>
-                        <span className="font-normal lowercase text-[9px]">click to select</span>
-                      </div>
-                      {manualMatches.map(c => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            setForm(prev => ({
-                              ...prev,
-                              customer_id: c.id,
-                              loan_id: '',
-                              amount: ''
-                            }))
-                            setManualCustIdInput(c.customer_id || '')
-                            setIsManualSuggestionsOpen(false)
-                          }}
-                          className="w-full text-left px-3 py-2 hover:bg-brand-50/60 transition-colors flex items-center justify-between gap-2"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-xs text-brand-700">{c.customer_id}</span>
-                              <span className="text-slate-300">•</span>
-                              <span className="font-semibold text-xs text-slate-800 truncate">{c.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
-                              {c.mobile && <span>📱 {c.mobile}</span>}
-                              {c.branch && (
-                                <span className="bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-medium">
-                                  {c.branch} Branch
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {c.id === form.customer_id && (
-                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                              Selected
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Verified selected customer card in manual mode */}
-                  {selectedCustomer && (
-                    <div className="mt-1.5 p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-900 animate-in fade-in duration-150">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
-                        <div className="truncate">
-                          <span className="font-bold">{selectedCustomer.customer_id}</span>
-                          <span className="mx-1 text-emerald-400">•</span>
-                          <span className="font-medium">{selectedCustomer.name}</span>
-                          {selectedCustomer.branch && (
-                            <span className="ml-1.5 text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-medium">
-                              {selectedCustomer.branch} Branch
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForm(prev => ({ ...prev, customer_id: '', loan_id: '', amount: '' }))
-                          setManualCustIdInput('')
-                          manualInputRef.current?.focus()
-                        }}
-                        className="text-[10px] text-emerald-700 hover:text-red-600 font-semibold ml-2 underline flex-shrink-0 cursor-pointer"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  )}
-
-                  {!selectedCustomer && manualCustIdInput.trim().length > 0 && manualMatches.length === 0 && (
-                    <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1.5 text-xs text-amber-800">
-                      <AlertCircle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
-                      <span>No customer found matching "{manualCustIdInput}". Check the ID or switch to Branch List.</span>
-                    </div>
-                  )}
-                </div>
-              )}
+            {/* Loan Selection (No customer selection dropdown required) */}
+            <div className="col-span-2">
+              <Select label="Customer *" value={form.customer_id}
+                onChange={e => setForm({ ...form, customer_id: e.target.value, loan_id: '' })}
+                options={customers.map(c => ({ value: c.id, label: `${c.name} — ${c.customer_id}` }))}
+                placeholder="Select customer" />
             </div>
             {form.customer_id && (
-              <div className="col-span-2 space-y-2">
-                <Select
-                  label={type === 'disbursement' ? "Loan / Account to Disburse *" : "Loan / Account Number"}
-                  value={form.loan_id}
-                  onChange={e => handleLoanChange(e.target.value)}
-                  options={customerLoans.map(l => {
-                    const sanctioned = Number(l.loan_amount) || 0
-                    const disbursed = Number(l.disbursed_amount) || 0
-                    const pending = Math.max(0, sanctioned - disbursed)
-                    let statusLabel = ''
-                    if (disbursed <= 0) {
-                      statusLabel = `Pending Full: ${formatCurrency(sanctioned)}`
-                    } else if (pending > 0) {
-                      statusLabel = `Partially Disbursed: ${formatCurrency(disbursed)} / ${formatCurrency(sanctioned)} (${formatCurrency(pending)} remaining)`
-                    } else {
-                      statusLabel = `Fully Disbursed: ${formatCurrency(disbursed)} / ${formatCurrency(sanctioned)} [COMPLETED]`
-                    }
-                    return {
-                      value: l.id,
-                      label: `${l.loan_number} (${formatCurrency(sanctioned)}) — ${statusLabel}`
-                    }
-                  })}
-                  placeholder={customerLoans.length === 0 ? "No loan accounts found for customer" : "Select loan account"}
-                />
-                {customerLoans.length === 0 && (
-                  <p className="text-[11px] text-amber-600 font-medium mt-1">
-                    ⚠️ This customer does not have any loan accounts created yet.
-                  </p>
-                )}
-                {type === 'disbursement' && selectedLoan && disbursementStats && (
-                  <div className="space-y-2 pt-1">
-                    <div className="grid grid-cols-3 gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-                      <div>
-                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Sanctioned</span>
-                        <span className="font-mono font-bold text-slate-700">{formatCurrency(disbursementStats.sanctioned)}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Disbursed</span>
-                        <span className="font-mono font-bold text-amber-600">{formatCurrency(disbursementStats.disbursed)}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Remaining Limit</span>
-                        <span className={cn("font-mono font-bold", disbursementStats.remaining > 0 ? "text-emerald-600" : "text-red-600")}>
-                          {formatCurrency(disbursementStats.remaining)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {disbursementStats.isFullyDisbursed ? (
-                      <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-xs text-red-700 font-medium">
-                        <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
-                        <span>This loan has already been 100% disbursed. Additional disbursements are blocked.</span>
-                      </div>
-                    ) : (
-                      <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-center gap-1.5 font-medium">
-                        <span>✓</span> {disbursementStats.disbursed > 0 ? `Recording part disbursement (Up to ${formatCurrency(disbursementStats.remaining)} available).` : 'Recording initial disbursement will disburse funds, activate the loan account, and record the Outstanding Principal.'}
-                      </p>
-                    )}
-                  </div>
-                )}
+              <div className="col-span-2">
+                <Select label="Loan / Account Number" value={form.loan_id}
+                  onChange={e => setForm({ ...form, loan_id: e.target.value })}
+                  options={customerLoans.map(l => ({ value: l.id, label: l.loan_number }))}
+                  placeholder="Select loan (optional)" />
               </div>
             )}
           </>
@@ -672,12 +337,8 @@ function TxnFormModal({
           </div>
         )}
 
-        <div className="col-span-2">
-          <Input
-            label={type === 'disbursement' ? `Disbursement Amount (₹) *` : "Total Amount (₹) *"}
-            type="number"
-            value={form.amount}
-            disabled={type === 'disbursement' && !!disbursementStats?.isFullyDisbursed}
+        <div className={type === 'repayment' ? 'col-span-2' : 'col-span-2'}>
+          <Input label="Total Amount (₹) *" type="number" value={form.amount}
             onChange={e => setForm({ ...form, amount: e.target.value })}
             placeholder={type === 'disbursement' && disbursementStats ? `Max ${formatCurrency(disbursementStats.remaining)}` : "Enter amount"}
           />

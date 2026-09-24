@@ -296,23 +296,40 @@ export function useUpdateCustomer() {
 
 // ─── Loan Hooks ───────────────────────────────────────────────────────────────
 
-export function useLoans() {
-  const branchFilter = useBranchFilter()
+export function useLoans(branchOverride?: string | null) {
+  const globalBranchFilter = useBranchFilter()
+  const branchFilter = branchOverride !== undefined ? branchOverride : globalBranchFilter
   return useQuery({
     queryKey: ['loans', branchFilter],
     queryFn: async () => {
       let query = supabase
         .from('loans')
-        .select('*, customer:customers!loans_customer_id_fkey(name)')
+        .select('*, customer:customers!loans_customer_id_fkey(name, mobile, customer_id)')
         .order('created_at', { ascending: false })
       if (branchFilter) {
         query = query.eq('branch', branchFilter)
       }
       const { data, error } = await query
-      if (error) throw error
-      return data.map((l: any) => ({
+      if (error) {
+        let fbQuery = supabase
+          .from('loans')
+          .select('*')
+          .order('created_at', { ascending: false })
+        if (branchFilter) {
+          fbQuery = fbQuery.eq('branch', branchFilter)
+        }
+        const { data: fbData, error: fbErr } = await fbQuery
+        if (fbErr) throw fbErr
+        return (fbData || []).map((l: any) => ({
+          ...l,
+          customer_name: (l as any).customer_name || 'Unknown',
+        })) as Loan[]
+      }
+      return (data || []).map((l: any) => ({
         ...l,
         customer_name: l.customer?.name || 'Unknown',
+        customer_mobile: l.customer?.mobile || '',
+        customer_custom_id: l.customer?.customer_id || '',
       })) as Loan[]
     },
   })
@@ -327,16 +344,28 @@ export function useLoan(id?: string) {
       if (!id) return null
       const { data, error } = await supabase
         .from('loans')
-        .select('*, customer:customers!loans_customer_id_fkey(name)')
+        .select('*, customer:customers!loans_customer_id_fkey(name, mobile, customer_id)')
         .eq('id', id)
         .maybeSingle()
-      if (error) throw error
+      if (error) {
+        const { data: fbData, error: fbErr } = await supabase
+          .from('loans')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle()
+        if (fbErr) throw fbErr
+        if (!fbData) return null
+        if (branchFilter && fbData.branch !== branchFilter) return null
+        return fbData as Loan
+      }
       if (!data) return null
       // Branch ownership guard: branch staff cannot view another branch's loan
       if (isBranchUser && userBranch && data.branch !== userBranch) return null
       return {
         ...data,
         customer_name: (data as any).customer?.name || 'Unknown',
+        customer_mobile: (data as any).customer?.mobile || '',
+        customer_custom_id: (data as any).customer?.customer_id || '',
       } as Loan
     },
     enabled: !!id,
