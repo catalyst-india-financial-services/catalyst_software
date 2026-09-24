@@ -1260,9 +1260,29 @@ export default function TransactionsPage() {
   const paramLoanId = searchParams.get('loan') || undefined
 
   const { data: bankAccounts = [], isError: acctError } = useBankAccounts()
-  const { data: allTxns = [], isError: txnError, isLoading: txnLoading } = useTransactions(
-    dateFrom || dateTo ? { date_from: dateFrom || undefined, date_to: dateTo || undefined } : undefined
-  )
+  const { data: rawTxns = [], isError: txnError, isLoading: txnLoading } = useTransactions({
+    date_from: dateFrom || undefined,
+    date_to: dateTo || undefined,
+    branch: activeBranch,
+  })
+
+  // Branch-scoped transactions: strict isolation for the active branch
+  const allTxns = useMemo(() => {
+    if (!activeBranch) return rawTxns
+    const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+    const target = normalize(activeBranch)
+    return rawTxns.filter((t: any) => {
+      const loanB = normalize(t._loan_branch)
+      const custB = normalize(t._customer_branch)
+      if (t.txn_type === 'disbursement' || t.txn_type === 'repayment' || t.loan_id || t.customer_id) {
+        return loanB === target || custB === target
+      }
+      if (loanB || custB) {
+        return loanB === target || custB === target
+      }
+      return true
+    })
+  }, [rawTxns, activeBranch])
 
   const dbMissing = acctError || txnError
 

@@ -306,33 +306,40 @@ export function useLoans(branchOverride?: string | null) {
         .from('loans')
         .select('*, customer:customers!loans_customer_id_fkey(name, mobile, customer_id)')
         .order('created_at', { ascending: false })
-      if (branchFilter) {
-        query = query.eq('branch', branchFilter)
-      }
       const { data, error } = await query
+      let loansList: any[] = []
       if (error) {
         let fallbackQuery = supabase
           .from('loans')
           .select('*')
           .order('created_at', { ascending: false })
-        if (branchFilter) {
-          fallbackQuery = fallbackQuery.eq('branch', branchFilter)
-        }
         const { data: fbData, error: fbErr } = await fallbackQuery
         if (fbErr) throw fbErr
-        return (fbData || []).map((l: any) => ({
+        loansList = (fbData || []).map((l: any) => ({
           ...l,
           customer_name: (l as any).customer_name || 'Unknown',
           customer_mobile: (l as any).customer_mobile || '',
           customer_custom_id: (l as any).customer_custom_id || '',
-        })) as Loan[]
+        }))
+      } else {
+        loansList = (data || []).map((l: any) => ({
+          ...l,
+          customer_name: l.customer?.name || 'Unknown',
+          customer_mobile: l.customer?.mobile || '',
+          customer_custom_id: l.customer?.customer_id || '',
+        }))
       }
-      return (data || []).map((l: any) => ({
-        ...l,
-        customer_name: l.customer?.name || 'Unknown',
-        customer_mobile: l.customer?.mobile || '',
-        customer_custom_id: l.customer?.customer_id || '',
-      })) as Loan[]
+
+      if (branchFilter) {
+        const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+        const target = normalize(branchFilter)
+        loansList = loansList.filter((l: any) => {
+          const b = normalize(l.branch)
+          return b === target
+        })
+      }
+
+      return loansList as Loan[]
     },
   })
 }
@@ -2192,60 +2199,101 @@ export function useTransactions(filters?: {
       if (filters?.loan_id) paymentQuery = (paymentQuery as any).eq('loan_id', filters.loan_id)
       if (filters?.customer_id) paymentQuery = (paymentQuery as any).eq('customer_id', filters.customer_id)
 
-      const [{ data: txnsData, error: txnErr }, { data: emiPays, error: payErr }] = await Promise.all([
+      const [
+        { data: txnsData, error: txnErr },
+        { data: emiPays, error: payErr },
+        { data: allLoansData },
+        { data: allCustsData }
+      ] = await Promise.all([
         query,
         (!filters?.txn_type || filters.txn_type === 'repayment') && !filters?.bank_account_id
           ? paymentQuery
-          : Promise.resolve({ data: [], error: null })
+          : Promise.resolve({ data: [], error: null }),
+        supabase.from('loans').select('id, loan_number, branch, customer_id'),
+        supabase.from('customers').select('id, name, customer_id, branch')
       ])
       if (txnErr) throw txnErr
 
-      const mappedTxns = (txnsData || []).map((t: any) => ({
-        ...t,
-        bank_account_name: t.bank_accounts?.name || '',
-        customer_name: t.customers?.name || '',
-        loan_number: t.loans?.loan_number || '',
-        _loan_branch: t.loans?.branch || null,
-        _customer_branch: t.customers?.branch || null,
-      }))
+      const loanMap = new Map<string, { id: string; loan_number?: string; branch?: string; customer_id?: string }>(
+        (allLoansData || []).map((l: any) => [l.id, l])
+      )
+      const custMap = new Map<string, { id: string; name?: string; customer_id?: string; branch?: string }>(
+        (allCustsData || []).map((c: any) => [c.id, c])
+      )
 
-      const mappedEmiTxns = (emiPays || []).map((p: any) => ({
-        id: p.id,
-        txn_id: p.receipt_number || p.id,
-        txn_type: 'repayment' as const,
-        direction: 'credit' as const,
-        amount: Number(p.amount_paid || 0),
-        principal: Number(p.principal_paid || 0),
-        interest: Number(p.interest_paid || 0),
-        other_charges: Number(p.penalty || 0),
-        bank_account_id: null,
-        bank_account_name: p.payment_mode ? `${p.payment_mode.toUpperCase()} Counter` : 'Cash Account',
-        customer_id: p.customer_id,
-        customer_name: p.customers?.name || '',
-        loan_id: p.loan_id,
-        loan_number: p.loans?.loan_number || '',
-        reference_number: p.receipt_number || '',
-        description: `EMI #${p.emi_number} Collection (Principal: ₹${Number(p.principal_paid || 0).toLocaleString('en-IN')} + Interest: ₹${Number(p.interest_paid || 0).toLocaleString('en-IN')})`,
-        date: p.payment_date,
-        created_by: p.collected_by || 'Admin User',
-        is_reversed: false,
-        created_at: p.created_at,
-        updated_at: p.updated_at,
-        _loan_branch: p.loans?.branch || null,
-        _customer_branch: p.customers?.branch || null,
-      }))
+      const mappedTxns = (txnsData || []).map((t: any) => {
+        const fallbackLoan = t.loan_id ? loanMap.get(t.loan_id) : null
+        const fallbackCust = t.customer_id
+          ? custMap.get(t.customer_id)
+          : (fallbackLoan?.customer_id ? custMap.get(fallbackLoan.customer_id) : null)
+
+        const loanBranch = t.loans?.branch || fallbackLoan?.branch || null
+        const customerBranch = t.customers?.branch || fallbackCust?.branch || null
+
+        return {
+          ...t,
+          bank_account_name: t.bank_accounts?.name || '',
+          customer_name: t.customers?.name || fallbackCust?.name || '',
+          loan_number: t.loans?.loan_number || fallbackLoan?.loan_number || '',
+          _loan_branch: loanBranch,
+          _customer_branch: customerBranch,
+        }
+      })
+
+      const mappedEmiTxns = (emiPays || []).map((p: any) => {
+        const fallbackLoan = p.loan_id ? loanMap.get(p.loan_id) : null
+        const fallbackCust = p.customer_id
+          ? custMap.get(p.customer_id)
+          : (fallbackLoan?.customer_id ? custMap.get(fallbackLoan.customer_id) : null)
+
+        const loanBranch = p.loans?.branch || fallbackLoan?.branch || null
+        const customerBranch = p.customers?.branch || fallbackCust?.branch || null
+
+        return {
+          id: p.id,
+          txn_id: p.receipt_number || p.id,
+          txn_type: 'repayment' as const,
+          direction: 'credit' as const,
+          amount: Number(p.amount_paid || 0),
+          principal: Number(p.principal_paid || 0),
+          interest: Number(p.interest_paid || 0),
+          other_charges: Number(p.penalty || 0),
+          bank_account_id: null,
+          bank_account_name: p.payment_mode ? `${p.payment_mode.toUpperCase()} Counter` : 'Cash Account',
+          customer_id: p.customer_id,
+          customer_name: p.customers?.name || fallbackCust?.name || '',
+          loan_id: p.loan_id,
+          loan_number: p.loans?.loan_number || fallbackLoan?.loan_number || '',
+          reference_number: p.receipt_number || '',
+          description: `EMI #${p.emi_number} Collection (Principal: ₹${Number(p.principal_paid || 0).toLocaleString('en-IN')} + Interest: ₹${Number(p.interest_paid || 0).toLocaleString('en-IN')})`,
+          date: p.payment_date,
+          created_by: p.collected_by || 'Admin User',
+          is_reversed: false,
+          created_at: p.created_at,
+          updated_at: p.updated_at,
+          _loan_branch: loanBranch,
+          _customer_branch: customerBranch,
+        }
+      })
 
       let results = [...mappedTxns, ...mappedEmiTxns].sort(
         (a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf()
       ) as (import('@/types').Transaction & { _loan_branch?: string | null; _customer_branch?: string | null })[]
 
-      // Client-side branch filter: show transactions for this branch's loans/customers when not querying a specific loan or customer
+      // Client-side branch filter: strictly show transactions for this branch
       if (branchFilter && !filters?.loan_id && !filters?.customer_id) {
         const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
         const target = normalize(branchFilter)
         results = results.filter(t => {
           const loanB = normalize(t._loan_branch)
           const custB = normalize(t._customer_branch)
+
+          // Strict branch isolation for loan-related transactions (disbursement & repayment)
+          if (t.txn_type === 'disbursement' || t.txn_type === 'repayment' || t.loan_id || t.customer_id) {
+            return loanB === target || custB === target
+          }
+
+          // For branch-agnostic operational expenses / deposits
           if (loanB || custB) {
             return loanB === target || custB === target
           }
