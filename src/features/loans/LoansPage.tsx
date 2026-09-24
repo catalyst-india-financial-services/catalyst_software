@@ -529,6 +529,11 @@ function LoanForm({
   // Create Account: saves with status='pending' (awaiting admin activation/KYC)
   // Verified: status shown in table when all mandatory fields are complete AND status is pending
   const handleSave = async (isFinalCreate: boolean) => {
+    if (isCrossBranchCustomer && crossBranchApprovalStatus !== 'approved') {
+      toast.error(`Cross-branch access for ${selectedCustomer?.name} must be approved by ${customerBaseBranch} Branch before creating an account or saving a draft.`)
+      return
+    }
+
     if (isFinalCreate) {
       // Must pass all section validations before creating
       let isValid = true
@@ -659,7 +664,13 @@ function LoanForm({
                 <button
                   key={sec.id}
                   type="button"
-                  onClick={() => setStep(sec.id)}
+                  onClick={() => {
+                    if (sec.id > 1 && isCrossBranchCustomer && crossBranchApprovalStatus !== 'approved') {
+                      toast.error(`Access for ${selectedCustomer?.name} must be approved by ${customerBaseBranch} Branch before proceeding.`)
+                      return
+                    }
+                    setStep(sec.id)
+                  }}
                   className={cn(
                     'w-full flex items-start gap-2 p-2.5 rounded-2xl text-left transition-all border outline-none',
                     isActive
@@ -2167,22 +2178,29 @@ function LoanForm({
             {/* Save Draft Action always visible to park state */}
             <Button
               variant="outline"
-              className="border-amber-200 text-amber-700 hover:bg-amber-50 font-semibold"
+              className="border-amber-200 text-amber-700 hover:bg-amber-50 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={() => handleSave(false)}
+              disabled={isCrossBranchCustomer && crossBranchApprovalStatus !== 'approved'}
               loading={loading === 'draft'}
             >
               Save Draft
             </Button>
 
             {step < 6 ? (
-              <Button type="button" onClick={handleNext} className="bg-brand-600 hover:bg-brand-700 text-white font-semibold">
+              <Button
+                type="button"
+                onClick={handleNext}
+                disabled={isCrossBranchCustomer && crossBranchApprovalStatus !== 'approved'}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 Next Step
               </Button>
             ) : (
               <Button
                 onClick={() => handleSave(true)}
+                disabled={isCrossBranchCustomer && crossBranchApprovalStatus !== 'approved'}
                 loading={loading === 'create'}
-                className="bg-brand-600 hover:bg-brand-700 text-white font-bold shadow-xs"
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Create Account
               </Button>

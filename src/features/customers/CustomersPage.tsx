@@ -9,7 +9,7 @@ import {
   Plus, Download, Eye, SquarePen, Trash2, Phone, SlidersHorizontal,
   UserPlus, ChevronDown, CheckCircle2, ClipboardList, X, AlertCircle,
   RefreshCw, ArrowRight, Lock, ChevronLeft, ChevronRight, AlertTriangle, Building2,
-  GitPullRequest, Clock
+  GitPullRequest, Clock, Sparkles, Send, XCircle
 } from 'lucide-react'
 import {
   useCustomers, useUpdateCustomer,
@@ -808,6 +808,83 @@ export function CreateCustomerModal({
       {/* ── Right Content: Form Fields ── */}
       <div className="flex-1 flex flex-col justify-between bg-white min-h-0 overflow-hidden">
         <div className="flex-1 min-h-0 p-4 overflow-y-auto">
+          {/* Cross-Branch Duplicate Profile Alert & Action Banner */}
+          {isCrossBranchExistingCustomer && matchedCustomerSummary && (
+            <div className="mb-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl space-y-3 animate-in fade-in duration-200 shadow-xs">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-xs text-amber-950 uppercase tracking-wide">
+                      Existing Profile Found in {matchedCustomerSummary.branch} Branch
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-mono">
+                      {matchedCustomerSummary.customer_id}
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-900 font-bold mt-0.5">
+                    {matchedCustomerSummary.name} (Matched via {matchedCustomerSummary.field.toUpperCase()}: {matchedCustomerSummary.matchedValue})
+                  </p>
+                  <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
+                    Customer profiles cannot be duplicated. To create an account for this customer in <strong>{activeBranch || 'your branch'}</strong>, you must request permission from their home branch (<strong>{matchedCustomerSummary.branch} Branch</strong>). Once approved, you can immediately create the account.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-amber-200/80">
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-900 font-semibold">
+                  {existingBranchAccessRecord?.access_status === 'APPROVED' ? (
+                    <span className="text-emerald-700 flex items-center gap-1 font-bold">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Permission Approved by {matchedCustomerSummary.branch} Branch!
+                    </span>
+                  ) : existingBranchAccessRecord?.access_status === 'PENDING' ? (
+                    <span className="text-blue-700 flex items-center gap-1 font-bold">
+                      <Clock className="h-4 w-4 text-blue-600 animate-spin" /> Request Pending Approval from {matchedCustomerSummary.branch} Branch
+                    </span>
+                  ) : existingBranchAccessRecord?.access_status === 'REJECTED' ? (
+                    <span className="text-red-700 flex items-center gap-1 font-bold">
+                      <XCircle className="h-4 w-4 text-red-600" /> Request Rejected by {matchedCustomerSummary.branch} Branch
+                    </span>
+                  ) : (
+                    <span>Status: Permission Required from {matchedCustomerSummary.branch}</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {existingBranchAccessRecord?.access_status === 'APPROVED' ? (
+                    <Button
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        onClose()
+                        navigate(`/loans?newLoan=true&customerId=${matchedCustomerSummary.id}`)
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" /> Open Account in {activeBranch}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      type="button"
+                      onClick={handleSendBranchAccessRequest}
+                      loading={isSendingRequest}
+                      disabled={existingBranchAccessRecord?.access_status === 'PENDING'}
+                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      {existingBranchAccessRecord?.access_status === 'PENDING'
+                        ? 'Request Already Pending'
+                        : `Request Access from ${matchedCustomerSummary.branch}`}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* STEP 1: BASIC DETAILS */}
           {activeSection === 1 && (
             <div className="space-y-3">
