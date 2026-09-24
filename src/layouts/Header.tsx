@@ -1,11 +1,9 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, Search, ChevronDown, Plus, Settings, LogOut, Building2, ArrowLeftRight } from 'lucide-react'
+import { Menu, Search, ChevronDown, Plus, Settings, LogOut, Building2 } from 'lucide-react'
 import { useUIStore } from '@/store/uiStore'
 import { useAuthStore } from '@/store/authStore'
-import { useInterBranchRequests } from '@/hooks/useDb'
-import { InterBranchRequestsModal } from '@/components/InterBranchRequestsModal'
 import { Avatar, CommandPalette } from '@/components/ui'
 import { cn } from '@/utils'
 
@@ -15,16 +13,6 @@ export function Header() {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [showBranchMenu, setShowBranchMenu] = useState(false)
-  const [showInterBranchModal, setShowInterBranchModal] = useState(false)
-  const { data: interBranchRequests = [] } = useInterBranchRequests()
-  const activeBranch = isBranchUser ? userBranch : selectedBranch
-
-  const pendingIncomingCount = useMemo(() => {
-    if (!activeBranch) return interBranchRequests.filter(r => r.status === 'pending').length
-    const target = activeBranch.toLowerCase().replace(/\s+branch$/i, '').trim()
-    return interBranchRequests.filter(r => r.status === 'pending' && r.base_branch.toLowerCase().replace(/\s+branch$/i, '').trim() === target).length
-  }, [interBranchRequests, activeBranch])
-
   const navigate = useNavigate()
   const userRef = useRef<HTMLDivElement>(null)
   const branchMenuRef = useRef<HTMLDivElement>(null)
@@ -127,26 +115,6 @@ export function Header() {
             </div>
           )}
 
-          {/* Inter-Branch Access Requests Button */}
-          <button
-            onClick={() => setShowInterBranchModal(true)}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border transition-all shadow-2xs cursor-pointer",
-              pendingIncomingCount > 0
-                ? "text-amber-800 bg-amber-50 hover:bg-amber-100 border-amber-300 animate-pulse"
-                : "text-slate-700 bg-slate-50 hover:bg-slate-100 border-slate-200"
-            )}
-            title="Cross-Branch Customer Authorization & Access Requests"
-          >
-            <ArrowLeftRight className="h-3.5 w-3.5 text-violet-600" />
-            <span className="hidden lg:inline">Branch Requests</span>
-            {pendingIncomingCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-amber-500 text-white">
-                {pendingIncomingCount}
-              </span>
-            )}
-          </button>
-
           {/* Quick Actions Dropdown */}
           <button
             onClick={() => navigate('/emi-collection')}
@@ -206,12 +174,6 @@ export function Header() {
           </div>
         </div>
       </header>
-
-      {/* Inter-Branch Requests Modal */}
-      <InterBranchRequestsModal
-        isOpen={showInterBranchModal}
-        onClose={() => setShowInterBranchModal(false)}
-      />
 
       {/* Command Palette Spotlight Search */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />

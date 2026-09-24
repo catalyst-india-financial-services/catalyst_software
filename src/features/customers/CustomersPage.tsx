@@ -15,7 +15,7 @@ import {
   useCustomers, useUpdateCustomer,
   useApprovedLeads, useCreateNewCustomer, useSaveDraftCustomer, useUpdateDraftCustomer,
   useCustomerSegmentOptions, useAddCustomerSegmentOption, useMoveCustomerToTrash,
-  useAllCustomersValidationList, useInterBranchRequests, useCreateInterBranchRequest
+  useAllCustomersValidationList, useCustomerBranchAccess, useRequestBranchAccess
 } from '@/hooks/useDb'
 import { InterBranchRequestsModal } from '@/components/InterBranchRequestsModal'
 import type { Customer, Lead, NewCustomerForm } from '@/types'
@@ -325,8 +325,8 @@ export function CreateCustomerModal({
 
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const createInterBranchReq = useCreateInterBranchRequest()
-  const { data: interBranchRequests = [] } = useInterBranchRequests()
+  const requestBranchAccess = useRequestBranchAccess()
+  const { data: allBranchAccess = [] } = useCustomerBranchAccess()
   const [isSendingRequest, setIsSendingRequest] = useState(false)
 
   const duplicateMatch = useMemo(() => {
@@ -351,43 +351,35 @@ export function CreateCustomerModal({
     return !!matchBranchNorm && !!currentBranchNorm && matchBranchNorm !== currentBranchNorm
   }, [matchedCustomerSummary, activeBranch])
 
-  const existingCrossBranchRequest = useMemo(() => {
+  const existingBranchAccessRecord = useMemo(() => {
     if (!matchedCustomerSummary) return null
     const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
     const opNorm = normalize(activeBranch)
-    return interBranchRequests.find(
-      r => r.customer_id === matchedCustomerSummary.id && normalize(r.requesting_branch) === opNorm
+    return allBranchAccess.find(
+      a => a.customer_id === matchedCustomerSummary.id && normalize(a.branch_id) === opNorm
     ) || null
-  }, [matchedCustomerSummary, activeBranch, interBranchRequests])
+  }, [matchedCustomerSummary, activeBranch, allBranchAccess])
 
-  const isAlreadySharedWithCurrent = useMemo(() => {
-    if (!matchedCustomerSummary) return false
-    const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
-    const opNorm = normalize(activeBranch)
-    const shared: string[] = Array.isArray(matchedCustomerSummary.shared_branches) ? matchedCustomerSummary.shared_branches : []
-    return shared.some(sb => normalize(sb) === opNorm)
-  }, [matchedCustomerSummary, activeBranch])
-
-  const handleSendInterBranchRequestFromModal = async () => {
+  const handleSendBranchAccessRequest = async () => {
     if (!matchedCustomerSummary || !matchedCustomerSummary.branch) return
     setIsSendingRequest(true)
     try {
-      await createInterBranchReq.mutateAsync({
+      await requestBranchAccess.mutateAsync({
         customer_id: matchedCustomerSummary.id,
         customer_custom_id: matchedCustomerSummary.customer_id || undefined,
         customer_name: matchedCustomerSummary.name,
         customer_mobile: form.mobile || matchedCustomerSummary.matchedValue || undefined,
         base_branch: matchedCustomerSummary.branch,
-        requesting_branch: activeBranch || 'Head Office',
-        loan_product: 'General Account / Loan',
+        requested_branch: activeBranch || 'Head Office',
         requested_by: user?.full_name || 'Branch Officer',
-        requested_by_email: user?.email || undefined,
+        requested_by_user_id: user?.id,
+        loan_product: 'Account Opening / Loan',
       })
-      toast.success(`Permission request sent to ${matchedCustomerSummary.branch} Branch!`)
+      toast.success(`Access request submitted to ${matchedCustomerSummary.branch} Branch!`)
       onClose()
       navigate(`/loans?newLoan=true&customerId=${matchedCustomerSummary.id}`)
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to send request')
+      toast.error(err?.message || 'Failed to submit request')
     } finally {
       setIsSendingRequest(false)
     }
@@ -816,87 +808,6 @@ export function CreateCustomerModal({
       {/* ── Right Content: Form Fields ── */}
       <div className="flex-1 flex flex-col justify-between bg-white min-h-0 overflow-hidden">
         <div className="flex-1 min-h-0 p-4 overflow-y-auto">
-          {/* Cross-Branch Existing Customer Alert Card */}
-          {isCrossBranchExistingCustomer && matchedCustomerSummary && (
-            <div className="mb-4 p-4 rounded-2xl bg-amber-50/95 border-2 border-amber-300 shadow-sm space-y-3 animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-200/80 text-amber-900 flex items-center justify-center shrink-0 mt-0.5">
-                  <Building2 className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 bg-amber-200 px-2 py-0.5 rounded-full">
-                      Base Profile Found at {matchedCustomerSummary.branch} Branch
-                    </span>
-                    <span className="text-xs font-mono font-bold text-slate-700">
-                      {matchedCustomerSummary.customer_id}
-                    </span>
-                  </div>
-                  <p className="text-sm font-extrabold text-slate-900 mt-1">
-                    {matchedCustomerSummary.name}
-                  </p>
-                  <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
-                    A customer with this {matchedCustomerSummary.field.toUpperCase()} already exists in <strong>{matchedCustomerSummary.branch} Branch</strong>. You do not need to create a duplicate profile.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-amber-200/80">
-                {isAlreadySharedWithCurrent ? (
-                  <div className="flex items-center justify-between w-full">
-                    <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
-                      <CheckCircle2 className="h-4 w-4" /> Profile already shared with {activeBranch || 'your branch'}!
-                    </span>
-                    <Button
-                      size="sm"
-                      type="button"
-                      onClick={() => {
-                        onClose()
-                        navigate(`/loans?newLoan=true&customerId=${matchedCustomerSummary.id}`)
-                      }}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
-                    >
-                      🚀 Open Loan Account in {activeBranch || 'Branch'}
-                    </Button>
-                  </div>
-                ) : existingCrossBranchRequest?.status === 'pending' ? (
-                  <div className="flex items-center justify-between w-full">
-                    <span className="text-xs font-bold text-blue-800 flex items-center gap-1.5">
-                      <Clock className="h-4 w-4" /> Permission request is pending at {matchedCustomerSummary.branch} Branch.
-                    </span>
-                    <Button
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        onClose()
-                        navigate('/loans')
-                      }}
-                      className="text-xs border-blue-300 text-blue-700 font-bold"
-                    >
-                      Track in Loans
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between w-full">
-                    <span className="text-xs text-amber-900 font-medium">
-                      Ask permission to open account &amp; share profile with <strong>{activeBranch || 'this'} Branch</strong>:
-                    </span>
-                    <Button
-                      size="sm"
-                      type="button"
-                      loading={isSendingRequest}
-                      onClick={handleSendInterBranchRequestFromModal}
-                      className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5"
-                    >
-                      <GitPullRequest className="h-3.5 w-3.5" /> Request Permission from {matchedCustomerSummary.branch}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* STEP 1: BASIC DETAILS */}
           {activeSection === 1 && (
             <div className="space-y-3">
@@ -1556,15 +1467,17 @@ export default function CustomersPage() {
 
   const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
   const activeBranch = isBranchUser ? userBranch : selectedBranch
-  const { data: interBranchRequests = [] } = useInterBranchRequests()
+  const { data: allBranchAccess = [] } = useCustomerBranchAccess()
 
   const pendingIncomingCount = useMemo(() => {
-    return interBranchRequests.filter(r => {
-      if (r.status !== 'pending') return false
+    const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+    const currentTarget = normalize(activeBranch)
+    return allBranchAccess.filter(r => {
+      if (r.access_status !== 'PENDING') return false
       if (user?.role === 'admin' || user?.role === 'manager' || !isBranchUser) return true
-      return r.base_branch?.toLowerCase() === activeBranch?.toLowerCase()
+      return normalize(r.base_branch) === currentTarget
     }).length
-  }, [interBranchRequests, user, isBranchUser, activeBranch])
+  }, [allBranchAccess, user, isBranchUser, activeBranch])
 
   // Clear any stale column sorting from previous browser sessions
   useEffect(() => {
@@ -1701,26 +1614,25 @@ export default function CustomersPage() {
       },
     }),
     columnHelper.accessor('branch', {
-      header: 'Branch',
+      header: 'Base Branch',
       cell: (info) => {
         const val = info.getValue()
         const c = info.row.original
-        const isSharedWithCurrent = activeBranch && c.shared_branches?.includes(activeBranch) && c.branch !== activeBranch
+        const isShared = c.access_type === 'Shared'
         if (!val) return <span className="text-xs text-slate-400">Unassigned</span>
         return (
-          <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200/60 whitespace-nowrap">
               <Building2 className="h-3 w-3 text-violet-500" />
               {val}
             </span>
-            {isSharedWithCurrent && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                Shared Access
+            {isShared ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                Shared
               </span>
-            )}
-            {!isSharedWithCurrent && c.shared_branches && c.shared_branches.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-slate-500">
-                +{c.shared_branches.length} shared
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                Local
               </span>
             )}
           </div>
@@ -1791,7 +1703,7 @@ export default function CustomersPage() {
               variant="outline"
               size="sm"
               onClick={() => setShowInterBranchModal(true)}
-              className="relative border-violet-200 text-violet-700 hover:bg-violet-50 hover:border-violet-300"
+              className="relative border-violet-200 text-violet-700 hover:bg-violet-50 hover:border-violet-300 font-bold"
             >
               <GitPullRequest className="h-4 w-4 text-violet-600" />
               Branch Requests
@@ -2071,6 +1983,7 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+
       {/* Inter-Branch Requests Modal */}
       <InterBranchRequestsModal
         isOpen={showInterBranchModal}

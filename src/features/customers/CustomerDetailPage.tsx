@@ -23,7 +23,7 @@ import {
   useSaveCustomerNote, useDeleteCustomerNote, useCustomerActivities, useSaveCustomerActivity,
   useCustomerSegmentOptions, useAddCustomerSegmentOption,
   useCustomerLoans, useLoanSchedule, useCustomerPaymentsForLoan, useCustomerIncomeRecords, useCreatePayment,
-  useMoveCustomerToTrash, useAllCustomersValidationList, useTransactions
+  useMoveCustomerToTrash, useAllCustomersValidationList, useTransactions, useCustomerBranchAccess
 } from '@/hooks/useDb'
 import {
   Button, Card, CardHeader, CardTitle, CardBody, Avatar, StatusBadge, Badge,
@@ -171,6 +171,7 @@ export default function CustomerDetailPage() {
   // --- Auth Store & User Role ---
   const { user, isBranchUser, userBranch } = useAuthStore()
   const userRole = user?.role || 'staff'
+  const isAdmin = userRole === 'admin' || userRole === 'manager' || !isBranchUser
 
   // --- Inline Edit Mode States ---
   const [isEditing, setIsEditing] = useState(false)
@@ -211,6 +212,28 @@ export default function CustomerDetailPage() {
   const { data: activities = [], isLoading: isActsLoading } = useCustomerActivities(customerId)
   const { data: segmentOptions = [] } = useCustomerSegmentOptions()
   const { data: allCustomersValidation = [] } = useAllCustomersValidationList()
+  const { data: branchAccessList = [] } = useCustomerBranchAccess()
+
+  const normalizeBranch = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+
+  const sharedBranchRecords = useMemo(() => {
+    if (!customer) return []
+    return branchAccessList.filter(
+      a => (a.customer_id === customer.id || a.customer_id === (customer as any).customer_id) &&
+           a.access_status === 'APPROVED'
+    )
+  }, [customer, branchAccessList])
+
+  const isSharedWithCurrentBranch = useMemo(() => {
+    if (!customer || !activeBranch) return false
+    const normActive = normalizeBranch(activeBranch)
+    return sharedBranchRecords.some(a => normalizeBranch(a.branch_id) === normActive)
+  }, [customer, activeBranch, sharedBranchRecords])
+
+  const isCustomerBaseBranch = useMemo(() => {
+    if (!customer || !activeBranch) return true
+    return normalizeBranch(customer.branch) === normalizeBranch(activeBranch)
+  }, [customer, activeBranch])
 
   // --- Mutations ---
   const updateProfile = useUpdateCustomerProfile()
@@ -238,13 +261,21 @@ export default function CustomerDetailPage() {
   const [isActionsOpen, setIsActionsOpen] = useState(false)
 
   // --- Branch ownership guard ---
-  // Redirect branch users if they try to access a customer from another branch via URL
+  // Redirect branch users if they try to access an unauthorized customer from another branch via URL
   useEffect(() => {
-    if (isBranchUser && userBranch && customer && customer.branch !== userBranch) {
-      toast.error(`Access denied: This customer belongs to ${customer.branch || 'another'} branch.`)
-      navigate('/customers', { replace: true })
+    if (isBranchUser && userBranch && customer && !isCustLoading) {
+      const isBase = normalizeBranch(customer.branch) === normalizeBranch(userBranch)
+      const isApprovedShared = branchAccessList.some(
+        a => (a.customer_id === customer.id || a.customer_id === (customer as any).customer_id) &&
+             normalizeBranch(a.branch_id) === normalizeBranch(userBranch) &&
+             a.access_status === 'APPROVED'
+      )
+      if (!isBase && !isApprovedShared) {
+        toast.error(`Access denied: This customer belongs to ${customer.branch || 'another'} branch and has not been shared with your branch.`)
+        navigate('/customers', { replace: true })
+      }
     }
-  }, [isBranchUser, userBranch, customer, navigate])
+  }, [isBranchUser, userBranch, customer, isCustLoading, branchAccessList, navigate])
 
   // Track changes to prevent leaving with unsaved changes
   const hasChanges = useMemo(() => {
@@ -1398,7 +1429,17 @@ export default function CustomerDetailPage() {
                   <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5 text-amber-500" /> Since {dayjs(customer.created_at).format('DD MMM YYYY')}</span>
                   <span className="flex items-center gap-1.5"><Briefcase className="h-3.5 w-3.5 text-sky-500" /> Assigned: {customer.employee_assigned || <span className="text-slate-350 italic font-medium">Unassigned</span>}</span>
                   <span className="flex items-center gap-1.5"><Award className="h-3.5 w-3.5 text-purple-500" /> Lead Source: {customer.lead_source || <span className="text-slate-350 italic font-medium">Unknown</span>}</span>
-                  <span className="flex items-center gap-1.5"><Building className="h-3.5 w-3.5 text-teal-500" /> Branch: {customer.branch}</span>
+                  <span className="flex items-center gap-1.5"><Building className="h-3.5 w-3.5 text-teal-500" /> Base Branch: {customer.branch}</span>
+                  {isSharedWithCurrentBranch && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700 border border-violet-200">
+                      <Building2 className="h-3 w-3" /> Shared with {activeBranch}
+                    </span>
+                  )}
+                  {isAdmin && sharedBranchRecords.length > 0 && !isSharedWithCurrentBranch && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                      <Building2 className="h-3 w-3" /> Shared ({sharedBranchRecords.map(r => r.branch_id).join(', ')})
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -1461,16 +1502,7 @@ export default function CustomerDetailPage() {
                     onClick={() => setIsActionsOpen(false)}
                   />
                   {/* Dropdown — above overlay */}
-                  <div className="absolute right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 w-52 z-[9999]">
-                    <button
-                      onClick={() => {
-                        setIsActionsOpen(false)
-                        navigate(`/loans?newLoan=true&customerId=${customer.id}`)
-                      }}
-                      className="w-full text-left px-4 py-2 text-xs text-brand-700 hover:bg-brand-50 font-bold flex items-center gap-2"
-                    >
-                      <Plus className="h-4 w-4 text-brand-600" /> Create Loan Account
-                    </button>
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 w-48 z-[9999]">
                     <button
                       onClick={() => { setIsActionsOpen(false); handleExportPDF() }}
                       className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-bold flex items-center gap-2"
@@ -1695,13 +1727,6 @@ export default function CustomerDetailPage() {
                         </button>
                       </div>
                     )}
-                    <Button
-                      size="sm"
-                      onClick={() => navigate(`/loans?newLoan=true&customerId=${customer.id}`)}
-                      className="text-xs flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white font-bold shadow-xs"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> Create Loan Account
-                    </Button>
                     <Button
                       size="sm"
                       onClick={() => navigate('/loans')}

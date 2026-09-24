@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
-import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Lead, LeadFollowup, NewCustomerForm, InterBranchRequest } from '@/types'
+import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Lead, LeadFollowup, NewCustomerForm, CustomerBranchAccess, BranchAccessStatus } from '@/types'
 import { calculateEMI, generateEMISchedule, calculateLoanSchedule } from '@/utils'
 import { checkCustomerDuplicatesInDb, type CustomerSummary } from '@/utils/customerValidation'
 import dayjs from 'dayjs'
@@ -172,24 +172,59 @@ export function useCustomers() {
   return useQuery({
     queryKey: ['customers', branchFilter],
     queryFn: async () => {
-      let query = supabase
+      const { data: allCusts, error: custError } = await supabase
         .from('customers')
         .select('*')
         .order('created_at', { ascending: false })
-      const { data, error } = await query
-      if (error) throw error
-      let list = (data || []) as Customer[]
-      if (branchFilter) {
-        const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
-        const target = normalize(branchFilter)
-        list = list.filter((c: any) => {
-          const b = normalize(c.branch)
-          if (b === target) return true
-          const shared: string[] = Array.isArray(c.shared_branches) ? c.shared_branches : []
-          return shared.some(sb => normalize(sb) === target)
-        })
+      if (custError) throw custError
+
+      const customersList = (allCusts || []) as Customer[]
+      if (!branchFilter) {
+        return customersList.map(c => ({
+          ...c,
+          base_branch: c.branch || 'Head Office',
+          access_type: 'Owner' as const,
+        }))
       }
-      return list
+
+      const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+      const target = normalize(branchFilter)
+
+      // Fetch approved customer_branch_access records for this branch
+      let approvedAccessCustIds: string[] = []
+      try {
+        const { data: accessData } = await supabase
+          .from('customer_branch_access')
+          .select('customer_id, branch_id, access_status')
+          .eq('access_status', 'APPROVED')
+        if (accessData) {
+          approvedAccessCustIds = accessData
+            .filter(a => normalize(a.branch_id) === target)
+            .map(a => a.customer_id)
+        }
+      } catch {}
+
+      // Fallback: Also check local cache
+      const localApproved = getLocalBranchAccess()
+        .filter(a => normalize(a.branch_id) === target && a.access_status === 'APPROVED')
+        .map(a => a.customer_id)
+      const allApprovedIds = new Set([...approvedAccessCustIds, ...localApproved])
+
+      // Return Local Owner OR Approved Shared customers
+      return customersList
+        .filter(c => {
+          const isOwner = normalize(c.branch) === target
+          const isShared = allApprovedIds.has(c.id)
+          return isOwner || isShared
+        })
+        .map(c => {
+          const isOwner = normalize(c.branch) === target
+          return {
+            ...c,
+            base_branch: c.branch || 'Head Office',
+            access_type: (isOwner ? 'Owner' : 'Shared') as 'Owner' | 'Shared',
+          }
+        })
     },
   })
 }
@@ -217,9 +252,12 @@ export function useAllCustomersValidationList() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, customer_id, name, mobile, pan, aadhaar, status, branch, shared_branches')
+        .select('id, customer_id, name, mobile, pan, aadhaar, status, branch')
       if (error) throw error
-      return (data || []) as CustomerSummary[]
+      return (data || []).map(c => ({
+        ...c,
+        base_branch: c.branch || 'Head Office',
+      })) as CustomerSummary[]
     },
     staleTime: 10_000,
   })
@@ -3021,144 +3059,146 @@ export function usePermanentlyDeleteFromTrash() {
   })
 }
 
-// ─── Inter-Branch Account Creation & Access Requests ─────────────────────────
+// ─── Customer Branch Access (Cross-Branch Account & Profile Sharing) ─────────
 
-const LOCAL_IBR_KEY = 'catalyst_inter_branch_requests_cache'
+const LOCAL_CBA_KEY = 'catalyst_customer_branch_access_cache'
 
-function getLocalInterBranchRequests(): InterBranchRequest[] {
+export function getLocalBranchAccess(): CustomerBranchAccess[] {
   try {
-    const raw = localStorage.getItem(LOCAL_IBR_KEY)
+    const raw = localStorage.getItem(LOCAL_CBA_KEY)
     return raw ? JSON.parse(raw) : []
   } catch {
     return []
   }
 }
 
-function saveLocalInterBranchRequests(data: InterBranchRequest[]) {
+export function saveLocalBranchAccess(data: CustomerBranchAccess[]) {
   try {
-    localStorage.setItem(LOCAL_IBR_KEY, JSON.stringify(data))
+    localStorage.setItem(LOCAL_CBA_KEY, JSON.stringify(data))
   } catch {}
 }
 
-export function useInterBranchRequests() {
+export function useCustomerBranchAccess() {
   return useQuery({
-    queryKey: ['interBranchRequests'],
+    queryKey: ['customerBranchAccess'],
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
-          .from('inter_branch_requests')
+        const { data: accessData, error } = await supabase
+          .from('customer_branch_access')
           .select('*')
           .order('created_at', { ascending: false })
-        if (!error && data) {
-          saveLocalInterBranchRequests(data as InterBranchRequest[])
-          return data as InterBranchRequest[]
+
+        if (!error && accessData) {
+          // Join customer details for display
+          const { data: custData } = await supabase
+            .from('customers')
+            .select('id, customer_id, name, mobile, branch')
+
+          const custMap = new Map((custData || []).map(c => [c.id, c]))
+          const enriched: CustomerBranchAccess[] = accessData.map(a => {
+            const c = custMap.get(a.customer_id)
+            return {
+              ...a,
+              customer_custom_id: c?.customer_id,
+              customer_name: c?.name || (a as any).customer_name || 'Customer',
+              customer_mobile: c?.mobile || (a as any).customer_mobile,
+              base_branch: c?.branch || (a as any).base_branch || 'Head Office',
+            }
+          })
+          saveLocalBranchAccess(enriched)
+          return enriched
         }
       } catch {}
-      return getLocalInterBranchRequests()
+      return getLocalBranchAccess()
     },
     staleTime: 5_000,
   })
 }
 
-export function useCreateInterBranchRequest() {
+export function useRequestBranchAccess() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (req: Omit<InterBranchRequest, 'id' | 'created_at' | 'updated_at' | 'status'>) => {
-      const payload: InterBranchRequest = {
-        ...req,
-        id: crypto.randomUUID ? crypto.randomUUID() : `req_${Date.now()}`,
-        status: 'pending',
-        requested_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+    mutationFn: async (req: {
+      customer_id: string
+      customer_custom_id?: string
+      customer_name?: string
+      customer_mobile?: string
+      base_branch: string
+      requested_branch: string
+      loan_product?: string
+      sanctioned_amount?: number
+      loan_purpose?: string
+      requested_by: string
+      requested_by_user_id?: string
+      notes?: string
+    }) => {
+      const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+      if (normalize(req.base_branch) === normalize(req.requested_branch)) {
+        throw new Error('Cannot request cross-branch access for customer in the same branch.')
       }
+
+      const now = new Date().toISOString()
+      const payload: Partial<CustomerBranchAccess> = {
+        customer_id: req.customer_id,
+        branch_id: req.requested_branch,
+        access_status: 'PENDING',
+        requested_by: req.requested_by,
+        requested_by_user_id: req.requested_by_user_id,
+        requested_at: now,
+        loan_product: req.loan_product,
+        sanctioned_amount: req.sanctioned_amount,
+        loan_purpose: req.loan_purpose,
+        notes: req.notes,
+        updated_at: now,
+      }
+
       try {
         const { data, error } = await supabase
-          .from('inter_branch_requests')
-          .insert(payload)
+          .from('customer_branch_access')
+          .upsert(payload, { onConflict: 'customer_id,branch_id' })
           .select()
           .single()
+
         if (!error && data) {
-          const local = getLocalInterBranchRequests().filter(r => r.id !== data.id)
-          saveLocalInterBranchRequests([data as InterBranchRequest, ...local])
-          return data as InterBranchRequest
+          const item: CustomerBranchAccess = {
+            ...data,
+            customer_custom_id: req.customer_custom_id,
+            customer_name: req.customer_name,
+            customer_mobile: req.customer_mobile,
+            base_branch: req.base_branch,
+          }
+          const local = getLocalBranchAccess().filter(a => !(a.customer_id === req.customer_id && a.branch_id === req.requested_branch))
+          saveLocalBranchAccess([item, ...local])
+          return item
         }
       } catch {}
-      const local = getLocalInterBranchRequests().filter(r => r.id !== payload.id)
-      saveLocalInterBranchRequests([payload, ...local])
-      return payload
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['interBranchRequests'] })
-      queryClient.invalidateQueries({ queryKey: ['notificationsData'] })
-    },
-  })
-}
 
-export function useApproveInterBranchRequest() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ requestId, reviewedBy }: { requestId: string; reviewedBy: string }) => {
-      const now = new Date().toISOString()
-      
-      // 1. Fetch request details to get customer_id and requesting_branch
-      let targetReq: InterBranchRequest | undefined
-      try {
-        const { data } = await supabase
-          .from('inter_branch_requests')
-          .select('*')
-          .eq('id', requestId)
-          .maybeSingle()
-        if (data) targetReq = data as InterBranchRequest
-      } catch {}
-      if (!targetReq) {
-        targetReq = getLocalInterBranchRequests().find(r => r.id === requestId)
+      // Fallback offline / local cache
+      const localItem: CustomerBranchAccess = {
+        id: crypto.randomUUID ? crypto.randomUUID() : `cba_${Date.now()}`,
+        customer_id: req.customer_id,
+        branch_id: req.requested_branch,
+        access_status: 'PENDING',
+        requested_by: req.requested_by,
+        requested_by_user_id: req.requested_by_user_id,
+        requested_at: now,
+        loan_product: req.loan_product,
+        sanctioned_amount: req.sanctioned_amount,
+        loan_purpose: req.loan_purpose,
+        notes: req.notes,
+        created_at: now,
+        updated_at: now,
+        customer_custom_id: req.customer_custom_id,
+        customer_name: req.customer_name,
+        customer_mobile: req.customer_mobile,
+        base_branch: req.base_branch,
       }
-      if (!targetReq) throw new Error('Request not found')
-
-      // 2. Update request status in database
-      try {
-        await supabase
-          .from('inter_branch_requests')
-          .update({
-            status: 'approved',
-            reviewed_by: reviewedBy,
-            reviewed_at: now,
-            updated_at: now,
-          })
-          .eq('id', requestId)
-      } catch {}
-
-      // 3. Share customer profile with the requesting branch
-      try {
-        const { data: custData } = await supabase
-          .from('customers')
-          .select('shared_branches')
-          .eq('id', targetReq.customer_id)
-          .maybeSingle()
-
-        const currentShared: string[] = Array.isArray(custData?.shared_branches) ? custData.shared_branches : []
-        if (!currentShared.includes(targetReq.requesting_branch)) {
-          const updatedShared = [...currentShared, targetReq.requesting_branch]
-          await supabase
-            .from('customers')
-            .update({
-              shared_branches: updatedShared,
-              updated_at: now,
-            })
-            .eq('id', targetReq.customer_id)
-        }
-      } catch {}
-
-      // Update local storage cache
-      const local = getLocalInterBranchRequests().map(r =>
-        r.id === requestId ? { ...r, status: 'approved' as const, reviewed_by: reviewedBy, reviewed_at: now } : r
-      )
-      saveLocalInterBranchRequests(local)
-      return { success: true }
+      const local = getLocalBranchAccess().filter(a => !(a.customer_id === req.customer_id && a.branch_id === req.requested_branch))
+      saveLocalBranchAccess([localItem, ...local])
+      return localItem
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['interBranchRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['customerBranchAccess'] })
       queryClient.invalidateQueries({ queryKey: ['customers'] })
       queryClient.invalidateQueries({ queryKey: ['allCustomers'] })
       queryClient.invalidateQueries({ queryKey: ['notificationsData'] })
@@ -3166,36 +3206,209 @@ export function useApproveInterBranchRequest() {
   })
 }
 
-export function useRejectInterBranchRequest() {
+export function useApproveBranchAccess() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ requestId, reviewedBy, rejectionReason }: { requestId: string; reviewedBy: string; rejectionReason?: string }) => {
+    mutationFn: async ({
+      accessId,
+      customerId,
+      branchId,
+      approvedBy,
+      approvedByUserId,
+      userBranch,
+      userRole,
+    }: {
+      accessId?: string
+      customerId?: string
+      branchId?: string
+      approvedBy: string
+      approvedByUserId?: string
+      userBranch?: string | null
+      userRole?: string
+    }) => {
       const now = new Date().toISOString()
+      const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+
+      // 1. Fetch access record and verify base branch authority
+      let target: CustomerBranchAccess | undefined
       try {
-        await supabase
-          .from('inter_branch_requests')
-          .update({
-            status: 'rejected',
-            reviewed_by: reviewedBy,
-            reviewed_at: now,
-            rejection_reason: rejectionReason || 'Declined by base branch',
-            updated_at: now,
-          })
-          .eq('id', requestId)
+        if (accessId) {
+          const { data } = await supabase.from('customer_branch_access').select('*').eq('id', accessId).maybeSingle()
+          if (data) target = data
+        } else if (customerId && branchId) {
+          const { data } = await supabase.from('customer_branch_access').select('*').eq('customer_id', customerId).eq('branch_id', branchId).maybeSingle()
+          if (data) target = data
+        }
       } catch {}
 
-      const local = getLocalInterBranchRequests().map(r =>
-        r.id === requestId
-          ? { ...r, status: 'rejected' as const, reviewed_by: reviewedBy, reviewed_at: now, rejection_reason: rejectionReason }
-          : r
+      if (!target) {
+        target = getLocalBranchAccess().find(a => (accessId && a.id === accessId) || (customerId && branchId && a.customer_id === customerId && a.branch_id === branchId))
+      }
+
+      if (!target) throw new Error('Branch access record not found')
+
+      // Fetch customer to check base branch
+      let custBaseBranch = target.base_branch
+      try {
+        const { data: cust } = await supabase.from('customers').select('branch').eq('id', target.customer_id).maybeSingle()
+        if (cust?.branch) custBaseBranch = cust.branch
+      } catch {}
+
+      // Critical Security Check: Only Base Branch or Admin can approve
+      const isBaseBranchUser = userBranch && custBaseBranch && normalize(userBranch) === normalize(custBaseBranch)
+      const isAdmin = userRole === 'admin' || userRole === 'manager' || !userBranch
+
+      if (!isBaseBranchUser && !isAdmin) {
+        throw new Error(`Security Exception: Only authorized users from the customer's base branch (${custBaseBranch}) or an Admin can approve this request.`)
+      }
+
+      // Update in Supabase
+      try {
+        if (target.id) {
+          await supabase
+            .from('customer_branch_access')
+            .update({
+              access_status: 'APPROVED',
+              approved_by: approvedBy,
+              approved_by_user_id: approvedByUserId,
+              approved_at: now,
+              updated_at: now,
+            })
+            .eq('id', target.id)
+        }
+      } catch {}
+
+      // Update local storage cache
+      const local = getLocalBranchAccess().map(a =>
+        a.id === target?.id || (a.customer_id === target?.customer_id && a.branch_id === target?.branch_id)
+          ? { ...a, access_status: 'APPROVED' as const, approved_by: approvedBy, approved_by_user_id: approvedByUserId, approved_at: now, updated_at: now }
+          : a
       )
-      saveLocalInterBranchRequests(local)
+      saveLocalBranchAccess(local)
       return { success: true }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['interBranchRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['customerBranchAccess'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['allCustomers'] })
       queryClient.invalidateQueries({ queryKey: ['notificationsData'] })
     },
   })
 }
 
+export function useRejectBranchAccess() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      accessId,
+      customerId,
+      branchId,
+      rejectedBy,
+      rejectedByUserId,
+      rejectionReason,
+      userBranch,
+      userRole,
+    }: {
+      accessId?: string
+      customerId?: string
+      branchId?: string
+      rejectedBy: string
+      rejectedByUserId?: string
+      rejectionReason?: string
+      userBranch?: string | null
+      userRole?: string
+    }) => {
+      const now = new Date().toISOString()
+      const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+
+      let target: CustomerBranchAccess | undefined
+      try {
+        if (accessId) {
+          const { data } = await supabase.from('customer_branch_access').select('*').eq('id', accessId).maybeSingle()
+          if (data) target = data
+        } else if (customerId && branchId) {
+          const { data } = await supabase.from('customer_branch_access').select('*').eq('customer_id', customerId).eq('branch_id', branchId).maybeSingle()
+          if (data) target = data
+        }
+      } catch {}
+
+      if (!target) {
+        target = getLocalBranchAccess().find(a => (accessId && a.id === accessId) || (customerId && branchId && a.customer_id === customerId && a.branch_id === branchId))
+      }
+
+      if (!target) throw new Error('Branch access record not found')
+
+      let custBaseBranch = target.base_branch
+      try {
+        const { data: cust } = await supabase.from('customers').select('branch').eq('id', target.customer_id).maybeSingle()
+        if (cust?.branch) custBaseBranch = cust.branch
+      } catch {}
+
+      const isBaseBranchUser = userBranch && custBaseBranch && normalize(userBranch) === normalize(custBaseBranch)
+      const isAdmin = userRole === 'admin' || userRole === 'manager' || !userBranch
+
+      if (!isBaseBranchUser && !isAdmin) {
+        throw new Error(`Security Exception: Only authorized users from the customer's base branch (${custBaseBranch}) or an Admin can reject this request.`)
+      }
+
+      try {
+        if (target.id) {
+          await supabase
+            .from('customer_branch_access')
+            .update({
+              access_status: 'REJECTED',
+              rejected_by: rejectedBy,
+              rejected_by_user_id: rejectedByUserId,
+              rejected_at: now,
+              rejection_reason: rejectionReason || 'Declined by base branch',
+              updated_at: now,
+            })
+            .eq('id', target.id)
+        }
+      } catch {}
+
+      const local = getLocalBranchAccess().map(a =>
+        a.id === target?.id || (a.customer_id === target?.customer_id && a.branch_id === target?.branch_id)
+          ? { ...a, access_status: 'REJECTED' as const, rejected_by: rejectedBy, rejected_by_user_id: rejectedByUserId, rejected_at: now, rejection_reason: rejectionReason, updated_at: now }
+          : a
+      )
+      saveLocalBranchAccess(local)
+      return { success: true }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerBranchAccess'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['allCustomers'] })
+      queryClient.invalidateQueries({ queryKey: ['notificationsData'] })
+    },
+  })
+}
+
+export function useRevokeBranchAccess() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ accessId, customerId, branchId }: { accessId?: string; customerId?: string; branchId?: string }) => {
+      const now = new Date().toISOString()
+      try {
+        if (accessId) {
+          await supabase.from('customer_branch_access').update({ access_status: 'REVOKED', updated_at: now }).eq('id', accessId)
+        } else if (customerId && branchId) {
+          await supabase.from('customer_branch_access').update({ access_status: 'REVOKED', updated_at: now }).eq('customer_id', customerId).eq('branch_id', branchId)
+        }
+      } catch {}
+
+      const local = getLocalBranchAccess().map(a =>
+        (accessId && a.id === accessId) || (customerId && branchId && a.customer_id === customerId && a.branch_id === branchId)
+          ? { ...a, access_status: 'REVOKED' as const, updated_at: now }
+          : a
+      )
+      saveLocalBranchAccess(local)
+      return { success: true }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerBranchAccess'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['allCustomers'] })
+    },
+  })
+}

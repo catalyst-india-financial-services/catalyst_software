@@ -40,32 +40,38 @@ export interface Customer {
   cibil_score_date?: string | null
   customer_category?: string | null
   branch?: string | null
-  shared_branches?: string[]
+  base_branch?: string | null
+  access_type?: 'Owner' | 'Shared'
 }
 
-export type InterBranchRequestStatus = 'pending' | 'approved' | 'rejected'
+export type BranchAccessStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVOKED' | 'OWNER'
 
-export interface InterBranchRequest {
+export interface CustomerBranchAccess {
   id: string
   customer_id: string
-  customer_custom_id?: string
-  customer_name: string
-  customer_mobile?: string
-  base_branch: string
-  requesting_branch: string
+  branch_id: string
+  access_status: BranchAccessStatus
+  requested_by?: string
+  requested_by_user_id?: string
+  requested_at?: string
+  approved_by?: string
+  approved_by_user_id?: string
+  approved_at?: string
+  rejected_by?: string
+  rejected_by_user_id?: string
+  rejected_at?: string
+  rejection_reason?: string
   loan_product?: string
   sanctioned_amount?: number
   loan_purpose?: string
-  status: InterBranchRequestStatus
-  requested_by: string
-  requested_by_email?: string
-  requested_at?: string
-  reviewed_by?: string
-  reviewed_at?: string
-  rejection_reason?: string
   notes?: string
   created_at?: string
   updated_at?: string
+  // Virtual / Join fields for UI convenience
+  customer_custom_id?: string
+  customer_name?: string
+  customer_mobile?: string
+  base_branch?: string
 }
 
 export interface Guarantor {
