@@ -3254,12 +3254,13 @@ export function useApproveBranchAccess() {
         if (cust?.branch) custBaseBranch = cust.branch
       } catch {}
 
-      // Critical Security Check: Only Base Branch or Admin can approve
+      // Critical Security Check: Only Base Branch or Global Admin can approve
       const isBaseBranchUser = userBranch && custBaseBranch && normalize(userBranch) === normalize(custBaseBranch)
-      const isAdmin = userRole === 'admin' || userRole === 'manager' || !userBranch
+      const isRequestingBranchUser = userBranch && normalize(userBranch) === normalize(target.branch_id)
+      const isGlobalAdmin = (userRole === 'admin' || userRole === 'manager') && !isRequestingBranchUser
 
-      if (!isBaseBranchUser && !isAdmin) {
-        throw new Error(`Security Exception: Only authorized users from the customer's base branch (${custBaseBranch}) or an Admin can approve this request.`)
+      if (!isBaseBranchUser && !isGlobalAdmin) {
+        throw new Error(`Security Exception: Users in the requesting branch (${target.branch_id}) cannot approve cross-branch requests. Approval must come from ${custBaseBranch} Branch or Admin.`)
       }
 
       // Update in Supabase
@@ -3345,10 +3346,11 @@ export function useRejectBranchAccess() {
       } catch {}
 
       const isBaseBranchUser = userBranch && custBaseBranch && normalize(userBranch) === normalize(custBaseBranch)
-      const isAdmin = userRole === 'admin' || userRole === 'manager' || !userBranch
+      const isRequestingBranchUser = userBranch && normalize(userBranch) === normalize(target.branch_id)
+      const isGlobalAdmin = (userRole === 'admin' || userRole === 'manager') && !isRequestingBranchUser
 
-      if (!isBaseBranchUser && !isAdmin) {
-        throw new Error(`Security Exception: Only authorized users from the customer's base branch (${custBaseBranch}) or an Admin can reject this request.`)
+      if (!isBaseBranchUser && !isGlobalAdmin) {
+        throw new Error(`Security Exception: Users in the requesting branch (${target.branch_id}) cannot decline this request. Action must come from ${custBaseBranch} Branch or Admin.`)
       }
 
       try {

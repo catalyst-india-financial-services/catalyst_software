@@ -295,24 +295,6 @@ function LoanForm({
     }
   }
 
-  const handleInstantApproveCrossBranch = async () => {
-    if (!existingBranchAccessRecord) return
-    try {
-      await approveBranchAccess.mutateAsync({
-        accessId: existingBranchAccessRecord.id,
-        customerId: existingBranchAccessRecord.customer_id,
-        branchId: existingBranchAccessRecord.branch_id,
-        approvedBy: user?.full_name || 'Branch Manager',
-        approvedByUserId: user?.id,
-        userBranch: activeBranch,
-        userRole: user?.role,
-      })
-      toast.success(`Cross-branch access approved for ${operatingBranch} Branch!`)
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to approve request')
-    }
-  }
-
   // Options for branch dropdown, including all customers clearly labeled with branch indicators
   const dropdownCustomerOptions = useMemo(() => {
     const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
@@ -1060,20 +1042,18 @@ function LoanForm({
                                 ⏳ Permission Request Pending ({customerBaseBranch} Branch)
                               </p>
                               <p className="text-[11px] text-blue-800 mt-0.5 leading-relaxed">
-                                Request sent by <strong>{existingBranchAccessRecord?.requested_by || 'Staff'}</strong> on {formatDate(existingBranchAccessRecord?.requested_at || new Date().toISOString())}. Waiting for {customerBaseBranch} Branch to approve.
+                                Request sent by <strong>{existingBranchAccessRecord?.requested_by || 'Staff'}</strong> on {formatDate(existingBranchAccessRecord?.requested_at || new Date().toISOString())}. Waiting for {customerBaseBranch} Branch or Admin to approve.
                               </p>
                             </div>
                           </div>
-                          {(user?.role === 'admin' || (userBranch && (userBranch.toLowerCase().replace(/\s+branch$/i, '').trim() === (customerBaseBranch || '').toLowerCase().replace(/\s+branch$/i, '').trim()))) && (
-                            <Button
-                              size="sm"
-                              type="button"
-                              onClick={handleInstantApproveCrossBranch}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs shrink-0 font-bold"
-                            >
-                              <Check className="h-3.5 w-3.5" /> Accept &amp; Share Now
-                            </Button>
-                          )}
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-blue-200/80">
+                          <span className="text-[10px] text-blue-700 font-medium">
+                            Status: <strong className="text-blue-900">Pending Approval from {customerBaseBranch} Branch</strong>
+                          </span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                            Awaiting Base Branch Action
+                          </span>
                         </div>
                       </div>
                     )}

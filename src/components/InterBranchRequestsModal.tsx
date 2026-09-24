@@ -21,6 +21,7 @@ import {
   useCustomerBranchAccess,
   useApproveBranchAccess,
   useRejectBranchAccess,
+  useRevokeBranchAccess,
 } from '@/hooks/useDb'
 import { useAuthStore } from '@/store/authStore'
 import type { CustomerBranchAccess } from '@/types'
@@ -48,6 +49,7 @@ export function InterBranchRequestsModal({
   const { data: allRequests = [], isLoading } = useCustomerBranchAccess()
   const approveReq = useApproveBranchAccess()
   const rejectReq = useRejectBranchAccess()
+  const revokeReq = useRevokeBranchAccess()
 
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState('')
@@ -134,6 +136,22 @@ export function InterBranchRequestsModal({
       setRejectReason('')
     } catch (err: any) {
       toast.error(err?.message || 'Failed to decline request')
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  const handleRevoke = async (req: CustomerBranchAccess) => {
+    setActionLoadingId(req.id)
+    try {
+      await revokeReq.mutateAsync({
+        accessId: req.id,
+        customerId: req.customer_id,
+        branchId: req.branch_id,
+      })
+      toast.success(`Cross-branch access for ${req.branch_id} Branch revoked.`)
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to revoke access')
     } finally {
       setActionLoadingId(null)
     }
@@ -268,7 +286,8 @@ export function InterBranchRequestsModal({
               const isApproved = req.access_status === 'APPROVED'
               const isRejected = req.access_status === 'REJECTED'
               const isBaseBranchUser = activeBranch && normalize(activeBranch) === normalize(req.base_branch)
-              const canApprove = isBaseBranchUser || isAdmin
+              const isRequestingBranch = activeBranch && normalize(activeBranch) === normalize(req.branch_id)
+              const canApprove = isBaseBranchUser || (isAdmin && !isRequestingBranch)
 
               return (
                 <div
@@ -343,7 +362,7 @@ export function InterBranchRequestsModal({
                       )}
                     </div>
 
-                    {/* Action buttons (only for pending incoming or admin) */}
+                    {/* Action buttons for pending incoming */}
                     {isPending && (
                       <div className="flex items-center gap-2 shrink-0">
                         {canApprove ? (
@@ -399,6 +418,21 @@ export function InterBranchRequestsModal({
                             Waiting for approval by <strong>{req.base_branch} Branch</strong>.
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Action button for approved items: Revoke */}
+                    {isApproved && (isBaseBranchUser || (isAdmin && !isRequestingBranch)) && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          loading={actionLoadingId === req.id}
+                          onClick={() => handleRevoke(req)}
+                          className="border-slate-200 text-slate-600 hover:text-red-700 hover:bg-red-50 text-[11px] font-bold shrink-0"
+                        >
+                          <Ban className="h-3.5 w-3.5" /> Revoke Access
+                        </Button>
                       </div>
                     )}
                   </div>
