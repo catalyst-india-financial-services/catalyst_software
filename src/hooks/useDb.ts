@@ -217,7 +217,7 @@ export function useAllCustomersValidationList() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, customer_id, name, mobile, pan, aadhaar, status')
+        .select('id, customer_id, name, mobile, pan, aadhaar, status, branch, shared_branches')
       if (error) throw error
       return (data || []) as CustomerSummary[]
     },

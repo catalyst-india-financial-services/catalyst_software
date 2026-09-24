@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, createColumnHelper, type SortingState
@@ -70,7 +70,17 @@ function isLoanFieldFilled(value: unknown) {
   return value !== null && value !== undefined
 }
 
-function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose: () => void; onCompletionChange?: (completion: number) => void }) {
+function LoanForm({
+  loan,
+  initialCustomerId,
+  onClose,
+  onCompletionChange
+}: {
+  loan?: Loan
+  initialCustomerId?: string
+  onClose: () => void
+  onCompletionChange?: (completion: number) => void
+}) {
   const { data: customers = [] } = useCustomers()
   const { data: allCustomers = [] } = useAllCustomers()
   const activeCustomers = customers.filter(c => c.status === 'active')
@@ -101,7 +111,7 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
 
   // Form State
   const [formData, setFormData] = useState({
-    customer_id: loan?.customer_id ?? '',
+    customer_id: loan?.customer_id ?? (initialCustomerId ?? ''),
     loan_product: loan?.loan_product ?? 'Personal Loan',
     loan_category: loan?.loan_category ?? 'Retail',
     loan_purpose: loan?.loan_purpose ?? '',
@@ -229,29 +239,47 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
     return allCustomers.find(c => c.customer_id && c.customer_id.toUpperCase() === query) || null
   }, [allCustomers, manualCustIdInput])
 
-  // Options for branch dropdown, including selected external customer if any
+  // ─── Cross-Branch Authorization Logic ──────────────────────────────────────────
+  const operatingBranch = formData.branch || activeBranch || 'Head Office'
+  const customerBaseBranch = selectedCustomer?.branch || null
+
+  // Options for branch dropdown, including all customers clearly labeled with branch indicators
   const dropdownCustomerOptions = useMemo(() => {
-    const opts = activeCustomers.map(c => ({
-      value: c.id,
-      label: `${c.customer_id} — ${c.name}`
-    }))
-    if (selectedCustomer && !activeCustomers.some(c => c.id === selectedCustomer.id)) {
-      opts.unshift({
-        value: selectedCustomer.id,
-        label: `${selectedCustomer.customer_id} — ${selectedCustomer.name}${selectedCustomer.branch ? ` (${selectedCustomer.branch})` : ''}`
-      })
-    }
-    return opts
-  }, [activeCustomers, selectedCustomer])
+    const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+    const opNorm = normalize(operatingBranch)
+
+    const localOrShared: { value: string; label: string }[] = []
+    const otherBranches: { value: string; label: string }[] = []
+
+    allCustomers.forEach(c => {
+      if (c.status === 'blocked') return
+      const cBranchNorm = normalize(c.branch)
+      const isLocalOrShared = cBranchNorm === opNorm || (c.shared_branches || []).some(sb => normalize(sb) === opNorm)
+
+      if (isLocalOrShared) {
+        localOrShared.push({
+          value: c.id,
+          label: `${c.customer_id} — ${c.name}`
+        })
+      } else {
+        otherBranches.push({
+          value: c.id,
+          label: `${c.customer_id} — ${c.name} (${c.branch || 'Base'} Branch - Permission Req.)`
+        })
+      }
+    })
+
+    return [
+      ...localOrShared,
+      ...otherBranches
+    ]
+  }, [allCustomers, operatingBranch])
 
   const { data: loanPurposeOptions = [] } = useLoanPurposeOptions()
   const addLoanPurposeOption = useAddLoanPurposeOption()
   const [isAddingPurpose, setIsAddingPurpose] = useState(false)
   const [newPurposeName, setNewPurposeName] = useState('')
 
-  // ─── Cross-Branch Authorization Logic ──────────────────────────────────────────
-  const operatingBranch = formData.branch || activeBranch || 'Head Office'
-  const customerBaseBranch = selectedCustomer?.branch || null
   const isCrossBranchCustomer = useMemo(() => {
     if (!selectedCustomer || !customerBaseBranch || !operatingBranch) return false
     const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
@@ -2222,13 +2250,36 @@ function FieldError({ msg }: { msg?: string }) {
 
 export default function LoansPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const prefillCustomerId = searchParams.get('customerId')
+  const shouldOpenNewLoan = searchParams.get('newLoan') === 'true' || !!prefillCustomerId
+
   // Default and enforce sorting by Date (latest first)
   const [sorting, setSorting] = useState<SortingState>([{ id: 'loan_date', desc: true }])
   const [globalFilter, setGlobalFilter] = useLocalStorage<string>('loans_search', '')
-  const [showModal, setShowModal] = useState(false)
+  const [showModal, setShowModal] = useState(shouldOpenNewLoan)
   const [editLoan, setEditLoan] = useState<Loan | undefined>()
   const [loanFormCompletion, setLoanFormCompletion] = useState(0)
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('loans_status_filter', 'all')
+
+  useEffect(() => {
+    if (shouldOpenNewLoan) {
+      setEditLoan(undefined)
+      setShowModal(true)
+    }
+  }, [shouldOpenNewLoan])
+
+  const handleCloseModal = () => {
+    setShowModal(false)
+    setEditLoan(undefined)
+    setLoanFormCompletion(0)
+    if (searchParams.get('customerId') || searchParams.get('newLoan')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('customerId')
+      next.delete('newLoan')
+      setSearchParams(next, { replace: true })
+    }
+  }
 
   // Clear any stale column sorting from previous browser sessions
   useEffect(() => {
@@ -2648,7 +2699,7 @@ export default function LoansPage() {
 
       <Modal
         isOpen={showModal}
-        onClose={() => { setShowModal(false); setLoanFormCompletion(0) }}
+        onClose={handleCloseModal}
         title={editLoan ? 'Edit Loan Account' : 'Create Account'}
         size="xl"
         noScroll
@@ -2666,7 +2717,12 @@ export default function LoansPage() {
           </div>
         }
       >
-        <LoanForm loan={editLoan} onClose={() => { setShowModal(false); setLoanFormCompletion(0) }} onCompletionChange={setLoanFormCompletion} />
+        <LoanForm
+          loan={editLoan}
+          initialCustomerId={prefillCustomerId || undefined}
+          onClose={handleCloseModal}
+          onCompletionChange={setLoanFormCompletion}
+        />
       </Modal>
 
       <InterBranchRequestsModal

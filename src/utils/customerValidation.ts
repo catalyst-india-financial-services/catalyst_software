@@ -8,6 +8,8 @@ export interface CustomerSummary {
   pan?: string | null
   aadhaar?: string | null
   status?: string | null
+  branch?: string | null
+  shared_branches?: string[] | null
 }
 
 export interface CustomerDuplicateMatch {
@@ -16,6 +18,8 @@ export interface CustomerDuplicateMatch {
   name: string
   matchedValue: string
   field: 'mobile' | 'pan' | 'aadhaar'
+  branch?: string | null
+  shared_branches?: string[] | null
 }
 
 export interface CustomerDuplicateCheckResult {
@@ -110,6 +114,8 @@ export function checkCustomerDuplicatesFromList(
         name: cNameDisplay,
         matchedValue: c.mobile || normMobile,
         field: 'mobile',
+        branch: c.branch || null,
+        shared_branches: c.shared_branches || null,
       }
       errors.mobile = `Mobile number is already registered to ${cNameDisplay} (${cIdDisplay}). Duplicate profiles are not permitted.`
     }
@@ -122,6 +128,8 @@ export function checkCustomerDuplicatesFromList(
         name: cNameDisplay,
         matchedValue: c.pan || normPan,
         field: 'pan',
+        branch: c.branch || null,
+        shared_branches: c.shared_branches || null,
       }
       errors.pan = `PAN card is already registered to ${cNameDisplay} (${cIdDisplay}). Duplicate profiles are not permitted.`
     }
@@ -134,6 +142,8 @@ export function checkCustomerDuplicatesFromList(
         name: cNameDisplay,
         matchedValue: c.aadhaar || normAadhaar,
         field: 'aadhaar',
+        branch: c.branch || null,
+        shared_branches: c.shared_branches || null,
       }
       errors.aadhaar_kyc_id = `Aadhaar number is already registered to ${cNameDisplay} (${cIdDisplay}). Duplicate profiles are not permitted.`
     }

@@ -1461,7 +1461,16 @@ export default function CustomerDetailPage() {
                     onClick={() => setIsActionsOpen(false)}
                   />
                   {/* Dropdown — above overlay */}
-                  <div className="absolute right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 w-48 z-[9999]">
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 w-52 z-[9999]">
+                    <button
+                      onClick={() => {
+                        setIsActionsOpen(false)
+                        navigate(`/loans?newLoan=true&customerId=${customer.id}`)
+                      }}
+                      className="w-full text-left px-4 py-2 text-xs text-brand-700 hover:bg-brand-50 font-bold flex items-center gap-2"
+                    >
+                      <Plus className="h-4 w-4 text-brand-600" /> Create Loan Account
+                    </button>
                     <button
                       onClick={() => { setIsActionsOpen(false); handleExportPDF() }}
                       className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-bold flex items-center gap-2"
@@ -1686,6 +1695,13 @@ export default function CustomerDetailPage() {
                         </button>
                       </div>
                     )}
+                    <Button
+                      size="sm"
+                      onClick={() => navigate(`/loans?newLoan=true&customerId=${customer.id}`)}
+                      className="text-xs flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white font-bold shadow-xs"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Create Loan Account
+                    </Button>
                     <Button
                       size="sm"
                       onClick={() => navigate('/loans')}
