@@ -745,7 +745,9 @@ export function usePayments(loanId?: string) {
       })) as (EMIPayment & { customer_name: string; loan_number: string; _loan_branch?: string | null })[]
       // Client-side branch filter: only show payments for loans belonging to this branch when not querying a specific loan
       if (branchFilter && !loanId) {
-        results = results.filter(p => p._loan_branch === branchFilter)
+        const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+        const target = normalize(branchFilter)
+        results = results.filter(p => normalize(p._loan_branch) === target)
       }
       return results
     },
@@ -937,9 +939,16 @@ export function useIncome() {
         _loan_branch: i.loans?.branch || null,
         _customer_branch: i.customers?.branch || null,
       })) as (Income & { customer_name: string; loan_number: string; _loan_branch?: string | null; _customer_branch?: string | null })[]
-      // Client-side branch filter: filter by loan or customer branch
+      // Client-side branch filter: filter by loan branch (authoritative), or customer branch
       if (branchFilter) {
-        results = results.filter(i => i._loan_branch === branchFilter || i._customer_branch === branchFilter)
+        const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+        const target = normalize(branchFilter)
+        results = results.filter(i => {
+          const loanB = normalize(i._loan_branch)
+          const custB = normalize(i._customer_branch)
+          if (loanB) return loanB === target
+          return custB === target
+        })
       }
       return results
     },
@@ -2288,15 +2297,27 @@ export function useTransactions(filters?: {
           const loanB = normalize(t._loan_branch)
           const custB = normalize(t._customer_branch)
 
-          // Strict branch isolation for loan-related transactions (disbursement & repayment)
-          if (t.txn_type === 'disbursement' || t.txn_type === 'repayment' || t.loan_id || t.customer_id) {
-            return loanB === target || custB === target
+          // 1. Authoritative: If transaction is tied to a loan, the loan's branch determines where the transaction happened
+          if (loanB) {
+            return loanB === target
           }
 
-          // For branch-agnostic operational expenses / deposits
-          if (loanB || custB) {
-            return loanB === target || custB === target
+          // 2. Disbursement without a resolved loan branch
+          if (t.txn_type === 'disbursement') {
+            return custB ? custB === target : false
           }
+
+          // 3. Repayment or customer-level transaction without loan branch
+          if (t.txn_type === 'repayment' || t.customer_id) {
+            return custB === target
+          }
+
+          // 4. Expense or deposit with customer branch
+          if (custB) {
+            return custB === target
+          }
+
+          // 5. General branch-agnostic operational expenses/deposits
           return true
         })
       }

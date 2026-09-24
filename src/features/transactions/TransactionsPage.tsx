@@ -1274,12 +1274,28 @@ export default function TransactionsPage() {
     return rawTxns.filter((t: any) => {
       const loanB = normalize(t._loan_branch)
       const custB = normalize(t._customer_branch)
-      if (t.txn_type === 'disbursement' || t.txn_type === 'repayment' || t.loan_id || t.customer_id) {
-        return loanB === target || custB === target
+
+      // 1. Authoritative: Loan branch determines where the transaction happened
+      if (loanB) {
+        return loanB === target
       }
-      if (loanB || custB) {
-        return loanB === target || custB === target
+
+      // 2. Disbursement without a resolved loan branch
+      if (t.txn_type === 'disbursement') {
+        return custB ? custB === target : false
       }
+
+      // 3. Repayment or customer-level transaction without loan branch
+      if (t.txn_type === 'repayment' || t.customer_id) {
+        return custB === target
+      }
+
+      // 4. Expense or deposit with customer branch
+      if (custB) {
+        return custB === target
+      }
+
+      // 5. General branch-agnostic operational records
       return true
     })
   }, [rawTxns, activeBranch])
