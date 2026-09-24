@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import {
   useBankAccounts, useCreateBankAccount, useTransactions, useCreateTransaction,
-  useCustomers, useAllCustomers, useLoans, useCustomerLoans
+  useLoans
 } from '@/hooks/useDb'
 import { useAuthStore } from '@/store/authStore'
 import { Button, Card, Input, Select, Modal, EmptyState, Badge } from '@/components/ui'
@@ -113,11 +113,21 @@ function AddBankAccountModal({ onClose }: { onClose: () => void }) {
 }
 
 // ─── Transaction Form Modal ────────────────────────────────────────────────────
-function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void }) {
-  const { user } = useAuthStore()
+function TxnFormModal({
+  type,
+  onClose,
+  defaultCustomerId,
+  defaultLoanId
+}: {
+  type: TxnType
+  onClose: () => void
+  defaultCustomerId?: string
+  defaultLoanId?: string
+}) {
+  const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
+  const activeBranch = isBranchUser ? userBranch : selectedBranch
   const { data: bankAccounts = [] } = useBankAccounts()
-  const { data: customers = [] } = useCustomers()
-  const { data: loans = [] } = useLoans()
+  const { data: loans = [], isLoading: isLoansLoading } = useLoans(activeBranch)
   const createTxn = useCreateTransaction()
   const [loading, setLoading] = useState(false)
 
@@ -136,79 +146,81 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
     deposit_type: DEPOSIT_TYPES[0],
   })
 
-  // Customer ID mode and manual entry states
-  const [customerIdMode, setCustomerIdMode] = useState<'dropdown' | 'manual'>('dropdown')
-  const [manualCustIdInput, setManualCustIdInput] = useState('')
-  const [isManualSuggestionsOpen, setIsManualSuggestionsOpen] = useState(false)
-  const manualInputRef = useRef<HTMLInputElement>(null)
-  const suggestionsRef = useRef<HTMLDivElement>(null)
+  // Loan selector mode (dropdown list vs manual entry)
+  const [loanSelectMode, setLoanSelectMode] = useState<'dropdown' | 'manual'>('dropdown')
+  const [manualLoanInput, setManualLoanInput] = useState('')
+  const [isManualLoanSuggestionsOpen, setIsManualLoanSuggestionsOpen] = useState(false)
+  const manualLoanInputRef = useRef<HTMLInputElement>(null)
+  const loanSuggestionsRef = useRef<HTMLDivElement>(null)
 
-  // Direct query for customer's loans
-  const { data: directCustLoans = [] } = useCustomerLoans(form.customer_id)
-  const { data: loans = [] } = useLoans()
+  // Filter loans strictly for active branch if set
+  const branchLoans = useMemo(() => {
+    if (!activeBranch) return loans
+    const target = activeBranch.toLowerCase().replace(/\s+branch$/i, '').trim()
+    return loans.filter(l => {
+      const b = (l.branch || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+      return b === target
+    })
+  }, [loans, activeBranch])
+
+  // Selected loan object
+  const selectedLoan = useMemo(() => {
+    if (!form.loan_id) return null
+    return branchLoans.find(l => l.id === form.loan_id) || loans.find(l => l.id === form.loan_id) || null
+  }, [branchLoans, loans, form.loan_id])
+
+  // Sync manual input when a loan is selected
+  useEffect(() => {
+    if (selectedLoan?.loan_number && !manualLoanInput) {
+      setManualLoanInput(selectedLoan.loan_number)
+    }
+  }, [selectedLoan?.loan_number])
 
   // Close suggestions when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (
-        suggestionsRef.current &&
-        !suggestionsRef.current.contains(e.target as Node) &&
-        manualInputRef.current &&
-        !manualInputRef.current.contains(e.target as Node)
+        loanSuggestionsRef.current &&
+        !loanSuggestionsRef.current.contains(e.target as Node) &&
+        manualLoanInputRef.current &&
+        !manualLoanInputRef.current.contains(e.target as Node)
       ) {
-        setIsManualSuggestionsOpen(false)
+        setIsManualLoanSuggestionsOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const selectedCustomer = useMemo(() => {
-    if (!form.customer_id) return null
-    return allCustomers.find(c => c.id === form.customer_id) || customers.find(c => c.id === form.customer_id) || null
-  }, [form.customer_id, allCustomers, customers])
-
-  useEffect(() => {
-    if (selectedCustomer?.customer_id && !manualCustIdInput) {
-      setManualCustIdInput(selectedCustomer.customer_id)
-    }
-  }, [selectedCustomer?.customer_id])
-
-  const manualMatches = useMemo(() => {
-    const query = manualCustIdInput.trim().toLowerCase()
+  // Manual query matches for loan accounts
+  const manualLoanMatches = useMemo(() => {
+    const query = manualLoanInput.trim().toLowerCase()
     if (!query) return []
-    return allCustomers
-      .filter(c => c.status !== 'blocked')
-      .filter(c =>
-        (c.customer_id && c.customer_id.toLowerCase().includes(query)) ||
-        (c.name && c.name.toLowerCase().includes(query)) ||
-        (c.mobile && c.mobile.includes(query))
+    return branchLoans
+      .filter(l =>
+        (l.loan_number && l.loan_number.toLowerCase().includes(query)) ||
+        (l.customer_name && l.customer_name.toLowerCase().includes(query)) ||
+        (l.customer_custom_id && l.customer_custom_id.toLowerCase().includes(query)) ||
+        (l.customer_mobile && l.customer_mobile.includes(query))
       )
       .slice(0, 8)
-  }, [allCustomers, manualCustIdInput])
+  }, [branchLoans, manualLoanInput])
 
-  const exactCustomerMatch = useMemo(() => {
-    const query = manualCustIdInput.trim().toUpperCase()
+  const exactLoanMatch = useMemo(() => {
+    const query = manualLoanInput.trim().toUpperCase()
     if (!query) return null
-    return allCustomers.find(c => c.customer_id && c.customer_id.toUpperCase() === query) || null
-  }, [allCustomers, manualCustIdInput])
+    return branchLoans.find(l => l.loan_number && l.loan_number.toUpperCase() === query) || null
+  }, [branchLoans, manualLoanInput])
 
-  const dropdownCustomerOptions = useMemo(() => {
-    const opts = customers.map(c => ({
-      value: c.id,
-      label: `${c.customer_id ? `${c.customer_id} — ` : ''}${c.name}${c.branch ? ` (${c.branch})` : ''}`
-    }))
-    if (selectedCustomer && !customers.some(c => c.id === selectedCustomer.id)) {
-      opts.unshift({
-        value: selectedCustomer.id,
-        label: `${selectedCustomer.customer_id ? `${selectedCustomer.customer_id} — ` : ''}${selectedCustomer.name}${selectedCustomer.branch ? ` (${selectedCustomer.branch})` : ''}`
-      })
-    }
-    return opts
-  }, [customers, selectedCustomer])
-
-  const cfg = TXN_CONFIG[type]
-  const isDebit = type === 'disbursement' || type === 'expense'
+  // Disbursement stats calculation
+  const disbursementStats = useMemo(() => {
+    if (!selectedLoan || type !== 'disbursement') return null
+    const sanctioned = Number(selectedLoan.loan_amount) || 0
+    const disbursed = Number(selectedLoan.disbursed_amount) || 0
+    const remaining = Math.max(0, sanctioned - disbursed)
+    const isFullyDisbursed = remaining <= 0 && sanctioned > 0
+    return { sanctioned, disbursed, remaining, isFullyDisbursed }
+  }, [selectedLoan, type])
 
   // Auto-select first bank account when accounts load if not already set
   useEffect(() => {
@@ -217,11 +229,89 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
     }
   }, [bankAccounts, form.bank_account_id])
 
+  // If defaultLoanId is provided or loans loaded, auto-select and auto-fill amount
+  useEffect(() => {
+    if (defaultLoanId && branchLoans.length > 0) {
+      const matched = branchLoans.find(l => l.id === defaultLoanId)
+      if (matched) {
+        const sanctioned = Number(matched.loan_amount) || 0
+        const disbursed = Number(matched.disbursed_amount) || 0
+        const pendingAmt = Math.max(0, sanctioned - disbursed)
+        setForm(prev => ({
+          ...prev,
+          loan_id: matched.id,
+          customer_id: matched.customer_id,
+          amount: type === 'disbursement' && pendingAmt > 0 ? pendingAmt.toString() : (type === 'repayment' && matched.emi_amount ? matched.emi_amount.toString() : prev.amount)
+        }))
+        setManualLoanInput(matched.loan_number || '')
+      }
+    }
+  }, [defaultLoanId, branchLoans, type])
+
+  const handleDisbursementLoanChange = (loanId: string) => {
+    const sLoan = branchLoans.find(l => l.id === loanId)
+    if (sLoan) {
+      const sanctioned = Number(sLoan.loan_amount) || 0
+      const disbursed = Number(sLoan.disbursed_amount) || 0
+      const pendingAmt = Math.max(0, sanctioned - disbursed)
+      setForm(prev => ({
+        ...prev,
+        loan_id: loanId,
+        customer_id: sLoan.customer_id,
+        amount: pendingAmt > 0 ? pendingAmt.toString() : ''
+      }))
+      setManualLoanInput(sLoan.loan_number || '')
+    } else {
+      setForm(prev => ({ ...prev, loan_id: loanId, customer_id: '', amount: '' }))
+    }
+  }
+
+  const handleRepaymentLoanChange = (loanId: string) => {
+    const sLoan = branchLoans.find(l => l.id === loanId)
+    if (sLoan) {
+      setForm(prev => ({
+        ...prev,
+        loan_id: loanId,
+        customer_id: sLoan.customer_id,
+        amount: sLoan.emi_amount ? sLoan.emi_amount.toString() : prev.amount
+      }))
+      setManualLoanInput(sLoan.loan_number || '')
+    } else {
+      setForm(prev => ({ ...prev, loan_id: loanId, customer_id: '' }))
+    }
+  }
+
+  const isDisbursementOverLimit = useMemo(() => {
+    if (type !== 'disbursement' || !disbursementStats) return false
+    const amt = parseFloat(form.amount)
+    return !isNaN(amt) && amt > disbursementStats.remaining
+  }, [type, disbursementStats, form.amount])
+
+  const cfg = TXN_CONFIG[type]
+  const isDebit = type === 'disbursement' || type === 'expense'
+
   const handleSubmit = async () => {
     if (!form.bank_account_id) { toast.error('Please select a bank account'); return }
     if (!form.amount || parseFloat(form.amount) <= 0) { toast.error('Please enter a valid amount'); return }
-    if ((type === 'disbursement' || type === 'repayment') && !form.customer_id) {
-      toast.error('Please select a customer'); return
+    if (type === 'disbursement') {
+      if (!form.loan_id) {
+        toast.error('Please select a Loan / Account Number to disburse'); return
+      }
+      if (disbursementStats) {
+        if (disbursementStats.isFullyDisbursed) {
+          toast.error('This loan account is already 100% disbursed. No additional disbursements are permitted.')
+          return
+        }
+        const enteredAmt = parseFloat(form.amount)
+        if (enteredAmt > disbursementStats.remaining) {
+          toast.error(`Disbursement amount (${formatCurrency(enteredAmt)}) cannot exceed remaining limit of ${formatCurrency(disbursementStats.remaining)}.`)
+          return
+        }
+      }
+    } else if (type === 'repayment') {
+      if (!form.loan_id) {
+        toast.error('Please select a Loan Account'); return
+      }
     }
     setLoading(true)
     try {
@@ -230,7 +320,7 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
         direction: isDebit ? 'debit' : 'credit',
         amount: parseFloat(form.amount),
         bank_account_id: form.bank_account_id,
-        customer_id: targetCustomerId || undefined,
+        customer_id: form.customer_id || selectedLoan?.customer_id || undefined,
         loan_id: form.loan_id || undefined,
         date: form.date,
         reference_number: form.reference_number || undefined,
@@ -261,64 +351,596 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <Input label="Date *" type="date" value={form.date}
-          onChange={e => setForm({ ...form, date: e.target.value })} />
-        <Select label="Bank / Cash Account *" value={form.bank_account_id}
+        <Input
+          label="Date *"
+          type="date"
+          value={form.date}
+          onChange={e => setForm({ ...form, date: e.target.value })}
+        />
+        <Select
+          label="Bank / Cash Account *"
+          value={form.bank_account_id}
           onChange={e => setForm({ ...form, bank_account_id: e.target.value })}
           options={bankAccounts.map(a => ({ value: a.id, label: a.name }))}
-          placeholder="Select account" />
+          placeholder="Select account"
+        />
 
-        {/* ── DISBURSEMENT FLOW: Direct Branch Loan Selection with Customer Name ── */}
+        {/* ─── DISBURSEMENT: Direct Branch Loan / Account Selector with Dropdown & Manual Entry ─── */}
         {type === 'disbursement' && (
-          <>
-            {/* Branch Selector / Indicator */}
-            {!isBranchUser ? (
-              <div className="col-span-2">
+          <div className="col-span-2 space-y-3">
+            {activeBranch && (
+              <div className="flex items-center justify-between px-3.5 py-2.5 bg-violet-50/70 border border-violet-200/80 rounded-xl">
+                <div className="flex items-center gap-2 text-xs font-bold text-violet-700">
+                  <Building2 className="h-4 w-4 text-violet-600" />
+                  <span>Branch: {activeBranch} Branch</span>
+                </div>
+                <Badge variant="outline" className="text-[10px] font-bold text-violet-600 bg-white border-violet-200">
+                  {branchLoans.length} Loan Accounts
+                </Badge>
+              </div>
+            )}
+
+            {/* Mode Switcher Header */}
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-700">
+                Loan / Account Number ({activeBranch ? `${activeBranch} Branch` : 'All Branches'}) *
+              </label>
+              <div className="flex items-center gap-1.5">
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setLoanSelectMode('dropdown')}
+                    className={cn(
+                      'px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer',
+                      loanSelectMode === 'dropdown'
+                        ? 'bg-white text-brand-700 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    )}
+                  >
+                    Branch List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoanSelectMode('manual')
+                      setTimeout(() => manualLoanInputRef.current?.focus(), 50)
+                    }}
+                    className={cn(
+                      'px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer',
+                      loanSelectMode === 'manual'
+                        ? 'bg-white text-brand-700 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    )}
+                  >
+                    Manual Entry
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Option 1: Dropdown Selection */}
+            {loanSelectMode === 'dropdown' ? (
+              <div>
                 <Select
-                  label="Select Branch *"
-                  value={formBranch}
+                  value={form.loan_id}
                   onChange={e => {
-                    const nextBranch = e.target.value
-                    setFormBranch(nextBranch)
-                    setForm(prev => ({ ...prev, loan_id: '', customer_id: '', amount: '', description: '' }))
+                    const val = e.target.value
+                    if (val === '__MANUAL__') {
+                      setLoanSelectMode('manual')
+                      setTimeout(() => manualLoanInputRef.current?.focus(), 50)
+                      return
+                    }
+                    handleDisbursementLoanChange(val)
                   }}
                   options={[
-                    { value: 'Aniyapuram', label: 'Aniyapuram Branch' },
-                    { value: 'Vallipuram', label: 'Vallipuram Branch' },
-                    { value: 'Namakkal', label: 'Namakkal Branch' },
+                    ...branchLoans.map(l => {
+                      const sanctioned = Number(l.loan_amount) || 0
+                      const disbursed = Number(l.disbursed_amount) || 0
+                      const pending = Math.max(0, sanctioned - disbursed)
+                      let statusLabel = ''
+                      if (disbursed <= 0) {
+                        statusLabel = `Pending Full: ${formatCurrency(sanctioned)}`
+                      } else if (pending > 0) {
+                        statusLabel = `Partially Disbursed (${formatCurrency(pending)} remaining)`
+                      } else {
+                        statusLabel = `[Fully Disbursed - ${formatCurrency(sanctioned)}]`
+                      }
+                      return {
+                        value: l.id,
+                        label: `${l.loan_number} — ${l.customer_name || 'Customer'}${l.customer_custom_id ? ` (${l.customer_custom_id})` : ''} • ${statusLabel}`
+                      }
+                    }),
+                    { value: '__MANUAL__', label: '✏️ Enter Account Number manually...' }
                   ]}
+                  placeholder={isLoansLoading ? "Loading branch loan accounts..." : (branchLoans.length === 0 ? `No loan accounts found in ${activeBranch || 'this'} branch` : "Select branch loan account to disburse")}
                 />
+                <p className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
+                  <span>Showing {activeBranch ? `${activeBranch} Branch` : 'all'} loan accounts ({branchLoans.length})</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoanSelectMode('manual')
+                      setTimeout(() => manualLoanInputRef.current?.focus(), 50)
+                    }}
+                    className="text-brand-600 hover:underline font-medium cursor-pointer"
+                  >
+                    Type Account ID manually
+                  </button>
+                </p>
               </div>
             ) : (
-              <div className="col-span-2">
-                <div className="flex items-center justify-between px-3.5 py-2.5 bg-violet-50/70 border border-violet-200/80 rounded-xl">
-                  <div className="flex items-center gap-2 text-xs font-bold text-violet-700">
-                    <Building2 className="h-4 w-4 text-violet-600" />
-                    <span>Branch: {userBranch} Branch</span>
+              /* Option 2: Manual Account Entry with Auto-Suggestions */
+              <div className="relative">
+                <div className="relative">
+                  <input
+                    ref={manualLoanInputRef}
+                    type="text"
+                    value={manualLoanInput}
+                    onChange={e => {
+                      const val = e.target.value
+                      setManualLoanInput(val)
+                      setIsManualLoanSuggestionsOpen(true)
+                      const query = val.trim().toUpperCase()
+                      const match = branchLoans.find(l => l.loan_number?.toUpperCase() === query)
+                      if (match) {
+                        handleDisbursementLoanChange(match.id)
+                      } else if (form.loan_id) {
+                        setForm(prev => ({ ...prev, loan_id: '', customer_id: '', amount: '' }))
+                      }
+                    }}
+                    onFocus={() => {
+                      if (manualLoanInput.trim()) {
+                        setIsManualLoanSuggestionsOpen(true)
+                      }
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        if (exactLoanMatch) {
+                          handleDisbursementLoanChange(exactLoanMatch.id)
+                          setIsManualLoanSuggestionsOpen(false)
+                        } else if (manualLoanMatches.length > 0) {
+                          const pick = manualLoanMatches[0]
+                          handleDisbursementLoanChange(pick.id)
+                          setIsManualLoanSuggestionsOpen(false)
+                        }
+                      } else if (e.key === 'Escape') {
+                        setIsManualLoanSuggestionsOpen(false)
+                      }
+                    }}
+                    placeholder="Type Loan Account No. (e.g. LN2026001) or Customer Name / Mobile"
+                    className="w-full border rounded-xl pl-8 pr-8 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 font-medium text-slate-800 placeholder:text-slate-400 bg-white border-slate-200 hover:border-slate-300"
+                  />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                  {manualLoanInput && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualLoanInput('')
+                        setForm(prev => ({ ...prev, loan_id: '', customer_id: '', amount: '' }))
+                        setIsManualLoanSuggestionsOpen(false)
+                        manualLoanInputRef.current?.focus()
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Dropdown Suggestions List */}
+                {isManualLoanSuggestionsOpen && manualLoanMatches.length > 0 && (
+                  <div
+                    ref={loanSuggestionsRef}
+                    className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto py-1 divide-y divide-slate-100"
+                  >
+                    <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 flex items-center justify-between">
+                      <span>Matching Loan Accounts ({manualLoanMatches.length})</span>
+                      <span className="font-normal lowercase text-[9px]">click to select</span>
+                    </div>
+                    {manualLoanMatches.map(l => {
+                      const sanctioned = Number(l.loan_amount) || 0
+                      const disbursed = Number(l.disbursed_amount) || 0
+                      const pending = Math.max(0, sanctioned - disbursed)
+                      return (
+                        <button
+                          key={l.id}
+                          type="button"
+                          onClick={() => {
+                            handleDisbursementLoanChange(l.id)
+                            setIsManualLoanSuggestionsOpen(false)
+                          }}
+                          className="w-full text-left px-3 py-2.5 hover:bg-brand-50/60 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200/60">
+                                {l.loan_number}
+                              </span>
+                              <span className="text-slate-300">•</span>
+                              <span className="font-semibold text-xs text-slate-800 truncate">{l.customer_name || 'Customer'}</span>
+                              {l.customer_custom_id && (
+                                <span className="text-[10px] text-slate-400 font-mono">({l.customer_custom_id})</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-1">
+                              <span>Sanctioned: <strong>{formatCurrency(sanctioned)}</strong></span>
+                              <span>•</span>
+                              <span className={pending > 0 ? "text-emerald-600 font-bold" : "text-slate-400 font-medium"}>
+                                {pending > 0 ? `Remaining: ${formatCurrency(pending)}` : '[Fully Disbursed]'}
+                              </span>
+                              {l.customer_mobile && <span>• 📱 {l.customer_mobile}</span>}
+                            </div>
+                          </div>
+                          {l.id === form.loan_id && (
+                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0">
+                              Selected
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
-                  <Badge variant="outline" className="text-[10px] font-bold text-violet-600 bg-white border-violet-200">
-                    Branch Level
-                  </Badge>
+                )}
+
+                {/* Verified selected account card in manual mode */}
+                {selectedLoan && (
+                  <div className="mt-1.5 p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-900 animate-in fade-in duration-150">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <div className="truncate">
+                        <span className="font-mono font-bold">{selectedLoan.loan_number}</span>
+                        <span className="mx-1 text-emerald-400">•</span>
+                        <span className="font-medium">{selectedLoan.customer_name || 'Customer'}</span>
+                        {selectedLoan.branch && (
+                          <span className="ml-1.5 text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-medium">
+                            {selectedLoan.branch} Branch
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm(prev => ({ ...prev, loan_id: '', customer_id: '', amount: '' }))
+                        setManualLoanInput('')
+                        manualLoanInputRef.current?.focus()
+                      }}
+                      className="text-[10px] text-emerald-700 hover:text-red-600 font-semibold ml-2 underline shrink-0 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+
+                {!selectedLoan && manualLoanInput.trim().length > 0 && manualLoanMatches.length === 0 && (
+                  <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1.5 text-xs text-amber-800">
+                    <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                    <span>No loan account found matching "{manualLoanInput}". Check the Loan ID or switch to Branch List.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {branchLoans.length === 0 && !isLoansLoading && (
+              <p className="text-[11px] text-amber-600 font-medium">
+                ⚠️ No loan accounts found in {activeBranch ? `${activeBranch} Branch` : 'this branch'}.
+              </p>
+            )}
+
+            {/* Selected Loan Details & Disbursement Stats Box */}
+            {selectedLoan && (
+              <div className="bg-gradient-to-br from-slate-50 to-slate-100/80 border border-slate-200/90 rounded-2xl p-3.5 space-y-3 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-red-100 text-red-700 font-extrabold text-xs flex items-center justify-center shadow-2xs">
+                      {selectedLoan.customer_name?.charAt(0) || 'C'}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-slate-900">{selectedLoan.customer_name || 'Customer'}</p>
+                        <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200/60">
+                          {selectedLoan.loan_number}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                        {selectedLoan.customer_custom_id ? `ID: ${selectedLoan.customer_custom_id}` : ''}
+                        {selectedLoan.customer_mobile ? ` • 📱 ${selectedLoan.customer_mobile}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  {selectedLoan.branch && (
+                    <span className="text-[10px] font-bold text-violet-700 bg-violet-50 border border-violet-200/80 px-2 py-0.5 rounded-lg">
+                      {selectedLoan.branch} Branch
+                    </span>
+                  )}
+                </div>
+
+                {disbursementStats && (
+                  <>
+                    <div className="grid grid-cols-3 gap-2 p-2.5 bg-white border border-slate-200 rounded-xl text-xs shadow-2xs">
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">Sanctioned</span>
+                        <span className="font-mono font-bold text-slate-800 text-xs">{formatCurrency(disbursementStats.sanctioned)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">Disbursed</span>
+                        <span className="font-mono font-bold text-amber-600 text-xs">{formatCurrency(disbursementStats.disbursed)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">Remaining Limit</span>
+                        <span className={cn("font-mono font-bold text-xs", disbursementStats.remaining > 0 ? "text-emerald-600" : "text-red-600")}>
+                          {formatCurrency(disbursementStats.remaining)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {disbursementStats.isFullyDisbursed ? (
+                      <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-xs text-red-700 font-medium">
+                        <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+                        <span>This loan account is already 100% disbursed. Additional disbursements are blocked.</span>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-2 flex items-center gap-1.5 font-medium">
+                        <span>✓</span> {disbursementStats.disbursed > 0 ? `Recording part disbursement (Up to ${formatCurrency(disbursementStats.remaining)} available).` : 'Recording initial disbursement will disburse funds, activate the loan account, and record the Outstanding Principal.'}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── REPAYMENT: Select Branch Loan Account with Dropdown & Manual Entry ─── */}
+        {type === 'repayment' && (
+          <div className="col-span-2 space-y-3">
+            {activeBranch && (
+              <div className="flex items-center justify-between px-3.5 py-2.5 bg-violet-50/70 border border-violet-200/80 rounded-xl">
+                <div className="flex items-center gap-2 text-xs font-bold text-violet-700">
+                  <Building2 className="h-4 w-4 text-violet-600" />
+                  <span>Branch: {activeBranch} Branch</span>
+                </div>
+                <Badge variant="outline" className="text-[10px] font-bold text-violet-600 bg-white border-violet-200">
+                  {branchLoans.length} Loans
+                </Badge>
+              </div>
+            )}
+
+            {/* Mode Switcher Header */}
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-700">
+                Loan Account ({activeBranch ? `${activeBranch} Branch` : 'All Branches'}) *
+              </label>
+              <div className="flex items-center gap-1.5">
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setLoanSelectMode('dropdown')}
+                    className={cn(
+                      'px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer',
+                      loanSelectMode === 'dropdown'
+                        ? 'bg-white text-brand-700 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    )}
+                  >
+                    Branch List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoanSelectMode('manual')
+                      setTimeout(() => manualLoanInputRef.current?.focus(), 50)
+                    }}
+                    className={cn(
+                      'px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer',
+                      loanSelectMode === 'manual'
+                        ? 'bg-white text-brand-700 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    )}
+                  >
+                    Manual Entry
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {loanSelectMode === 'dropdown' ? (
+              <div>
+                <Select
+                  value={form.loan_id}
+                  onChange={e => {
+                    const val = e.target.value
+                    if (val === '__MANUAL__') {
+                      setLoanSelectMode('manual')
+                      setTimeout(() => manualLoanInputRef.current?.focus(), 50)
+                      return
+                    }
+                    handleRepaymentLoanChange(val)
+                  }}
+                  options={[
+                    ...branchLoans.map(l => ({
+                      value: l.id,
+                      label: `${l.loan_number} — ${l.customer_name || 'Customer'}${l.customer_custom_id ? ` (${l.customer_custom_id})` : ''} (EMI: ${formatCurrency(l.emi_amount || 0)})`
+                    })),
+                    { value: '__MANUAL__', label: '✏️ Enter Account Number manually...' }
+                  ]}
+                  placeholder={isLoansLoading ? "Loading branch loans..." : (branchLoans.length === 0 ? `No loans available in ${activeBranch || 'this'} branch` : "Select branch loan account")}
+                />
+                <p className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
+                  <span>Showing {activeBranch ? `${activeBranch} Branch` : 'all'} loans ({branchLoans.length})</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoanSelectMode('manual')
+                      setTimeout(() => manualLoanInputRef.current?.focus(), 50)
+                    }}
+                    className="text-brand-600 hover:underline font-medium cursor-pointer"
+                  >
+                    Type Account ID manually
+                  </button>
+                </p>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="relative">
+                  <input
+                    ref={manualLoanInputRef}
+                    type="text"
+                    value={manualLoanInput}
+                    onChange={e => {
+                      const val = e.target.value
+                      setManualLoanInput(val)
+                      setIsManualLoanSuggestionsOpen(true)
+                      const query = val.trim().toUpperCase()
+                      const match = branchLoans.find(l => l.loan_number?.toUpperCase() === query)
+                      if (match) {
+                        handleRepaymentLoanChange(match.id)
+                      } else if (form.loan_id) {
+                        setForm(prev => ({ ...prev, loan_id: '', customer_id: '' }))
+                      }
+                    }}
+                    onFocus={() => {
+                      if (manualLoanInput.trim()) {
+                        setIsManualLoanSuggestionsOpen(true)
+                      }
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        if (exactLoanMatch) {
+                          handleRepaymentLoanChange(exactLoanMatch.id)
+                          setIsManualLoanSuggestionsOpen(false)
+                        } else if (manualLoanMatches.length > 0) {
+                          const pick = manualLoanMatches[0]
+                          handleRepaymentLoanChange(pick.id)
+                          setIsManualLoanSuggestionsOpen(false)
+                        }
+                      } else if (e.key === 'Escape') {
+                        setIsManualLoanSuggestionsOpen(false)
+                      }
+                    }}
+                    placeholder="Type Loan Account No. (e.g. LN2026001) or Customer Name / Mobile"
+                    className="w-full border rounded-xl pl-8 pr-8 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-brand-500/20 font-medium text-slate-800 placeholder:text-slate-400 bg-white border-slate-200 hover:border-slate-300"
+                  />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                  {manualLoanInput && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualLoanInput('')
+                        setForm(prev => ({ ...prev, loan_id: '', customer_id: '' }))
+                        setIsManualLoanSuggestionsOpen(false)
+                        manualLoanInputRef.current?.focus()
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {isManualLoanSuggestionsOpen && manualLoanMatches.length > 0 && (
+                  <div
+                    ref={loanSuggestionsRef}
+                    className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto py-1 divide-y divide-slate-100"
+                  >
+                    <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 flex items-center justify-between">
+                      <span>Matching Loan Accounts ({manualLoanMatches.length})</span>
+                      <span className="font-normal lowercase text-[9px]">click to select</span>
+                    </div>
+                    {manualLoanMatches.map(l => (
+                      <button
+                        key={l.id}
+                        type="button"
+                        onClick={() => {
+                          handleRepaymentLoanChange(l.id)
+                          setIsManualLoanSuggestionsOpen(false)
+                        }}
+                        className="w-full text-left px-3 py-2.5 hover:bg-brand-50/60 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200/60">
+                              {l.loan_number}
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span className="font-semibold text-xs text-slate-800 truncate">{l.customer_name || 'Customer'}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-1">
+                            <span>EMI: <strong>{formatCurrency(l.emi_amount || 0)}</strong></span>
+                            {l.customer_mobile && <span>• 📱 {l.customer_mobile}</span>}
+                          </div>
+                        </div>
+                        {l.id === form.loan_id && (
+                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0">
+                            Selected
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {selectedLoan && (
+                  <div className="mt-1.5 p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-900 animate-in fade-in duration-150">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <div className="truncate">
+                        <span className="font-mono font-bold">{selectedLoan.loan_number}</span>
+                        <span className="mx-1 text-emerald-400">•</span>
+                        <span className="font-medium">{selectedLoan.customer_name || 'Customer'}</span>
+                        <span className="ml-2 font-mono font-bold text-emerald-700">EMI: {formatCurrency(selectedLoan.emi_amount || 0)}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm(prev => ({ ...prev, loan_id: '', customer_id: '' }))
+                        setManualLoanInput('')
+                        manualLoanInputRef.current?.focus()
+                      }}
+                      className="text-[10px] text-emerald-700 hover:text-red-600 font-semibold ml-2 underline shrink-0 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+
+                {!selectedLoan && manualLoanInput.trim().length > 0 && manualLoanMatches.length === 0 && (
+                  <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1.5 text-xs text-amber-800">
+                    <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                    <span>No loan account found matching "{manualLoanInput}". Check the Loan ID or switch to Branch List.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selectedLoan && (
+              <div className="bg-gradient-to-br from-slate-50 to-slate-100/80 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 font-extrabold text-xs flex items-center justify-center shadow-2xs">
+                      {selectedLoan.customer_name?.charAt(0) || 'C'}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-900">{selectedLoan.customer_name || 'Customer'}</p>
+                      <p className="text-[10px] text-slate-500 font-mono">
+                        {selectedLoan.customer_custom_id ? `ID: ${selectedLoan.customer_custom_id}` : ''}
+                        {selectedLoan.customer_mobile ? ` • 📱 ${selectedLoan.customer_mobile}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[9px] uppercase font-extrabold text-slate-400 tracking-wider">EMI Amount</span>
+                    <p className="text-xs font-black font-mono text-emerald-600">
+                      {formatCurrency(selectedLoan.emi_amount || 0)}
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
-
-            {/* Loan Selection (No customer selection dropdown required) */}
-            <div className="col-span-2">
-              <Select label="Customer *" value={form.customer_id}
-                onChange={e => setForm({ ...form, customer_id: e.target.value, loan_id: '' })}
-                options={customers.map(c => ({ value: c.id, label: `${c.name} — ${c.customer_id}` }))}
-                placeholder="Select customer" />
-            </div>
-            {form.customer_id && (
-              <div className="col-span-2">
-                <Select label="Loan / Account Number" value={form.loan_id}
-                  onChange={e => setForm({ ...form, loan_id: e.target.value })}
-                  options={customerLoans.map(l => ({ value: l.id, label: l.loan_number }))}
-                  placeholder="Select loan (optional)" />
-              </div>
-            )}
-          </>
+          </div>
         )}
 
         {type === 'expense' && (
@@ -337,8 +959,12 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
           </div>
         )}
 
-        <div className={type === 'repayment' ? 'col-span-2' : 'col-span-2'}>
-          <Input label="Total Amount (₹) *" type="number" value={form.amount}
+        <div className="col-span-2">
+          <Input
+            label={type === 'disbursement' ? `Disbursement Amount (₹) *` : "Total Amount (₹) *"}
+            type="number"
+            value={form.amount}
+            disabled={type === 'disbursement' && !!disbursementStats?.isFullyDisbursed}
             onChange={e => setForm({ ...form, amount: e.target.value })}
             placeholder={type === 'disbursement' && disbursementStats ? `Max ${formatCurrency(disbursementStats.remaining)}` : "Enter amount"}
           />
@@ -379,7 +1005,7 @@ function TxnFormModal({ type, onClose }: { type: TxnType; onClose: () => void })
         <Button
           onClick={handleSubmit}
           loading={loading}
-          disabled={loading || (type === 'disbursement' && !!disbursementStats?.isFullyDisbursed) || isDisbursementOverLimit}
+          disabled={loading || (type === 'disbursement' && (!form.loan_id || !!disbursementStats?.isFullyDisbursed || isDisbursementOverLimit))}
         >
           Record {cfg.label}
         </Button>
@@ -620,6 +1246,8 @@ function BankAccountsTab({ accounts, onAdd, txns }: { accounts: BankAccount[]; o
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function TransactionsPage() {
+  const { isBranchUser, userBranch, selectedBranch } = useAuthStore()
+  const activeBranch = isBranchUser ? userBranch : selectedBranch
   const [searchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState(searchParams.get('action') === 'disburse' ? 'disbursement' : 'overview')
   const [modal, setModal] = useState<null | 'disbursement' | 'repayment' | 'expense' | 'deposit' | 'bank-account'>(
@@ -664,8 +1292,20 @@ export default function TransactionsPage() {
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Transaction Ledger</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Complete accounting ledger — Disbursement, Repayment, Expenses & Deposits</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Transaction Ledger</h1>
+            {activeBranch && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-violet-50 text-violet-700 border border-violet-200/80 shadow-2xs">
+                <Building2 className="h-3.5 w-3.5 text-violet-600" />
+                {activeBranch} Branch
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {activeBranch
+              ? `Ledger records for ${activeBranch} Branch — Disbursement, Repayment, Expenses & Deposits`
+              : 'Complete accounting ledger — Disbursement, Repayment, Expenses & Deposits'}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setModal('disbursement')} className="border-red-200 text-red-600 hover:bg-red-50">

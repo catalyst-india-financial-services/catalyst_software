@@ -18,8 +18,6 @@ export interface Loan {
   loan_number: string
   customer_id: string
   customer_name?: string
-  customer_mobile?: string
-  customer_custom_id?: string
   loan_type: LoanType
   loan_amount: number | null
   interest_rate: number

@@ -311,18 +311,20 @@ export function useLoans(branchOverride?: string | null) {
       }
       const { data, error } = await query
       if (error) {
-        let fbQuery = supabase
+        let fallbackQuery = supabase
           .from('loans')
           .select('*')
           .order('created_at', { ascending: false })
         if (branchFilter) {
-          fbQuery = fbQuery.eq('branch', branchFilter)
+          fallbackQuery = fallbackQuery.eq('branch', branchFilter)
         }
-        const { data: fbData, error: fbErr } = await fbQuery
+        const { data: fbData, error: fbErr } = await fallbackQuery
         if (fbErr) throw fbErr
         return (fbData || []).map((l: any) => ({
           ...l,
           customer_name: (l as any).customer_name || 'Unknown',
+          customer_mobile: (l as any).customer_mobile || '',
+          customer_custom_id: (l as any).customer_custom_id || '',
         })) as Loan[]
       }
       return (data || []).map((l: any) => ({
@@ -338,6 +340,7 @@ export function useLoans(branchOverride?: string | null) {
 export function useLoan(id?: string) {
   const isBranchUser = useAuthStore((s) => s.isBranchUser)
   const userBranch = useAuthStore((s) => s.userBranch)
+  const branchFilter = useBranchFilter()
   return useQuery({
     queryKey: ['loans', id],
     queryFn: async () => {
@@ -355,12 +358,14 @@ export function useLoan(id?: string) {
           .maybeSingle()
         if (fbErr) throw fbErr
         if (!fbData) return null
+        if (isBranchUser && userBranch && fbData.branch !== userBranch) return null
         if (branchFilter && fbData.branch !== branchFilter) return null
         return fbData as Loan
       }
       if (!data) return null
       // Branch ownership guard: branch staff cannot view another branch's loan
       if (isBranchUser && userBranch && data.branch !== userBranch) return null
+      if (branchFilter && data.branch !== branchFilter) return null
       return {
         ...data,
         customer_name: (data as any).customer?.name || 'Unknown',
@@ -2149,8 +2154,10 @@ export function useTransactions(filters?: {
   date_to?: string
   loan_id?: string
   customer_id?: string
+  branch?: string | null
 }) {
-  const branchFilter = useBranchFilter()
+  const globalBranchFilter = useBranchFilter()
+  const branchFilter = filters?.branch !== undefined ? filters.branch : globalBranchFilter
   return useQuery({
     queryKey: ['transactions', filters, branchFilter],
     queryFn: async () => {
@@ -2234,7 +2241,16 @@ export function useTransactions(filters?: {
 
       // Client-side branch filter: show transactions for this branch's loans/customers when not querying a specific loan or customer
       if (branchFilter && !filters?.loan_id && !filters?.customer_id) {
-        results = results.filter(t => t._loan_branch === branchFilter || t._customer_branch === branchFilter)
+        const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+        const target = normalize(branchFilter)
+        results = results.filter(t => {
+          const loanB = normalize(t._loan_branch)
+          const custB = normalize(t._customer_branch)
+          if (loanB || custB) {
+            return loanB === target || custB === target
+          }
+          return true
+        })
       }
       return results
     },
