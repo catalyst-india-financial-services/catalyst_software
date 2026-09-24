@@ -5,8 +5,17 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, createColumnHelper, type SortingState
 } from '@tanstack/react-table'
-import { Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator, WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2, ChevronDown, ChevronLeft, ChevronRight, Search, X, Building2 } from 'lucide-react'
-import { useLoans, useCustomers, useAllCustomers, useCreateLoan, useDeleteLoan, useUpdateLoan, useLoanPurposeOptions, useAddLoanPurposeOption } from '@/hooks/useDb'
+import {
+  Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator,
+  WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2, ChevronDown,
+  ChevronLeft, ChevronRight, Search, X, Building2, ArrowLeftRight, Clock, ShieldCheck, Check, Send
+} from 'lucide-react'
+import {
+  useLoans, useCustomers, useAllCustomers, useCreateLoan, useDeleteLoan,
+  useUpdateLoan, useLoanPurposeOptions, useAddLoanPurposeOption,
+  useInterBranchRequests, useCreateInterBranchRequest, useApproveInterBranchRequest
+} from '@/hooks/useDb'
+import { InterBranchRequestsModal } from '@/components/InterBranchRequestsModal'
 import { useAuthStore } from '@/store/authStore'
 import type { Loan } from '@/types'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
@@ -240,6 +249,85 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
   const [isAddingPurpose, setIsAddingPurpose] = useState(false)
   const [newPurposeName, setNewPurposeName] = useState('')
 
+  // ─── Cross-Branch Authorization Logic ──────────────────────────────────────────
+  const operatingBranch = formData.branch || activeBranch || 'Head Office'
+  const customerBaseBranch = selectedCustomer?.branch || null
+  const isCrossBranchCustomer = useMemo(() => {
+    if (!selectedCustomer || !customerBaseBranch || !operatingBranch) return false
+    const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+    return normalize(customerBaseBranch) !== normalize(operatingBranch)
+  }, [selectedCustomer, customerBaseBranch, operatingBranch])
+
+  const { data: interBranchRequests = [] } = useInterBranchRequests()
+  const createInterBranchReq = useCreateInterBranchRequest()
+  const approveInterBranchReq = useApproveInterBranchRequest()
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false)
+
+  const existingCrossBranchReq = useMemo(() => {
+    if (!isCrossBranchCustomer || !selectedCustomer) return null
+    const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+    const opNorm = normalize(operatingBranch)
+    return interBranchRequests.find(
+      r => r.customer_id === selectedCustomer.id && normalize(r.requesting_branch) === opNorm
+    ) || null
+  }, [isCrossBranchCustomer, selectedCustomer, operatingBranch, interBranchRequests])
+
+  const crossBranchApprovalStatus = useMemo(() => {
+    if (!isCrossBranchCustomer || !selectedCustomer) return 'not_applicable'
+    const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+    const opNorm = normalize(operatingBranch)
+
+    // 1. Check if customer's shared_branches already includes operatingBranch
+    const shared: string[] = Array.isArray(selectedCustomer.shared_branches) ? selectedCustomer.shared_branches : []
+    if (shared.some(sb => normalize(sb) === opNorm)) {
+      return 'approved'
+    }
+
+    if (existingCrossBranchReq) {
+      return existingCrossBranchReq.status // 'pending' | 'approved' | 'rejected'
+    }
+
+    return 'unrequested'
+  }, [isCrossBranchCustomer, selectedCustomer, operatingBranch, existingCrossBranchReq])
+
+  const handleSendCrossBranchRequest = async () => {
+    if (!selectedCustomer || !customerBaseBranch) return
+    setIsRequestingPermission(true)
+    try {
+      await createInterBranchReq.mutateAsync({
+        customer_id: selectedCustomer.id,
+        customer_custom_id: selectedCustomer.customer_id,
+        customer_name: selectedCustomer.name,
+        customer_mobile: selectedCustomer.mobile,
+        base_branch: customerBaseBranch,
+        requesting_branch: operatingBranch,
+        loan_product: formData.loan_product,
+        sanctioned_amount: parseFloat(formData.sanctioned_amount || formData.loan_amount) || undefined,
+        loan_purpose: formData.loan_purpose || undefined,
+        requested_by: user?.full_name || 'Loan Officer',
+        requested_by_email: user?.email || undefined,
+      })
+      toast.success(`Permission request sent to ${customerBaseBranch} Branch!`)
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to submit cross-branch request')
+    } finally {
+      setIsRequestingPermission(false)
+    }
+  }
+
+  const handleInstantApproveCrossBranch = async () => {
+    if (!existingCrossBranchReq) return
+    try {
+      await approveInterBranchReq.mutateAsync({
+        requestId: existingCrossBranchReq.id,
+        reviewedBy: user?.full_name || 'Admin',
+      })
+      toast.success(`Access granted! Customer profile shared with ${operatingBranch} Branch.`)
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to approve request')
+    }
+  }
+
   // Calculations based on 3 Loan Types
   const calculatedScheduleResult = useMemo(() => {
     const principal = parseFloat(formData.sanctioned_amount || formData.loan_amount) || 0
@@ -330,6 +418,9 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
 
     if (currentStep === 1) {
       if (!formData.customer_id) newErrors.customer_id = 'Customer selection is required'
+      if (isCrossBranchCustomer && crossBranchApprovalStatus !== 'approved') {
+        newErrors.customer_id = `Customer belongs to ${customerBaseBranch} Branch. Permission must be requested and accepted before creating an account.`
+      }
       if (!formData.loan_purpose) newErrors.loan_purpose = 'Loan purpose is required'
       if (!formData.account_opening_date) newErrors.account_opening_date = 'Opening date is required'
     }
@@ -880,11 +971,131 @@ function LoanForm({ loan, onClose, onCompletionChange }: { loan?: Loan; onClose:
                     <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-2">
                       {selectedCustomer.mobile && <span>📱 {selectedCustomer.mobile}</span>}
                       {selectedCustomer.branch && (
-                        <span className="text-slate-600 font-medium">🏢 {selectedCustomer.branch} Branch</span>
+                        <span className="text-slate-600 font-medium">🏢 {selectedCustomer.branch} Branch (Base Branch)</span>
                       )}
                     </p>
                   )}
                 </div>
+
+                {/* Cross-Branch Permission & Profile Sharing Status Card */}
+                {isCrossBranchCustomer && selectedCustomer && (
+                  <div className="col-span-2">
+                    {crossBranchApprovalStatus === 'unrequested' && (
+                      <div className="p-3.5 bg-amber-50/90 border border-amber-300 rounded-xl space-y-2.5 animate-in fade-in duration-200">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
+                              <Building2 className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-amber-900">
+                                Inter-Branch Customer Detected: {customerBaseBranch} Branch (Base Branch)
+                              </p>
+                              <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                                This customer's master profile is registered under <strong>{customerBaseBranch} Branch</strong>. To create an account and disburse in <strong>{operatingBranch} Branch</strong>, permission must be requested and accepted by {customerBaseBranch} Branch to share the customer profile.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-amber-200/80">
+                          <span className="text-[10px] text-amber-700 font-medium">
+                            Status: <strong className="text-amber-900">Permission Required</strong>
+                          </span>
+                          <Button
+                            size="sm"
+                            type="button"
+                            onClick={handleSendCrossBranchRequest}
+                            loading={isRequestingPermission}
+                            className="bg-amber-600 hover:bg-amber-700 text-white text-xs shadow-xs"
+                          >
+                            <Send className="h-3.5 w-3.5" /> Request Permission from {customerBaseBranch} Branch
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {crossBranchApprovalStatus === 'pending' && (
+                      <div className="p-3.5 bg-blue-50/90 border border-blue-300 rounded-xl space-y-2.5 animate-in fade-in duration-200">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center shrink-0 mt-0.5 animate-pulse">
+                              <Clock className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-blue-950">
+                                ⏳ Permission Request Pending ({customerBaseBranch} Branch)
+                              </p>
+                              <p className="text-[11px] text-blue-800 mt-0.5 leading-relaxed">
+                                Request sent by <strong>{existingCrossBranchReq?.requested_by || 'Staff'}</strong> on {formatDate(existingCrossBranchReq?.requested_at || new Date().toISOString())}. Waiting for {customerBaseBranch} Branch staff or manager to accept and share customer profile.
+                              </p>
+                            </div>
+                          </div>
+                          {(user?.role === 'admin' || (userBranch && (userBranch.toLowerCase().replace(/\s+branch$/i, '').trim() === (customerBaseBranch || '').toLowerCase().replace(/\s+branch$/i, '').trim()))) && (
+                            <Button
+                              size="sm"
+                              type="button"
+                              onClick={handleInstantApproveCrossBranch}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs shrink-0"
+                            >
+                              <Check className="h-3.5 w-3.5" /> Accept & Share Now
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {crossBranchApprovalStatus === 'rejected' && (
+                      <div className="p-3.5 bg-red-50/90 border border-red-300 rounded-xl space-y-2.5 animate-in fade-in duration-200">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-red-100 text-red-800 flex items-center justify-center shrink-0 mt-0.5">
+                              <AlertTriangle className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-red-950">
+                                ❌ Request Declined by {customerBaseBranch} Branch
+                              </p>
+                              <p className="text-[11px] text-red-800 mt-0.5 leading-relaxed">
+                                Reason: {existingCrossBranchReq?.rejection_reason || 'Declined by base branch'}.
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                            onClick={handleSendCrossBranchRequest}
+                            loading={isRequestingPermission}
+                            className="border-red-300 text-red-700 hover:bg-red-50 text-xs shrink-0"
+                          >
+                            <Send className="h-3.5 w-3.5" /> Request Again
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {crossBranchApprovalStatus === 'approved' && (
+                      <div className="p-3 bg-emerald-50/90 border border-emerald-300 rounded-xl flex items-center justify-between gap-2 animate-in fade-in duration-200">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-emerald-950">
+                              ✅ Cross-Branch Access Approved & Profile Shared
+                            </p>
+                            <p className="text-[10px] text-emerald-800">
+                              Customer profile from <strong>{customerBaseBranch} Branch</strong> is authorized for <strong>{operatingBranch} Branch</strong>. You may proceed with account creation.
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+                          Authorized
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <Select
                   label="Loan Product *"
@@ -2031,6 +2242,16 @@ export default function LoansPage() {
   const { data: loans = [], isLoading } = useLoans()
   const { data: customers = [] } = useCustomers()
   const { data: allCustomers = [] } = useAllCustomers()
+  const { data: interBranchRequests = [] } = useInterBranchRequests()
+  const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
+  const activeBranch = isBranchUser ? userBranch : selectedBranch
+  const [showInterBranchModal, setShowInterBranchModal] = useState(false)
+
+  const pendingIncomingCount = useMemo(() => {
+    if (!activeBranch) return interBranchRequests.filter(r => r.status === 'pending').length
+    const target = activeBranch.toLowerCase().replace(/\s+branch$/i, '').trim()
+    return interBranchRequests.filter(r => r.status === 'pending' && r.base_branch.toLowerCase().replace(/\s+branch$/i, '').trim() === target).length
+  }, [interBranchRequests, activeBranch])
 
   const deleteLoan = useDeleteLoan()
 
@@ -2284,6 +2505,20 @@ export default function LoansPage() {
         subtitle="Manage active loan disbursals, interest types, and EMI repayment plans."
         action={
           <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowInterBranchModal(true)}
+              className={pendingIncomingCount > 0 ? "border-amber-300 text-amber-800 bg-amber-50/70 hover:bg-amber-100" : "border-slate-200 text-slate-700"}
+            >
+              <ArrowLeftRight className="h-4 w-4 text-violet-600" />
+              Branch Access Requests
+              {pendingIncomingCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-amber-500 text-white animate-pulse">
+                  {pendingIncomingCount}
+                </span>
+              )}
+            </Button>
             <Button variant="outline" size="sm">
               <Download className="h-4 w-4" />
               Export Accounts
@@ -2433,6 +2668,11 @@ export default function LoansPage() {
       >
         <LoanForm loan={editLoan} onClose={() => { setShowModal(false); setLoanFormCompletion(0) }} onCompletionChange={setLoanFormCompletion} />
       </Modal>
+
+      <InterBranchRequestsModal
+        isOpen={showInterBranchModal}
+        onClose={() => setShowInterBranchModal(false)}
+      />
     </div>
   )
 }

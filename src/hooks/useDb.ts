@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
-import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Lead, LeadFollowup, NewCustomerForm } from '@/types'
+import type { Customer, Loan, EMIPayment, EMISchedule, Income, Expense, User, Lead, LeadFollowup, NewCustomerForm, InterBranchRequest } from '@/types'
 import { calculateEMI, generateEMISchedule, calculateLoanSchedule } from '@/utils'
 import { checkCustomerDuplicatesInDb, type CustomerSummary } from '@/utils/customerValidation'
 import dayjs from 'dayjs'
@@ -176,12 +176,20 @@ export function useCustomers() {
         .from('customers')
         .select('*')
         .order('created_at', { ascending: false })
-      if (branchFilter) {
-        query = query.eq('branch', branchFilter)
-      }
       const { data, error } = await query
       if (error) throw error
-      return data as Customer[]
+      let list = (data || []) as Customer[]
+      if (branchFilter) {
+        const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+        const target = normalize(branchFilter)
+        list = list.filter((c: any) => {
+          const b = normalize(c.branch)
+          if (b === target) return true
+          const shared: string[] = Array.isArray(c.shared_branches) ? c.shared_branches : []
+          return shared.some(sb => normalize(sb) === target)
+        })
+      }
+      return list
     },
   })
 }
@@ -3012,3 +3020,182 @@ export function usePermanentlyDeleteFromTrash() {
     },
   })
 }
+
+// ─── Inter-Branch Account Creation & Access Requests ─────────────────────────
+
+const LOCAL_IBR_KEY = 'catalyst_inter_branch_requests_cache'
+
+function getLocalInterBranchRequests(): InterBranchRequest[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_IBR_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function saveLocalInterBranchRequests(data: InterBranchRequest[]) {
+  try {
+    localStorage.setItem(LOCAL_IBR_KEY, JSON.stringify(data))
+  } catch {}
+}
+
+export function useInterBranchRequests() {
+  return useQuery({
+    queryKey: ['interBranchRequests'],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from('inter_branch_requests')
+          .select('*')
+          .order('created_at', { ascending: false })
+        if (!error && data) {
+          saveLocalInterBranchRequests(data as InterBranchRequest[])
+          return data as InterBranchRequest[]
+        }
+      } catch {}
+      return getLocalInterBranchRequests()
+    },
+    staleTime: 5_000,
+  })
+}
+
+export function useCreateInterBranchRequest() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (req: Omit<InterBranchRequest, 'id' | 'created_at' | 'updated_at' | 'status'>) => {
+      const payload: InterBranchRequest = {
+        ...req,
+        id: crypto.randomUUID ? crypto.randomUUID() : `req_${Date.now()}`,
+        status: 'pending',
+        requested_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      try {
+        const { data, error } = await supabase
+          .from('inter_branch_requests')
+          .insert(payload)
+          .select()
+          .single()
+        if (!error && data) {
+          const local = getLocalInterBranchRequests().filter(r => r.id !== data.id)
+          saveLocalInterBranchRequests([data as InterBranchRequest, ...local])
+          return data as InterBranchRequest
+        }
+      } catch {}
+      const local = getLocalInterBranchRequests().filter(r => r.id !== payload.id)
+      saveLocalInterBranchRequests([payload, ...local])
+      return payload
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['interBranchRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['notificationsData'] })
+    },
+  })
+}
+
+export function useApproveInterBranchRequest() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ requestId, reviewedBy }: { requestId: string; reviewedBy: string }) => {
+      const now = new Date().toISOString()
+      
+      // 1. Fetch request details to get customer_id and requesting_branch
+      let targetReq: InterBranchRequest | undefined
+      try {
+        const { data } = await supabase
+          .from('inter_branch_requests')
+          .select('*')
+          .eq('id', requestId)
+          .maybeSingle()
+        if (data) targetReq = data as InterBranchRequest
+      } catch {}
+      if (!targetReq) {
+        targetReq = getLocalInterBranchRequests().find(r => r.id === requestId)
+      }
+      if (!targetReq) throw new Error('Request not found')
+
+      // 2. Update request status in database
+      try {
+        await supabase
+          .from('inter_branch_requests')
+          .update({
+            status: 'approved',
+            reviewed_by: reviewedBy,
+            reviewed_at: now,
+            updated_at: now,
+          })
+          .eq('id', requestId)
+      } catch {}
+
+      // 3. Share customer profile with the requesting branch
+      try {
+        const { data: custData } = await supabase
+          .from('customers')
+          .select('shared_branches')
+          .eq('id', targetReq.customer_id)
+          .maybeSingle()
+
+        const currentShared: string[] = Array.isArray(custData?.shared_branches) ? custData.shared_branches : []
+        if (!currentShared.includes(targetReq.requesting_branch)) {
+          const updatedShared = [...currentShared, targetReq.requesting_branch]
+          await supabase
+            .from('customers')
+            .update({
+              shared_branches: updatedShared,
+              updated_at: now,
+            })
+            .eq('id', targetReq.customer_id)
+        }
+      } catch {}
+
+      // Update local storage cache
+      const local = getLocalInterBranchRequests().map(r =>
+        r.id === requestId ? { ...r, status: 'approved' as const, reviewed_by: reviewedBy, reviewed_at: now } : r
+      )
+      saveLocalInterBranchRequests(local)
+      return { success: true }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['interBranchRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['allCustomers'] })
+      queryClient.invalidateQueries({ queryKey: ['notificationsData'] })
+    },
+  })
+}
+
+export function useRejectInterBranchRequest() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ requestId, reviewedBy, rejectionReason }: { requestId: string; reviewedBy: string; rejectionReason?: string }) => {
+      const now = new Date().toISOString()
+      try {
+        await supabase
+          .from('inter_branch_requests')
+          .update({
+            status: 'rejected',
+            reviewed_by: reviewedBy,
+            reviewed_at: now,
+            rejection_reason: rejectionReason || 'Declined by base branch',
+            updated_at: now,
+          })
+          .eq('id', requestId)
+      } catch {}
+
+      const local = getLocalInterBranchRequests().map(r =>
+        r.id === requestId
+          ? { ...r, status: 'rejected' as const, reviewed_by: reviewedBy, reviewed_at: now, rejection_reason: rejectionReason }
+          : r
+      )
+      saveLocalInterBranchRequests(local)
+      return { success: true }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['interBranchRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['notificationsData'] })
+    },
+  })
+}
+

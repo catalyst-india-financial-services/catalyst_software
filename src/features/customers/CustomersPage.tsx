@@ -8,14 +8,16 @@ import {
 import {
   Plus, Download, Eye, SquarePen, Trash2, Phone, SlidersHorizontal,
   UserPlus, ChevronDown, CheckCircle2, ClipboardList, X, AlertCircle,
-  RefreshCw, ArrowRight, Lock, ChevronLeft, ChevronRight, AlertTriangle, Building2
+  RefreshCw, ArrowRight, Lock, ChevronLeft, ChevronRight, AlertTriangle, Building2,
+  GitPullRequest
 } from 'lucide-react'
 import {
   useCustomers, useUpdateCustomer,
   useApprovedLeads, useCreateNewCustomer, useSaveDraftCustomer, useUpdateDraftCustomer,
   useCustomerSegmentOptions, useAddCustomerSegmentOption, useMoveCustomerToTrash,
-  useAllCustomersValidationList
+  useAllCustomersValidationList, useInterBranchRequests
 } from '@/hooks/useDb'
+import { InterBranchRequestsModal } from '@/components/InterBranchRequestsModal'
 import type { Customer, Lead, NewCustomerForm } from '@/types'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
 import {
@@ -1399,6 +1401,19 @@ export default function CustomersPage() {
 
   const prefillLeadId = searchParams.get('leadId')
   const [prefilledLeadId, setPrefilledLeadId] = useState<string | null>(null)
+  const [showInterBranchModal, setShowInterBranchModal] = useState(false)
+
+  const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
+  const activeBranch = isBranchUser ? userBranch : selectedBranch
+  const { data: interBranchRequests = [] } = useInterBranchRequests()
+
+  const pendingIncomingCount = useMemo(() => {
+    return interBranchRequests.filter(r => {
+      if (r.status !== 'pending') return false
+      if (user?.role === 'admin' || user?.role === 'manager' || !isBranchUser) return true
+      return r.base_branch?.toLowerCase() === activeBranch?.toLowerCase()
+    }).length
+  }, [interBranchRequests, user, isBranchUser, activeBranch])
 
   // Clear any stale column sorting from previous browser sessions
   useEffect(() => {
@@ -1538,12 +1553,26 @@ export default function CustomersPage() {
       header: 'Branch',
       cell: (info) => {
         const val = info.getValue()
+        const c = info.row.original
+        const isSharedWithCurrent = activeBranch && c.shared_branches?.includes(activeBranch) && c.branch !== activeBranch
         if (!val) return <span className="text-xs text-slate-400">Unassigned</span>
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200/60 whitespace-nowrap">
-            <Building2 className="h-3 w-3 text-violet-500" />
-            {val}
-          </span>
+          <div className="flex flex-col gap-0.5">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200/60 whitespace-nowrap">
+              <Building2 className="h-3 w-3 text-violet-500" />
+              {val}
+            </span>
+            {isSharedWithCurrent && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                Shared Access
+              </span>
+            )}
+            {!isSharedWithCurrent && c.shared_branches && c.shared_branches.length > 0 && (
+              <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-slate-500">
+                +{c.shared_branches.length} shared
+              </span>
+            )}
+          </div>
         )
       },
     }),
@@ -1607,6 +1636,20 @@ export default function CustomersPage() {
         subtitle={`${customers.length} total customers registered in system`}
         action={
           <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowInterBranchModal(true)}
+              className="relative border-violet-200 text-violet-700 hover:bg-violet-50 hover:border-violet-300"
+            >
+              <GitPullRequest className="h-4 w-4 text-violet-600" />
+              Branch Requests
+              {pendingIncomingCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[10px] font-bold animate-pulse">
+                  {pendingIncomingCount}
+                </span>
+              )}
+            </Button>
             <Button variant="outline" size="sm">
               <Download className="h-4 w-4" />
               Export
@@ -1877,6 +1920,11 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+      {/* Inter-Branch Requests Modal */}
+      <InterBranchRequestsModal
+        isOpen={showInterBranchModal}
+        onClose={() => setShowInterBranchModal(false)}
+      />
     </div>
   )
 }
