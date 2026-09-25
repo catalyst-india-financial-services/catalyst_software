@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, Search, ChevronDown, Plus, Settings, LogOut, Building2 } from 'lucide-react'
+import { Menu, Search, ChevronDown, Plus, Settings, LogOut, Building2, GitPullRequest } from 'lucide-react'
 import { useUIStore } from '@/store/uiStore'
 import { useAuthStore } from '@/store/authStore'
+import { useCustomerBranchAccess } from '@/hooks/useDb'
+import { InterBranchRequestsModal } from '@/components/InterBranchRequestsModal'
 import { Avatar, CommandPalette } from '@/components/ui'
 import { cn } from '@/utils'
 
@@ -13,9 +15,23 @@ export function Header() {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [showBranchMenu, setShowBranchMenu] = useState(false)
+  const [showInterBranchModal, setShowInterBranchModal] = useState(false)
   const navigate = useNavigate()
   const userRef = useRef<HTMLDivElement>(null)
   const branchMenuRef = useRef<HTMLDivElement>(null)
+
+  const { data: allBranchAccess = [] } = useCustomerBranchAccess()
+  const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+  const currentBranchNorm = normalize(isBranchUser ? userBranch : selectedBranch)
+  const isAdmin = user?.role === 'admin' || user?.role === 'manager' || !isBranchUser
+
+  const pendingRequestsCount = useMemo(() => {
+    return allBranchAccess.filter(r => {
+      if (r.access_status !== 'PENDING') return false
+      if (!currentBranchNorm) return true
+      return normalize(r.base_branch) === currentBranchNorm
+    }).length
+  }, [allBranchAccess, currentBranchNorm])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -115,6 +131,21 @@ export function Header() {
             </div>
           )}
 
+          {/* Inter-Branch Requests Quick Access */}
+          <button
+            onClick={() => setShowInterBranchModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-xl border border-violet-200/60 transition-colors shadow-2xs relative"
+            title="Cross-Branch Profile & Account Access Requests"
+          >
+            <GitPullRequest className="h-3.5 w-3.5 text-violet-600" />
+            <span className="hidden sm:inline">Branch Requests</span>
+            {pendingRequestsCount > 0 && (
+              <span className="px-1.5 py-0.2 text-[10px] font-extrabold bg-amber-500 text-white rounded-full animate-pulse">
+                {pendingRequestsCount}
+              </span>
+            )}
+          </button>
+
           {/* Quick Actions Dropdown */}
           <button
             onClick={() => navigate('/emi-collection')}
@@ -177,6 +208,9 @@ export function Header() {
 
       {/* Command Palette Spotlight Search */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
+
+      {/* Inter-Branch Requests Modal */}
+      <InterBranchRequestsModal isOpen={showInterBranchModal} onClose={() => setShowInterBranchModal(false)} />
     </>
   )
 }

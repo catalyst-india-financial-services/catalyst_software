@@ -285,7 +285,8 @@ export function InterBranchRequestsModal({
               const isRejected = req.access_status === 'REJECTED'
               const isBaseBranchUser = activeBranch && normalize(activeBranch) === normalize(req.base_branch)
               const isRequestingBranch = activeBranch && normalize(activeBranch) === normalize(req.branch_id)
-              const canApprove = isBaseBranchUser || (isAdmin && !isRequestingBranch)
+              // Strictly: Approval is ONLY possible on the Incoming tab when operating as the Base Branch (NEVER from request sending branch)
+              const canApprove = activeTab === 'incoming' && isBaseBranchUser && !isRequestingBranch
 
               return (
                 <div
@@ -420,7 +421,7 @@ export function InterBranchRequestsModal({
                     )}
 
                     {/* Action button for approved items: Revoke */}
-                    {isApproved && (isBaseBranchUser || (isAdmin && !isRequestingBranch)) && (
+                    {isApproved && isBaseBranchUser && !isRequestingBranch && (
                       <div className="flex items-center gap-2 shrink-0">
                         <Button
                           size="sm"

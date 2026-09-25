@@ -332,6 +332,19 @@ function LoanForm({
     }
   }
 
+  // Pre-fill loan fields from approved request if available
+  useEffect(() => {
+    if (existingBranchAccessRecord && !loan) {
+      setFormData(prev => ({
+        ...prev,
+        loan_product: existingBranchAccessRecord.loan_product || prev.loan_product,
+        sanctioned_amount: existingBranchAccessRecord.sanctioned_amount ? existingBranchAccessRecord.sanctioned_amount.toString() : prev.sanctioned_amount,
+        loan_amount: existingBranchAccessRecord.sanctioned_amount ? existingBranchAccessRecord.sanctioned_amount.toString() : prev.loan_amount,
+        loan_purpose: existingBranchAccessRecord.loan_purpose || prev.loan_purpose,
+      }))
+    }
+  }, [existingBranchAccessRecord?.id, loan])
+
   // Options for branch dropdown, including all customers clearly labeled with branch indicators
   const dropdownCustomerOptions = useMemo(() => {
     const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
@@ -2300,6 +2313,9 @@ export default function LoansPage() {
   const [selectedRequestDetails, setSelectedRequestDetails] = useState<CustomerBranchAccess | null>(null)
 
   const { data: allBranchAccess = [] } = useCustomerBranchAccess()
+  const { data: loans = [], isLoading } = useLoans()
+  const { data: customers = [] } = useCustomers()
+  const { data: allCustomers = [] } = useAllCustomers()
   const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
   const activeBranch = isBranchUser ? userBranch : selectedBranch
 
@@ -2318,8 +2334,14 @@ export default function LoansPage() {
   }, [allBranchAccess, currentBranchNorm])
 
   const pendingOutgoingRequests = useMemo(() => {
-    return outgoingRequests.filter(r => r.access_status === 'PENDING')
-  }, [outgoingRequests])
+    return outgoingRequests.filter(r => {
+      if (r.access_status !== 'PENDING') return false
+      const hasExistingLoan = loans.some(
+        (l) => l.customer_id === r.customer_id && normalize(l.branch) === normalize(r.branch_id)
+      )
+      return !hasExistingLoan
+    })
+  }, [outgoingRequests, loans])
 
   const pendingOutgoingCount = pendingOutgoingRequests.length
 
@@ -2361,10 +2383,6 @@ export default function LoansPage() {
       // ignore
     }
   }, [])
-
-  const { data: loans = [], isLoading } = useLoans()
-  const { data: customers = [] } = useCustomers()
-  const { data: allCustomers = [] } = useAllCustomers()
 
   const deleteLoan = useDeleteLoan()
 
@@ -2409,45 +2427,55 @@ export default function LoansPage() {
       }
     })
 
-    const requestRows: AccountRowItem[] = outgoingRequests.map((req) => {
-      const customer = allCustomers.find(c => c.id === req.customer_id) || customers.find(c => c.id === req.customer_id)
-      const custCustomId = req.customer_custom_id || customer?.customer_id
-      const custName = req.customer_name || customer?.name || 'Customer'
-      const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
+    const requestRows: AccountRowItem[] = outgoingRequests
+      .filter((req) => {
+        if (req.access_status === 'APPROVED') {
+          const hasExistingLoan = loans.some(
+            (l) => l.customer_id === req.customer_id && normalize(l.branch) === normalize(req.branch_id)
+          )
+          if (hasExistingLoan) return false
+        }
+        return true
+      })
+      .map((req) => {
+        const customer = allCustomers.find(c => c.id === req.customer_id) || customers.find(c => c.id === req.customer_id)
+        const custCustomId = req.customer_custom_id || customer?.customer_id
+        const custName = req.customer_name || customer?.name || 'Customer'
+        const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
 
-      return {
-        id: req.id,
-        rowType: 'request',
-        loan_number: custCustomId ? `REQ-${custCustomId}` : `REQ-${req.id.slice(0, 6).toUpperCase()}`,
-        customer_name: custName,
-        customer_id: req.customer_id,
-        customer_mobile: req.customer_mobile || customer?.mobile,
-        customer_custom_id: custCustomId,
-        loan_type: req.loan_product || 'Personal Loan',
-        loan_amount: Number(req.sanctioned_amount) || 0,
-        sanctioned_amount: Number(req.sanctioned_amount) || 0,
-        interest_rate: undefined,
-        interest_type: undefined,
-        emi_amount: undefined,
-        emi_count: undefined,
-        remaining_emi: undefined,
-        disbursed_amount: 0,
-        remaining_balance: 0,
-        loan_date: req.requested_at || req.created_at || new Date().toISOString(),
-        created_at: req.created_at || req.requested_at,
-        branch: req.branch_id,
-        base_branch: req.base_branch || customer?.branch || 'Base Branch',
-        status: req.access_status === 'PENDING' ? 'pending_permission' : req.access_status === 'APPROVED' ? 'permission_approved' : 'permission_rejected',
-        access_status: req.access_status,
-        rejection_reason: req.rejection_reason,
-        requested_by: req.requested_by,
-        requested_at: req.requested_at,
-        notes: req.notes,
-        loan_purpose: req.loan_purpose,
-        kyc_status: isKycVerified ? 'verified' : 'pending',
-        original_request: req,
-      }
-    })
+        return {
+          id: req.id,
+          rowType: 'request',
+          loan_number: custCustomId ? `REQ-${custCustomId}` : `REQ-${req.id.slice(0, 6).toUpperCase()}`,
+          customer_name: custName,
+          customer_id: req.customer_id,
+          customer_mobile: req.customer_mobile || customer?.mobile,
+          customer_custom_id: custCustomId,
+          loan_type: req.loan_product || 'Personal Loan',
+          loan_amount: Number(req.sanctioned_amount) || 0,
+          sanctioned_amount: Number(req.sanctioned_amount) || 0,
+          interest_rate: undefined,
+          interest_type: undefined,
+          emi_amount: undefined,
+          emi_count: undefined,
+          remaining_emi: undefined,
+          disbursed_amount: 0,
+          remaining_balance: 0,
+          loan_date: req.requested_at || req.created_at || new Date().toISOString(),
+          created_at: req.created_at || req.requested_at,
+          branch: req.branch_id,
+          base_branch: req.base_branch || customer?.branch || 'Base Branch',
+          status: req.access_status === 'PENDING' ? 'pending_permission' : req.access_status === 'APPROVED' ? 'permission_approved' : 'permission_rejected',
+          access_status: req.access_status,
+          rejection_reason: req.rejection_reason,
+          requested_by: req.requested_by,
+          requested_at: req.requested_at,
+          notes: req.notes,
+          loan_purpose: req.loan_purpose,
+          kyc_status: isKycVerified ? 'verified' : 'pending',
+          original_request: req,
+        }
+      })
 
     return [...loanRows, ...requestRows]
   }, [loans, outgoingRequests, allCustomers, customers])
@@ -2556,15 +2584,27 @@ export default function LoansPage() {
       cell: (info) => {
         const row = info.row.original
         if (row.rowType === 'loan') {
-          return <span className="text-sm font-bold text-slate-800 tracking-tight">{info.getValue()}</span>
+          return (
+            <div className="flex flex-col">
+              <span className="text-sm font-bold text-slate-800 tracking-tight">{info.getValue()}</span>
+              {row.customer_custom_id && (
+                <span className="text-[10px] font-mono text-slate-400 font-semibold">{row.customer_custom_id}</span>
+              )}
+            </div>
+          )
         }
         return (
           <div className="flex flex-col">
             <span className="text-sm font-bold text-slate-800 tracking-tight">{info.getValue()}</span>
-            <span className="text-[10px] font-semibold text-amber-700 flex items-center gap-1 mt-0.5">
-              <Building2 className="h-3 w-3 inline text-amber-600" />
-              Base: {row.base_branch} Branch
-            </span>
+            <div className="flex items-center gap-2 text-[10px] font-semibold text-amber-800 mt-0.5 flex-wrap">
+              {row.customer_custom_id && (
+                <span className="font-mono text-slate-500 bg-slate-100 px-1 py-0.2 rounded font-bold">{row.customer_custom_id}</span>
+              )}
+              <span className="flex items-center gap-1 text-amber-700">
+                <Building2 className="h-3 w-3 inline text-amber-600" />
+                Request sent to: {row.base_branch} Branch
+              </span>
+            </div>
           </div>
         )
       },
@@ -3030,15 +3070,18 @@ export default function LoansPage() {
             onChange={(e) => setGlobalFilter(e.target.value)}
           />
           <div className="flex gap-1.5 ml-auto bg-slate-100 p-1 rounded-lg border border-slate-200/50 flex-wrap">
-            {[
-              { key: 'all', label: 'All' },
-              { key: 'active', label: 'Active' },
-              { key: 'pending', label: 'Pending', badge: pendingOutgoingCount > 0 ? pendingOutgoingCount : undefined },
-              { key: 'requests', label: 'Branch Requests', badge: outgoingRequests.length > 0 ? outgoingRequests.length : undefined },
-              { key: 'draft', label: 'Draft' },
-              { key: 'overdue', label: 'Overdue' },
-              { key: 'closed', label: 'Closed' },
-            ].map((s) => (
+            {(() => {
+              const activeRequestsCount = combinedAccountRows.filter(r => r.rowType === 'request').length
+              return [
+                { key: 'all', label: 'All' },
+                { key: 'active', label: 'Active' },
+                { key: 'pending', label: 'Pending', badge: pendingOutgoingCount > 0 ? pendingOutgoingCount : undefined },
+                { key: 'requests', label: 'Branch Requests', badge: activeRequestsCount > 0 ? activeRequestsCount : undefined },
+                { key: 'draft', label: 'Draft' },
+                { key: 'overdue', label: 'Overdue' },
+                { key: 'closed', label: 'Closed' },
+              ]
+            })().map((s) => (
               <button
                 key={s.key}
                 onClick={() => setStatusFilter(s.key)}

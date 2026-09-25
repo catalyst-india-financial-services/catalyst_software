@@ -210,11 +210,25 @@ export function useCustomers() {
         .map(a => a.customer_id)
       const allApprovedIds = new Set([...approvedAccessCustIds, ...localApproved])
 
-      // Return Local Owner OR Approved Shared customers
+      // Also ensure any customer who has an account/loan created in this branch is included
+      let branchLoanCustIds: string[] = []
+      try {
+        const { data: branchLoans } = await supabase
+          .from('loans')
+          .select('customer_id, branch')
+        if (branchLoans) {
+          branchLoanCustIds = branchLoans
+            .filter(l => normalize(l.branch) === target)
+            .map(l => l.customer_id)
+        }
+      } catch {}
+      const allAccessibleCustIds = new Set([...allApprovedIds, ...branchLoanCustIds])
+
+      // Return Local Owner OR Approved Shared / Account-holder customers
       return customersList
         .filter(c => {
           const isOwner = normalize(c.branch) === target
-          const isShared = allApprovedIds.has(c.id)
+          const isShared = allAccessibleCustIds.has(c.id)
           return isOwner || isShared
         })
         .map(c => {
@@ -696,6 +710,9 @@ export function useCreateLoan() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['loans'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['allCustomers'] })
+      queryClient.invalidateQueries({ queryKey: ['customerBranchAccess'] })
       queryClient.invalidateQueries({ queryKey: ['extendedDashboardData'] })
       queryClient.invalidateQueries({ queryKey: ['dashboardData'] })
     },
@@ -3254,13 +3271,17 @@ export function useApproveBranchAccess() {
         if (cust?.branch) custBaseBranch = cust.branch
       } catch {}
 
-      // Critical Security Check: Only Base Branch or Global Admin can approve
+      // Critical Security Check: Approval ONLY comes from Base Branch / Home Branch (NEVER from sending branch)
+      const isRequestingBranch = userBranch && normalize(userBranch) === normalize(target.branch_id)
       const isBaseBranchUser = userBranch && custBaseBranch && normalize(userBranch) === normalize(custBaseBranch)
-      const isRequestingBranchUser = userBranch && normalize(userBranch) === normalize(target.branch_id)
-      const isGlobalAdmin = (userRole === 'admin' || userRole === 'manager') && !isRequestingBranchUser
+      const isGlobalAdminWithoutBranch = !userBranch && (userRole === 'admin' || userRole === 'manager')
 
-      if (!isBaseBranchUser && !isGlobalAdmin) {
-        throw new Error(`Security Exception: Users in the requesting branch (${target.branch_id}) cannot approve cross-branch requests. Approval must come from ${custBaseBranch} Branch or Admin.`)
+      if (isRequestingBranch) {
+        throw new Error(`Security Exception: Users in the request sending branch (${target.branch_id}) cannot approve this request. Approval must come from ${custBaseBranch} (Base Branch).`)
+      }
+
+      if (!isBaseBranchUser && !isGlobalAdminWithoutBranch) {
+        throw new Error(`Security Exception: Approval only comes from ${custBaseBranch} (Base Branch). Please switch to ${custBaseBranch} Branch to authorize access.`)
       }
 
       // Update in Supabase
@@ -3345,12 +3366,16 @@ export function useRejectBranchAccess() {
         if (cust?.branch) custBaseBranch = cust.branch
       } catch {}
 
+      const isRequestingBranch = userBranch && normalize(userBranch) === normalize(target.branch_id)
       const isBaseBranchUser = userBranch && custBaseBranch && normalize(userBranch) === normalize(custBaseBranch)
-      const isRequestingBranchUser = userBranch && normalize(userBranch) === normalize(target.branch_id)
-      const isGlobalAdmin = (userRole === 'admin' || userRole === 'manager') && !isRequestingBranchUser
+      const isGlobalAdminWithoutBranch = !userBranch && (userRole === 'admin' || userRole === 'manager')
 
-      if (!isBaseBranchUser && !isGlobalAdmin) {
-        throw new Error(`Security Exception: Users in the requesting branch (${target.branch_id}) cannot decline this request. Action must come from ${custBaseBranch} Branch or Admin.`)
+      if (isRequestingBranch) {
+        throw new Error(`Security Exception: Users in the request sending branch (${target.branch_id}) cannot decline this request. Action must come from ${custBaseBranch} (Base Branch).`)
+      }
+
+      if (!isBaseBranchUser && !isGlobalAdminWithoutBranch) {
+        throw new Error(`Security Exception: Action must come from ${custBaseBranch} (Base Branch). Please switch to ${custBaseBranch} Branch.`)
       }
 
       try {

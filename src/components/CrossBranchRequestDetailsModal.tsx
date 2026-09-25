@@ -22,6 +22,8 @@ import { formatDate, formatCurrency, cn } from '@/utils'
 import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
+import { useAuthStore } from '@/store/authStore'
+import { useApproveBranchAccess, useRejectBranchAccess } from '@/hooks/useDb'
 import { toast } from 'sonner'
 
 interface CrossBranchRequestDetailsModalProps {
@@ -40,12 +42,71 @@ export function CrossBranchRequestDetailsModal({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isApproving, setIsApproving] = useState(false)
+  const [isRejecting, setIsRejecting] = useState(false)
+  const [showRejectInput, setShowRejectInput] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+
+  const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
+  const activeBranch = isBranchUser ? userBranch : selectedBranch
+  const approveReq = useApproveBranchAccess()
+  const rejectReq = useRejectBranchAccess()
 
   if (!request) return null
 
   const isPending = request.access_status === 'PENDING'
   const isApproved = request.access_status === 'APPROVED'
   const isRejected = request.access_status === 'REJECTED'
+
+  const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+  const isBaseBranchUser = activeBranch && normalize(activeBranch) === normalize(request.base_branch)
+  const isRequestingBranch = activeBranch && normalize(activeBranch) === normalize(request.branch_id)
+  const isAdmin = user?.role === 'admin' || user?.role === 'manager' || !isBranchUser
+  const isAuthorizedViewer = isBaseBranchUser || isRequestingBranch || isAdmin || !activeBranch
+  // Strictly: ONLY the Base / Home Branch can approve (never the request sending branch)
+  const canApprove = isBaseBranchUser && !isRequestingBranch
+
+  const handleApprove = async () => {
+    setIsApproving(true)
+    try {
+      await approveReq.mutateAsync({
+        accessId: request.id,
+        customerId: request.customer_id,
+        branchId: request.branch_id,
+        approvedBy: user?.full_name || (isAdmin ? 'System Administrator' : `${request.base_branch} Branch Manager`),
+        approvedByUserId: user?.id,
+        userBranch: activeBranch,
+        userRole: user?.role,
+      })
+      toast.success(`Access Approved! Customer profile shared with ${request.branch_id} Branch.`)
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to approve request')
+    } finally {
+      setIsApproving(false)
+    }
+  }
+
+  const handleReject = async () => {
+    setIsRejecting(true)
+    try {
+      await rejectReq.mutateAsync({
+        accessId: request.id,
+        customerId: request.customer_id,
+        branchId: request.branch_id,
+        rejectedBy: user?.full_name || (isAdmin ? 'System Administrator' : `${request.base_branch} Branch Manager`),
+        rejectedByUserId: user?.id,
+        rejectionReason: rejectReason || 'Declined by base branch authority',
+        userBranch: activeBranch,
+        userRole: user?.role,
+      })
+      toast.success('Cross-branch access request declined.')
+      setShowRejectInput(false)
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to decline request')
+    } finally {
+      setIsRejecting(false)
+    }
+  }
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
@@ -65,9 +126,21 @@ export function CrossBranchRequestDetailsModal({
     }
   }
 
-  const handleViewCustomerProfile = () => {
-    onClose()
-    navigate(`/customers/${request.customer_id}`)
+  if (!isAuthorizedViewer) {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Access Restricted" size="md">
+        <div className="p-6 text-center space-y-3">
+          <AlertCircle className="h-10 w-10 text-rose-500 mx-auto" />
+          <h4 className="text-sm font-bold text-slate-800">Branch Access Restricted</h4>
+          <p className="text-xs text-slate-500">
+            This cross-branch request was created between <strong>{request.branch_id} Branch</strong> and <strong>{request.base_branch} Branch</strong>. It is not accessible from <strong>{activeBranch} Branch</strong>.
+          </p>
+          <Button variant="outline" size="sm" onClick={onClose} className="mt-2">
+            Close
+          </Button>
+        </div>
+      </Modal>
+    )
   }
 
   return (
@@ -327,6 +400,56 @@ export function CrossBranchRequestDetailsModal({
           </div>
 
           <div className="flex items-center gap-2">
+            {isPending && canApprove && (
+              showRejectInput ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Decline reason..."
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                    className="text-xs border border-rose-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-rose-400 w-48"
+                  />
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    loading={isRejecting}
+                    onClick={handleReject}
+                    className="text-xs px-2.5 font-bold"
+                  >
+                    Confirm
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setShowRejectInput(false); setRejectReason('') }}
+                    className="text-xs px-2"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowRejectInput(true)}
+                    className="border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold"
+                  >
+                    Decline
+                  </Button>
+                  <Button
+                    size="sm"
+                    loading={isApproving}
+                    onClick={handleApprove}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Accept &amp; Authorize
+                  </Button>
+                </div>
+              )
+            )}
+
             <Button variant="ghost" size="sm" onClick={onClose}>
               Close
             </Button>
