@@ -8,7 +8,7 @@ import {
 import {
   Plus, Download, Eye, SquarePen, FileText, SlidersHorizontal, Calculator,
   WalletCards, TrendingUp, CheckCircle2, AlertTriangle, Trash2, ChevronDown,
-  ChevronLeft, ChevronRight, Search, X, Building2, ArrowLeftRight, Clock, ShieldCheck, Check, Send, GitPullRequest
+  ChevronLeft, ChevronRight, Search, X, Building2, ArrowLeftRight, Clock, ShieldCheck, Check, Send, GitPullRequest, User
 } from 'lucide-react'
 import {
   useLoans, useCustomers, useAllCustomers, useCreateLoan, useDeleteLoan,
@@ -16,8 +16,9 @@ import {
   useCustomerBranchAccess, useRequestBranchAccess, useApproveBranchAccess
 } from '@/hooks/useDb'
 import { InterBranchRequestsModal } from '@/components/InterBranchRequestsModal'
+import { CrossBranchRequestDetailsModal } from '@/components/CrossBranchRequestDetailsModal'
 import { useAuthStore } from '@/store/authStore'
-import type { Loan } from '@/types'
+import type { Loan, CustomerBranchAccess } from '@/types'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
@@ -30,7 +31,41 @@ import {
   calculateLoanSchedule, type LoanStructureType, type CompositePhase, DEFAULT_COMPOSITE_PHASES
 } from '@/utils'
 
-const columnHelper = createColumnHelper<Loan>()
+export interface AccountRowItem {
+  id: string
+  rowType: 'loan' | 'request'
+  loan_number: string
+  customer_name: string
+  customer_id?: string
+  customer_mobile?: string
+  customer_custom_id?: string
+  loan_type: string
+  loan_amount: number
+  sanctioned_amount?: number
+  interest_rate?: number
+  interest_type?: string
+  emi_amount?: number
+  emi_count?: number
+  remaining_emi?: number
+  disbursed_amount?: number
+  remaining_balance?: number
+  loan_date: string
+  created_at?: string
+  branch: string
+  base_branch?: string
+  status: string
+  access_status?: string
+  rejection_reason?: string
+  requested_by?: string
+  requested_at?: string
+  notes?: string
+  loan_purpose?: string
+  kyc_status: string
+  original_loan?: Loan
+  original_request?: CustomerBranchAccess
+}
+
+const columnHelper = createColumnHelper<AccountRowItem>()
 
 const loanTypes = [
   { value: 'regular', label: 'Regular Loan' },
@@ -2258,23 +2293,43 @@ export default function LoansPage() {
   const [globalFilter, setGlobalFilter] = useLocalStorage<string>('loans_search', '')
   const [showModal, setShowModal] = useState(shouldOpenNewLoan)
   const [editLoan, setEditLoan] = useState<Loan | undefined>()
+  const [prefillCustomerOverride, setPrefillCustomerOverride] = useState<string | null>(null)
   const [loanFormCompletion, setLoanFormCompletion] = useState(0)
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('loans_status_filter', 'all')
   const [showInterBranchModal, setShowInterBranchModal] = useState(false)
+  const [selectedRequestDetails, setSelectedRequestDetails] = useState<CustomerBranchAccess | null>(null)
 
   const { data: allBranchAccess = [] } = useCustomerBranchAccess()
   const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
   const activeBranch = isBranchUser ? userBranch : selectedBranch
 
+  const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+  const currentBranchNorm = normalize(activeBranch)
+
+  // Outgoing requests sent from the active operating branch to customer base branches
+  const outgoingRequests = useMemo(() => {
+    return allBranchAccess.filter(r => {
+      if (!currentBranchNorm) {
+        // Admin: show all cross-branch requests
+        return normalize(r.base_branch) !== normalize(r.branch_id)
+      }
+      return normalize(r.branch_id) === currentBranchNorm && normalize(r.base_branch) !== currentBranchNorm
+    })
+  }, [allBranchAccess, currentBranchNorm])
+
+  const pendingOutgoingRequests = useMemo(() => {
+    return outgoingRequests.filter(r => r.access_status === 'PENDING')
+  }, [outgoingRequests])
+
+  const pendingOutgoingCount = pendingOutgoingRequests.length
+
   const pendingIncomingCount = useMemo(() => {
-    const normalize = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
-    const currentTarget = normalize(activeBranch)
     return allBranchAccess.filter(r => {
       if (r.access_status !== 'PENDING') return false
-      if (!currentTarget) return true
-      return normalize(r.base_branch) === currentTarget
+      if (!currentBranchNorm) return true
+      return normalize(r.base_branch) === currentBranchNorm
     }).length
-  }, [allBranchAccess, activeBranch])
+  }, [allBranchAccess, currentBranchNorm])
 
   useEffect(() => {
     if (shouldOpenNewLoan) {
@@ -2283,9 +2338,12 @@ export default function LoansPage() {
     }
   }, [shouldOpenNewLoan])
 
+  const effectivePrefillCustomerId = prefillCustomerOverride || prefillCustomerId
+
   const handleCloseModal = () => {
     setShowModal(false)
     setEditLoan(undefined)
+    setPrefillCustomerOverride(null)
     setLoanFormCompletion(0)
     if (searchParams.get('customerId') || searchParams.get('newLoan')) {
       const next = new URLSearchParams(searchParams)
@@ -2319,14 +2377,109 @@ export default function LoansPage() {
     }
   }
 
+  // Convert loans and requests to AccountRowItem list
+  const combinedAccountRows = useMemo<AccountRowItem[]>(() => {
+    const loanRows: AccountRowItem[] = loans.map((loan) => {
+      const customer = allCustomers.find(c => c.id === loan.customer_id) || customers.find(c => c.id === loan.customer_id)
+      const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
+      return {
+        id: loan.id,
+        rowType: 'loan',
+        loan_number: loan.loan_number,
+        customer_name: loan.customer_name || customer?.name || 'Unknown',
+        customer_id: loan.customer_id,
+        customer_mobile: loan.customer_mobile || customer?.mobile,
+        customer_custom_id: customer?.customer_id,
+        loan_type: loan.loan_type || loan.loan_product || 'regular',
+        loan_amount: Number(loan.loan_amount || loan.sanctioned_amount) || 0,
+        sanctioned_amount: Number(loan.sanctioned_amount || loan.loan_amount) || 0,
+        interest_rate: loan.interest_rate,
+        interest_type: loan.interest_type,
+        emi_amount: loan.emi_amount,
+        emi_count: loan.emi_count,
+        remaining_emi: loan.remaining_emi,
+        disbursed_amount: Number(loan.disbursed_amount) || 0,
+        remaining_balance: Number(loan.remaining_balance) || 0,
+        loan_date: loan.loan_date || loan.account_opening_date || loan.created_at || new Date().toISOString(),
+        created_at: loan.created_at || loan.loan_date,
+        branch: loan.branch || 'Head Office',
+        status: loan.status,
+        kyc_status: isKycVerified ? 'verified' : 'pending',
+        original_loan: loan,
+      }
+    })
+
+    const requestRows: AccountRowItem[] = outgoingRequests.map((req) => {
+      const customer = allCustomers.find(c => c.id === req.customer_id) || customers.find(c => c.id === req.customer_id)
+      const custCustomId = req.customer_custom_id || customer?.customer_id
+      const custName = req.customer_name || customer?.name || 'Customer'
+      const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
+
+      return {
+        id: req.id,
+        rowType: 'request',
+        loan_number: custCustomId ? `REQ-${custCustomId}` : `REQ-${req.id.slice(0, 6).toUpperCase()}`,
+        customer_name: custName,
+        customer_id: req.customer_id,
+        customer_mobile: req.customer_mobile || customer?.mobile,
+        customer_custom_id: custCustomId,
+        loan_type: req.loan_product || 'Personal Loan',
+        loan_amount: Number(req.sanctioned_amount) || 0,
+        sanctioned_amount: Number(req.sanctioned_amount) || 0,
+        interest_rate: undefined,
+        interest_type: undefined,
+        emi_amount: undefined,
+        emi_count: undefined,
+        remaining_emi: undefined,
+        disbursed_amount: 0,
+        remaining_balance: 0,
+        loan_date: req.requested_at || req.created_at || new Date().toISOString(),
+        created_at: req.created_at || req.requested_at,
+        branch: req.branch_id,
+        base_branch: req.base_branch || customer?.branch || 'Base Branch',
+        status: req.access_status === 'PENDING' ? 'pending_permission' : req.access_status === 'APPROVED' ? 'permission_approved' : 'permission_rejected',
+        access_status: req.access_status,
+        rejection_reason: req.rejection_reason,
+        requested_by: req.requested_by,
+        requested_at: req.requested_at,
+        notes: req.notes,
+        loan_purpose: req.loan_purpose,
+        kyc_status: isKycVerified ? 'verified' : 'pending',
+        original_request: req,
+      }
+    })
+
+    return [...loanRows, ...requestRows]
+  }, [loans, outgoingRequests, allCustomers, customers])
+
   const filteredData = useMemo(() => {
-    const list = loans.filter((l) => statusFilter === 'all' || l.status === statusFilter)
+    let list = combinedAccountRows
+
+    if (statusFilter === 'all') {
+      list = combinedAccountRows
+    } else if (statusFilter === 'active') {
+      list = combinedAccountRows.filter(r => r.rowType === 'loan' && r.status === 'active')
+    } else if (statusFilter === 'pending') {
+      list = combinedAccountRows.filter(r =>
+        (r.rowType === 'loan' && (r.status === 'pending' || (Number(r.disbursed_amount) || 0) <= 0)) ||
+        (r.rowType === 'request' && r.access_status === 'PENDING')
+      )
+    } else if (statusFilter === 'requests') {
+      list = combinedAccountRows.filter(r => r.rowType === 'request')
+    } else if (statusFilter === 'draft') {
+      list = combinedAccountRows.filter(r => r.rowType === 'loan' && r.status === 'draft')
+    } else if (statusFilter === 'overdue') {
+      list = combinedAccountRows.filter(r => r.rowType === 'loan' && r.status === 'overdue')
+    } else if (statusFilter === 'closed') {
+      list = combinedAccountRows.filter(r => r.rowType === 'loan' && r.status === 'closed')
+    }
+
     return [...list].sort((a, b) => {
       const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.loan_date ? new Date(a.loan_date).getTime() : 0)
       const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.loan_date ? new Date(b.loan_date).getTime() : 0)
       return timeB - timeA
     })
-  }, [loans, statusFilter])
+  }, [combinedAccountRows, statusFilter])
 
   // Horizontal scroll arrows state & handlers
   const tableContainerRef = useRef<HTMLDivElement>(null)
@@ -2372,63 +2525,157 @@ export default function LoansPage() {
 
   const columns = useMemo(() => [
     columnHelper.accessor('loan_number', {
-      header: 'Loan No.',
-      cell: (info) => (
-        <button
-          onClick={() => navigate(`/loans/${info.row.original.id}`)}
-          className="text-xs font-mono text-brand-600 font-bold hover:underline hover:text-brand-700 transition-colors cursor-pointer"
-        >
-          {info.getValue()}
-        </button>
-      ),
+      header: 'Loan / Ref No.',
+      cell: (info) => {
+        const row = info.row.original
+        if (row.rowType === 'loan') {
+          return (
+            <button
+              onClick={() => navigate(`/loans/${row.id}`)}
+              className="text-xs font-mono text-brand-600 font-bold hover:underline hover:text-brand-700 transition-colors cursor-pointer"
+            >
+              {info.getValue()}
+            </button>
+          )
+        }
+        return (
+          <button
+            onClick={() => setSelectedRequestDetails(row.original_request || null)}
+            className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-violet-700 hover:text-violet-900 transition-colors cursor-pointer group"
+          >
+            <span className="underline decoration-dotted underline-offset-2">{info.getValue()}</span>
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-200">
+              Request
+            </span>
+          </button>
+        )
+      },
     }),
     columnHelper.accessor('customer_name', {
       header: 'Customer Name',
-      cell: (info) => <span className="text-sm font-bold text-slate-800 tracking-tight">{info.getValue()}</span>,
+      cell: (info) => {
+        const row = info.row.original
+        if (row.rowType === 'loan') {
+          return <span className="text-sm font-bold text-slate-800 tracking-tight">{info.getValue()}</span>
+        }
+        return (
+          <div className="flex flex-col">
+            <span className="text-sm font-bold text-slate-800 tracking-tight">{info.getValue()}</span>
+            <span className="text-[10px] font-semibold text-amber-700 flex items-center gap-1 mt-0.5">
+              <Building2 className="h-3 w-3 inline text-amber-600" />
+              Base: {row.base_branch} Branch
+            </span>
+          </div>
+        )
+      },
     }),
     columnHelper.accessor('loan_type', {
       header: 'Category',
-      cell: (info) => (
-        <Badge variant="outline" className="capitalize text-[10px] font-bold">{info.getValue().replace('_', ' ')}</Badge>
-      ),
+      cell: (info) => {
+        const row = info.row.original
+        if (row.rowType === 'loan') {
+          return (
+            <Badge variant="outline" className="capitalize text-[10px] font-bold">
+              {info.getValue().replace('_', ' ')}
+            </Badge>
+          )
+        }
+        return (
+          <Badge variant="outline" className="capitalize text-[10px] font-bold text-violet-700 border-violet-200 bg-violet-50/50">
+            {info.getValue()}
+          </Badge>
+        )
+      },
     }),
     columnHelper.accessor('loan_amount', {
       header: 'Principal',
       cell: (info) => {
+        const row = info.row.original
         const val = info.getValue()
-        return <span className="text-xs font-bold text-slate-800 amount-display">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
+        if (row.rowType === 'loan') {
+          return <span className="text-xs font-bold text-slate-800 amount-display">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
+        }
+        return (
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-slate-800 amount-display">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
+            <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-tight">(Requested)</span>
+          </div>
+        )
       },
     }),
     columnHelper.accessor('interest_rate', {
       header: 'Interest Rate',
-      cell: (info) => (
-        <span className="text-xs font-semibold text-slate-700">
-          {info.getValue()}%{' '}
-          <span className="text-[10px] text-slate-400 capitalize font-medium">({info.row.original.interest_type})</span>
-        </span>
-      ),
+      cell: (info) => {
+        const row = info.row.original
+        if (row.rowType === 'loan') {
+          const val = info.getValue()
+          return (
+            <span className="text-xs font-semibold text-slate-700">
+              {val}%{' '}
+              <span className="text-[10px] text-slate-400 capitalize font-medium">({row.interest_type})</span>
+            </span>
+          )
+        }
+        return <span className="text-xs text-slate-400 italic">Pending Sanction</span>
+      },
     }),
     columnHelper.accessor('emi_amount', {
       header: 'Monthly EMI',
       cell: (info) => {
-        const val = info.getValue()
-        return <span className="text-xs font-extrabold amount-display text-emerald-600">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
+        const row = info.row.original
+        if (row.rowType === 'loan') {
+          const val = info.getValue()
+          return <span className="text-xs font-extrabold amount-display text-emerald-600">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
+        }
+        return <span className="text-xs text-slate-400 font-normal">—</span>
       },
     }),
     columnHelper.accessor('remaining_emi', {
       header: 'Progress',
       cell: (info) => {
-        const total = info.row.original.emi_count
-        const remaining = info.getValue()
-        const pct = total ? ((total - remaining) / total) * 100 : 0
+        const row = info.row.original
+        if (row.rowType === 'loan') {
+          const total = row.emi_count || 0
+          const remaining = info.getValue() || 0
+          const pct = total ? ((total - remaining) / total) * 100 : 0
+          return (
+            <div className="min-w-[100px]">
+              <div className="flex justify-between text-[11px] font-semibold mb-1">
+                <span className="text-slate-700">{total - remaining}/{total}</span>
+                <span className="text-slate-400">{remaining} left</span>
+              </div>
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full bg-brand-600 rounded-full transition-all" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          )
+        }
+        if (row.access_status === 'APPROVED') {
+          return (
+            <div className="min-w-[100px]">
+              <div className="flex justify-between text-[10px] font-bold text-emerald-700 mb-1">
+                <span>Step 2/2: Approved</span>
+                <span>Ready</span>
+              </div>
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full w-full" />
+              </div>
+            </div>
+          )
+        }
+        if (row.access_status === 'REJECTED') {
+          return (
+            <span className="text-[10px] font-bold text-rose-600">Declined by Base</span>
+          )
+        }
         return (
           <div className="min-w-[100px]">
-            <div className="flex justify-between text-[11px] font-semibold mb-1">
-              <span className="text-slate-700">{total - remaining}/{total}</span>
-              <span className="text-slate-400">{remaining} left</span>
+            <div className="flex justify-between text-[10px] font-bold text-amber-700 mb-1">
+              <span>Step 1/2: In Review</span>
+              <span>50%</span>
             </div>
             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-brand-600 rounded-full transition-all" style={{ width: `${pct}%` }} />
+              <div className="h-full bg-amber-500 rounded-full w-1/2 animate-pulse" />
             </div>
           </div>
         )
@@ -2437,21 +2684,28 @@ export default function LoansPage() {
     columnHelper.accessor('remaining_balance', {
       header: 'Outstanding',
       cell: (info) => {
-        const loan = info.row.original
-        const isDisbursed = (Number(loan.disbursed_amount) || 0) > 0
-        if (!isDisbursed) {
-          return (
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-slate-400">₹0</span>
-              <span className="text-[9px] text-amber-600 font-semibold tracking-tight uppercase">Pending Disb.</span>
-            </div>
-          )
+        const row = info.row.original
+        if (row.rowType === 'loan') {
+          const isDisbursed = (Number(row.disbursed_amount) || 0) > 0
+          if (!isDisbursed) {
+            return (
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-slate-400">₹0</span>
+                <span className="text-[9px] text-amber-600 font-semibold tracking-tight uppercase">Pending Disb.</span>
+              </div>
+            )
+          }
+          const val = info.getValue()
+          return <span className="text-xs font-bold amount-display text-slate-800">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
         }
-        const val = info.getValue()
-        return <span className="text-xs font-bold amount-display text-slate-800">{val ? formatCurrency(val) : <span className="text-slate-350 font-normal">—</span>}</span>
+        return (
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-slate-400">₹0</span>
+            <span className="text-[9px] text-violet-600 font-semibold tracking-tight uppercase">Pending Auth</span>
+          </div>
+        )
       },
     }),
-
     columnHelper.accessor('loan_date', {
       header: 'Date',
       sortingFn: (rowA, rowB) => {
@@ -2464,12 +2718,21 @@ export default function LoansPage() {
     columnHelper.accessor('branch', {
       header: 'Branch',
       cell: (info) => {
+        const row = info.row.original
         const val = info.getValue()
-        if (!val) return <span className="text-xs text-slate-400">Unassigned</span>
+        if (row.rowType === 'loan') {
+          if (!val) return <span className="text-xs text-slate-400">Unassigned</span>
+          return (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200/60 whitespace-nowrap">
+              <Building2 className="h-3 w-3 text-violet-500" />
+              {val}
+            </span>
+          )
+        }
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200/60 whitespace-nowrap">
-            <Building2 className="h-3 w-3 text-violet-500" />
-            {val}
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+            <Building2 className="h-3 w-3 text-amber-600" />
+            {val} (Req.)
           </span>
         )
       },
@@ -2477,41 +2740,74 @@ export default function LoansPage() {
     columnHelper.accessor('status', {
       header: 'Status',
       cell: (info) => {
-        const loan = info.row.original
-        const isDisbursed = (Number(loan.disbursed_amount) || 0) > 0
+        const row = info.row.original
+        if (row.rowType === 'loan') {
+          const isDisbursed = (Number(row.disbursed_amount) || 0) > 0
+          if (row.status === 'draft') {
+            return <StatusBadge status="draft" label="Draft" />
+          }
+          if (!isDisbursed) {
+            return <StatusBadge status="pending" label="Pending Disb." />
+          }
+          if (row.status === 'closed') {
+            return <StatusBadge status="closed" label="Closed" />
+          }
+          if (row.status === 'overdue') {
+            return <StatusBadge status="overdue" label="Overdue" />
+          }
+          return <StatusBadge status="active" label="Active" />
+        }
 
-        if (loan.status === 'draft') {
-          return <StatusBadge status="draft" label="Draft" />
+        // Cross-Branch Requests
+        if (row.access_status === 'PENDING') {
+          return (
+            <button
+              onClick={() => setSelectedRequestDetails(row.original_request || null)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs hover:bg-amber-100 transition-colors text-left cursor-pointer"
+              title={`Click to view details of the request sent to ${row.base_branch} Branch`}
+            >
+              <span className="relative flex h-2 w-2 flex-shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+              </span>
+              <span>Waiting for permission from {row.base_branch} Branch</span>
+            </button>
+          )
         }
-        if (!isDisbursed) {
-          return <StatusBadge status="pending" label="Pending Disb." />
+        if (row.access_status === 'APPROVED') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
+              <span>Permission Approved by {row.base_branch} Branch</span>
+            </span>
+          )
         }
-        if (loan.status === 'closed') {
-          return <StatusBadge status="closed" label="Closed" />
+        if (row.access_status === 'REJECTED') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-800 border border-rose-300 shadow-2xs">
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-600 flex-shrink-0" />
+              <span>Rejected by {row.base_branch} Branch</span>
+            </span>
+          )
         }
-        if (loan.status === 'overdue') {
-          return <StatusBadge status="overdue" label="Overdue" />
-        }
-        return <StatusBadge status="active" label="Active" />
+        return <StatusBadge status="pending" label="Pending" />
       },
     }),
     columnHelper.display({
       id: 'kyc_status',
       header: 'KYC',
       cell: (info) => {
-        const loan = info.row.original
-        const customer = allCustomers.find(c => c.id === loan.customer_id) || customers.find(c => c.id === loan.customer_id)
-        const isKycVerified = customer ? (customer.kyc_status === 'verified' || customer.status === 'active') : false
-        const kycStatus = isKycVerified ? 'verified' : 'pending'
+        const row = info.row.original
+        const isKycVerified = row.kyc_status === 'verified'
         const kycLabel = isKycVerified ? 'Verified' : 'Pending'
         return (
           <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-            kycStatus === 'verified'
+            isKycVerified
               ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
               : 'bg-amber-50 border-amber-100 text-amber-700'
           }`}>
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-              kycStatus === 'verified' ? 'bg-emerald-500' : 'bg-amber-400'
+              isKycVerified ? 'bg-emerald-500' : 'bg-amber-400'
             }`} />
             {kycLabel}
           </span>
@@ -2521,22 +2817,84 @@ export default function LoansPage() {
     columnHelper.display({
       id: 'actions',
       header: 'Actions',
-      cell: (info) => (
-        <DropdownMenu
-          align="right"
-          trigger={
-            <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
-              <SlidersHorizontal className="h-4 w-4" />
-            </button>
-          }
-          items={[
-            { label: 'View Loan', icon: <Eye className="h-4 w-4" />, onClick: () => navigate(`/loans/${info.row.original.id}`) },
-            { label: 'Edit Loan', icon: <SquarePen className="h-4 w-4" />, onClick: () => { setEditLoan(info.row.original); setShowModal(true) } },
-            { label: 'View Agreement', icon: <FileText className="h-4 w-4" />, onClick: () => { } },
-            { label: 'Delete Account', icon: <Trash2 className="h-4 w-4 text-red-500" />, onClick: () => handleDeleteLoan(info.row.original.id, info.row.original.loan_number), variant: 'danger' as const, separator: true },
-          ]}
-        />
-      ),
+      cell: (info) => {
+        const row = info.row.original
+        if (row.rowType === 'loan') {
+          return (
+            <DropdownMenu
+              align="right"
+              trigger={
+                <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+                  <SlidersHorizontal className="h-4 w-4" />
+                </button>
+              }
+              items={[
+                { label: 'View Loan', icon: <Eye className="h-4 w-4" />, onClick: () => navigate(`/loans/${row.id}`) },
+                { label: 'Edit Loan', icon: <SquarePen className="h-4 w-4" />, onClick: () => { setEditLoan(row.original_loan); setShowModal(true) } },
+                { label: 'View Agreement', icon: <FileText className="h-4 w-4" />, onClick: () => { } },
+                { label: 'Delete Account', icon: <Trash2 className="h-4 w-4 text-red-500" />, onClick: () => handleDeleteLoan(row.id, row.loan_number), variant: 'danger' as const, separator: true },
+              ]}
+            />
+          )
+        }
+
+        if (row.access_status === 'APPROVED') {
+          return (
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setPrefillCustomerOverride(row.customer_id || '')
+                  setEditLoan(undefined)
+                  setShowModal(true)
+                }}
+                className="h-7 px-2.5 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Create Account
+              </Button>
+              <DropdownMenu
+                align="right"
+                trigger={
+                  <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+                    <SlidersHorizontal className="h-4 w-4" />
+                  </button>
+                }
+                items={[
+                  { label: 'View Request Details', icon: <Eye className="h-4 w-4" />, onClick: () => setSelectedRequestDetails(row.original_request || null) },
+                  { label: 'View Customer Profile', icon: <User className="h-4 w-4" />, onClick: () => navigate(`/customers/${row.customer_id}`) },
+                ]}
+              />
+            </div>
+          )
+        }
+
+        return (
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedRequestDetails(row.original_request || null)}
+              className="h-7 px-2.5 text-[11px] border-amber-300 text-amber-800 hover:bg-amber-50 font-bold"
+            >
+              <Eye className="h-3 w-3 mr-1 text-amber-600" />
+              View Request
+            </Button>
+            <DropdownMenu
+              align="right"
+              trigger={
+                <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+                  <SlidersHorizontal className="h-4 w-4" />
+                </button>
+              }
+              items={[
+                { label: 'View Request Details', icon: <Eye className="h-4 w-4" />, onClick: () => setSelectedRequestDetails(row.original_request || null) },
+                { label: 'View Customer Profile', icon: <User className="h-4 w-4" />, onClick: () => navigate(`/customers/${row.customer_id}`) },
+              ]}
+            />
+          </div>
+        )
+      },
     }),
   ], [navigate, customers, allCustomers])
 
@@ -2560,6 +2918,20 @@ export default function LoansPage() {
         subtitle="Manage active loan disbursals, interest types, and EMI repayment plans."
         action={
           <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowInterBranchModal(true)}
+              className="relative border-violet-200 text-violet-700 hover:bg-violet-50 font-bold"
+            >
+              <ArrowLeftRight className="h-4 w-4 text-violet-600" />
+              Inter-Branch Requests
+              {(pendingIncomingCount > 0 || pendingOutgoingCount > 0) && (
+                <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-amber-500 text-white shadow-2xs">
+                  {pendingIncomingCount + pendingOutgoingCount}
+                </span>
+              )}
+            </Button>
             <Button variant="outline" size="sm">
               <Download className="h-4 w-4" />
               Export Accounts
@@ -2577,26 +2949,92 @@ export default function LoansPage() {
         {[
           { label: 'Total Loan Portfolio', value: loans.length, icon: <WalletCards className="h-5 w-5" />, bg: 'kpi-blue', iconBg: 'bg-brand-600' },
           { label: 'Active Disbursals', value: loans.filter((l) => l.status === 'active').length, icon: <TrendingUp className="h-5 w-5" />, bg: 'kpi-green', iconBg: 'bg-emerald-600' },
-          { label: 'Pending / Draft', value: loans.filter((l) => l.status === 'pending' || l.status === 'draft').length, icon: <FileText className="h-5 w-5" />, bg: 'kpi-purple', iconBg: 'bg-amber-500' },
+          { label: 'Pending / Draft', value: loans.filter((l) => l.status === 'pending' || l.status === 'draft').length + pendingOutgoingCount, icon: <FileText className="h-5 w-5" />, bg: 'kpi-purple', iconBg: 'bg-amber-500' },
           { label: 'Overdue Loans', value: loans.filter((l) => l.status === 'overdue').length, icon: <AlertTriangle className="h-5 w-5" />, bg: 'kpi-red', iconBg: 'bg-red-600' },
         ].map((s) => (
           <StatsCard key={s.label} title={s.label} value={s.value.toString()} icon={s.icon} bgClass={s.bg} iconBg={s.iconBg} />
         ))}
       </div>
 
+      {/* Outgoing Cross-Branch Requests Banner */}
+      {pendingOutgoingRequests.length > 0 && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-300/80 shadow-2xs">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-700 flex items-center justify-center font-bold">
+                <Clock className="h-4 w-4 animate-spin" style={{ animationDuration: '6s' }} />
+              </div>
+              <div>
+                <h4 className="text-sm font-extrabold text-amber-950 flex items-center gap-2">
+                  Outgoing Cross-Branch Permission Requests ({pendingOutgoingRequests.length} Waiting)
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  </span>
+                </h4>
+                <p className="text-xs text-amber-800/90">
+                  Account requests sent to customer base branches. Once approved, you can complete account terms and open the loan.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setStatusFilter('requests')}
+              className="text-xs border-amber-300 text-amber-900 hover:bg-amber-100 font-bold bg-white/70"
+            >
+              <ArrowLeftRight className="h-3.5 w-3.5 mr-1 text-amber-700" />
+              View All Sent Requests
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+            {pendingOutgoingRequests.map((req) => (
+              <div
+                key={req.id}
+                onClick={() => setSelectedRequestDetails(req)}
+                className="p-3 rounded-xl bg-white/95 border border-amber-200/90 shadow-2xs hover:border-amber-400 hover:shadow-xs transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-bold text-slate-800 group-hover:text-brand-600 transition-colors truncate">
+                    {req.customer_name}
+                  </span>
+                  <span className="text-[10px] font-mono font-bold text-brand-700 bg-brand-50 px-1.5 py-0.2 rounded border border-brand-100">
+                    {req.customer_custom_id || 'ID Pending'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-600 flex items-center justify-between">
+                  <span>{req.loan_product || 'Loan'} · <strong className="text-slate-800">{req.sanctioned_amount ? formatCurrency(req.sanctioned_amount) : '₹0'}</strong></span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-amber-700 flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Waiting for {req.base_branch || 'Base'} Branch
+                  </span>
+                  <span className="text-[10px] text-brand-600 font-bold group-hover:underline">
+                    View Details →
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <Card>
         <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
             className="w-72"
-            placeholder="Search loan number, customer..."
+            placeholder="Search loan number, customer, request..."
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
           />
-          <div className="flex gap-1.5 ml-auto bg-slate-100 p-1 rounded-lg border border-slate-200/50">
+          <div className="flex gap-1.5 ml-auto bg-slate-100 p-1 rounded-lg border border-slate-200/50 flex-wrap">
             {[
               { key: 'all', label: 'All' },
               { key: 'active', label: 'Active' },
-              { key: 'pending', label: 'Pending' },
+              { key: 'pending', label: 'Pending', badge: pendingOutgoingCount > 0 ? pendingOutgoingCount : undefined },
+              { key: 'requests', label: 'Branch Requests', badge: outgoingRequests.length > 0 ? outgoingRequests.length : undefined },
               { key: 'draft', label: 'Draft' },
               { key: 'overdue', label: 'Overdue' },
               { key: 'closed', label: 'Closed' },
@@ -2605,11 +3043,19 @@ export default function LoansPage() {
                 key={s.key}
                 onClick={() => setStatusFilter(s.key)}
                 className={cn(
-                  'px-3 py-1.5 text-xs font-bold rounded-lg capitalize transition-all',
+                  'px-3 py-1.5 text-xs font-bold rounded-lg capitalize transition-all flex items-center gap-1.5',
                   statusFilter === s.key ? 'bg-brand-600 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
                 )}
               >
                 {s.label}
+                {s.badge !== undefined && (
+                  <span className={cn(
+                    'px-1.5 py-0.2 rounded-full text-[10px] font-extrabold',
+                    statusFilter === s.key ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                  )}>
+                    {s.badge}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -2662,7 +3108,7 @@ export default function LoansPage() {
             </thead>
             <tbody>
               {table.getRowModel().rows.length === 0 ? (
-                <tr><td colSpan={columns.length}><EmptyState title="No loans found" /></td></tr>
+                <tr><td colSpan={columns.length}><EmptyState title="No loans or requests found" /></td></tr>
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
@@ -2709,7 +3155,7 @@ export default function LoansPage() {
       >
         <LoanForm
           loan={editLoan}
-          initialCustomerId={prefillCustomerId || undefined}
+          initialCustomerId={effectivePrefillCustomerId || undefined}
           onClose={handleCloseModal}
           onCompletionChange={setLoanFormCompletion}
         />
@@ -2719,6 +3165,19 @@ export default function LoansPage() {
         isOpen={showInterBranchModal}
         onClose={() => setShowInterBranchModal(false)}
       />
+
+      <CrossBranchRequestDetailsModal
+        isOpen={!!selectedRequestDetails}
+        onClose={() => setSelectedRequestDetails(null)}
+        request={selectedRequestDetails}
+        onCompleteSetup={(customerId) => {
+          setSelectedRequestDetails(null)
+          setPrefillCustomerOverride(customerId)
+          setEditLoan(undefined)
+          setShowModal(true)
+        }}
+      />
     </div>
   )
 }
+
