@@ -126,6 +126,11 @@ export function CrossBranchRequestDetailsModal({
     }
   }
 
+  const handleViewCustomerProfile = () => {
+    onClose()
+    navigate(`/customers/${request.customer_id}`)
+  }
+
   if (!isAuthorizedViewer) {
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Access Restricted" size="md">
