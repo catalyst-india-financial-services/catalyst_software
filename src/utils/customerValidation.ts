@@ -117,7 +117,8 @@ export function checkCustomerDuplicatesFromList(
       errors.mobile = `Mobile number is already registered to ${cNameDisplay} (${cIdDisplay}). Duplicate profiles are not permitted.`
     }
 
-    // 2. PAN duplicate check (must be a valid 10-character PAN to flag)
+    // 2. PAN duplicate check (DISABLED - allowed as per requirements)
+    /*
     if (!duplicatePan && normPan.length === 10 && cPan === normPan) {
       duplicatePan = {
         id: c.id,
@@ -129,8 +130,10 @@ export function checkCustomerDuplicatesFromList(
       }
       errors.pan = `PAN card is already registered to ${cNameDisplay} (${cIdDisplay}). Duplicate profiles are not permitted.`
     }
+    */
 
-    // 3. Aadhaar duplicate check (must be a valid 12-digit Aadhaar to flag)
+    // 3. Aadhaar duplicate check (DISABLED - allowed as per requirements)
+    /*
     if (!duplicateAadhaar && normAadhaar.length === 12 && cAadhaar === normAadhaar) {
       duplicateAadhaar = {
         id: c.id,
@@ -142,6 +145,7 @@ export function checkCustomerDuplicatesFromList(
       }
       errors.aadhaar_kyc_id = `Aadhaar number is already registered to ${cNameDisplay} (${cIdDisplay}). Duplicate profiles are not permitted.`
     }
+    */
   }
 
   return {
