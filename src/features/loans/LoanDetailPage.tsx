@@ -1237,7 +1237,16 @@ export default function LoanDetailPage() {
                               <td className="font-mono text-xs font-bold text-slate-800">{item.principal > 0 ? formatCurrency(item.principal) : '—'}</td>
                               <td className="font-mono text-xs font-extrabold text-brand-700">{formatCurrency(item.emi_amount)}</td>
                               <td className="font-mono text-xs text-emerald-600 font-bold">{formatCurrency(item.paid_amount || 0)}</td>
-                              <td className="text-xs text-slate-500">{item.paid_date ? formatDate(item.paid_date) : '-'}</td>
+                              <td className="text-xs text-slate-500">
+                                {item.paid_date ? (
+                                  <div className="flex flex-col">
+                                    <span className="font-semibold text-slate-700">{formatDate(item.paid_date)}</span>
+                                    {(item as any).updated_at && <span className="text-[9px] text-slate-400 mt-0.5">Recorded: {formatDate((item as any).updated_at)}</span>}
+                                  </div>
+                                ) : (
+                                  '-'
+                                )}
+                              </td>
                               <td>
                                 <span className={cn(
                                   'px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border',
@@ -1923,6 +1932,7 @@ function CollectEmiModal({
 }) {
   const { user } = useAuthStore()
   const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'bank' | 'cheque'>('cash')
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0])
   const [penalty, setPenalty] = useState('0')
   const [discount, setDiscount] = useState('0')
   const [partial, setPartial] = useState(false)
@@ -1941,7 +1951,7 @@ function CollectEmiModal({
         customer_id: customer.id,
         emi_schedule_id: nextPending.id,
         emi_number: nextPending.emi_number,
-        payment_date: new Date().toISOString().split('T')[0],
+        payment_date: paymentDate,
         payment_mode: paymentMode,
         amount_paid: totalAmount,
         penalty: parseFloat(penalty) || 0,
@@ -1992,6 +2002,17 @@ function CollectEmiModal({
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <Input
+            label="Payment Date"
+            type="date"
+            value={paymentDate}
+            onChange={(e) => setPaymentDate(e.target.value)}
+            required
+            max={new Date().toISOString().split('T')[0]}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-4">

@@ -11,7 +11,7 @@ import {
   FileText, CheckCircle2, Clock, CheckSquare, Plus, ArrowRight, ShieldCheck, HelpCircle,
   Building, UserCheck, RefreshCw, BarChart2
 } from 'lucide-react'
-import { StatsCard, Card, CardHeader, CardTitle, CardBody, Avatar, StatusBadge, PageHeader } from '@/components/ui'
+import { StatsCard, Card, CardHeader, CardTitle, CardBody, Avatar, StatusBadge, PageHeader, Modal, Button } from '@/components/ui'
 import { formatCurrency, formatDate, cn } from '@/utils'
 import { supabase } from '@/services/supabase'
 import { useQuery } from '@tanstack/react-query'
@@ -51,6 +51,7 @@ export default function DashboardPage() {
   const { isBranchUser, userBranch, selectedBranch } = useAuthStore()
   const currentBranch = isBranchUser ? userBranch : selectedBranch
   const [activeChartTab, setActiveChartTab] = useState<'collection' | 'disbursement' | 'outstanding' | 'cashflow' | 'revenue' | 'customers' | 'distribution' | 'emi_success' | 'top_types'>('collection')
+  const [selectedKpi, setSelectedKpi] = useState<string | null>(null)
 
   // Fetch all required tables in parallel — each query is resilient and falls back
   // to an empty array on error so a single RLS/schema issue never crashes the entire dashboard.
@@ -693,7 +694,11 @@ export default function DashboardPage() {
   } = metrics
 
   return (
-    <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
+    <div className="relative p-6 space-y-6 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-50/80 via-slate-50/80 to-emerald-50/50 min-h-screen overflow-hidden z-0">
+      {/* Decorative blurred blobs for true glassmorphism feel */}
+      <div className="absolute top-0 right-0 -mr-20 -mt-20 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl pointer-events-none -z-10" />
+      <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-96 h-96 bg-emerald-400/20 rounded-full blur-3xl pointer-events-none -z-10" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full max-w-4xl bg-blue-400/5 rounded-full blur-3xl pointer-events-none -z-10" />
       {/* Page Header */}
       <PageHeader
         title={currentBranch ? `${currentBranch} Branch Dashboard` : 'Executive Financial Dashboard'}
@@ -751,40 +756,40 @@ export default function DashboardPage() {
         className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"
       >
         <motion.div variants={itemVariants}>
-          <StatsCard title="Total Customers" value={totalCustomers.toString()} icon={<Users className="h-4 w-4" />} bgClass="kpi-blue" />
+          <StatsCard title="Total Customers" value={totalCustomers.toString()} icon={<Users className="h-4 w-4" />} bgClass="bg-blue-50" iconBg="bg-blue-600" onClick={() => setSelectedKpi('customers')} />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Active Loans" value={activeLoans.toString()} icon={<WalletCards className="h-4 w-4" />} bgClass="kpi-green" />
+          <StatsCard title="Active Loans" value={activeLoans.toString()} icon={<WalletCards className="h-4 w-4" />} bgClass="bg-emerald-50" iconBg="bg-emerald-600" onClick={() => setSelectedKpi('active_loans')} />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Closed Loans" value={closedLoans.toString()} icon={<CheckCircle2 className="h-4 w-4" />} bgClass="kpi-purple" />
+          <StatsCard title="Closed Loans" value={closedLoans.toString()} icon={<CheckCircle2 className="h-4 w-4" />} bgClass="bg-purple-50" iconBg="bg-purple-600" onClick={() => setSelectedKpi('closed_loans')} />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Total Outstanding" value={formatCurrency(totalOutstandingAmount)} icon={<Building className="h-4 w-4" />} bgClass="kpi-red" />
+          <StatsCard title="Total Outstanding" value={formatCurrency(totalOutstandingAmount)} icon={<Building className="h-4 w-4" />} bgClass="bg-red-50" iconBg="bg-red-600" />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Today's Collection" value={formatCurrency(todaysCollection)} icon={<Coins className="h-4 w-4" />} bgClass="kpi-cyan" />
+          <StatsCard title="Today's Collection" value={formatCurrency(todaysCollection)} icon={<Coins className="h-4 w-4" />} bgClass="bg-cyan-50" iconBg="bg-cyan-600" onClick={() => setSelectedKpi('todays_collection')} />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Today's EMI Due" value={formatCurrency(todaysEMIDue)} icon={<CalendarClock className="h-4 w-4" />} bgClass="kpi-orange" />
+          <StatsCard title="Today's EMI Due" value={formatCurrency(todaysEMIDue)} icon={<CalendarClock className="h-4 w-4" />} bgClass="bg-orange-50" iconBg="bg-orange-600" onClick={() => setSelectedKpi('todays_due')} />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Today's Disbursement" value={formatCurrency(todaysDisbursement)} icon={<ArrowUpRight className="h-4 w-4" />} bgClass="kpi-green" />
+          <StatsCard title="Today's Disbursement" value={formatCurrency(todaysDisbursement)} icon={<ArrowUpRight className="h-4 w-4" />} bgClass="bg-emerald-50" iconBg="bg-emerald-600" />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Available Cash" value={formatCurrency(availableCash)} icon={<Coins className="h-4 w-4" />} bgClass="kpi-blue" />
+          <StatsCard title="Available Cash" value={formatCurrency(availableCash)} icon={<Coins className="h-4 w-4" />} bgClass="bg-blue-50" iconBg="bg-blue-600" />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Bank Balance" value={formatCurrency(bankBalance)} icon={<Building className="h-4 w-4" />} bgClass="kpi-cyan" />
+          <StatsCard title="Bank Balance" value={formatCurrency(bankBalance)} icon={<Building className="h-4 w-4" />} bgClass="bg-cyan-50" iconBg="bg-cyan-600" />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Interest Earned" value={formatCurrency(interestEarned)} icon={<TrendingUp className="h-4 w-4" />} bgClass="kpi-green" />
+          <StatsCard title="Interest Earned" value={formatCurrency(interestEarned)} icon={<TrendingUp className="h-4 w-4" />} bgClass="bg-emerald-50" iconBg="bg-emerald-600" />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Pending Approvals" value={pendingApprovalsCount.toString()} icon={<Clock className="h-4 w-4" />} bgClass="kpi-orange" />
+          <StatsCard title="Pending Approvals" value={pendingApprovalsCount.toString()} icon={<Clock className="h-4 w-4" />} bgClass="bg-orange-50" iconBg="bg-orange-600" onClick={() => setSelectedKpi('pending')} />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <StatsCard title="Monthly Growth" value={`${portfolioGrowth.toFixed(1)}%`} icon={<Activity className="h-4 w-4" />} bgClass="kpi-purple" />
+          <StatsCard title="Monthly Growth" value={`${portfolioGrowth.toFixed(1)}%`} icon={<Activity className="h-4 w-4" />} bgClass="bg-purple-50" iconBg="bg-purple-600" />
         </motion.div>
       </motion.div>
 
@@ -1288,9 +1293,134 @@ export default function DashboardPage() {
           </Card>
 
         </div>
-
       </div>
 
+      {/* KPI Breakup Popup Modal */}
+      <AnimatePresence>
+        {selectedKpi && (
+          <Modal
+            isOpen={!!selectedKpi}
+            onClose={() => setSelectedKpi(null)}
+            size="3xl"
+            title={
+              selectedKpi === 'customers' ? 'Total Customers Breakup' :
+              selectedKpi === 'active_loans' ? 'Active Loans Breakup' :
+              selectedKpi === 'closed_loans' ? 'Closed Loans Breakup' :
+              selectedKpi === 'todays_collection' ? 'Today\'s Collection Breakup' :
+              selectedKpi === 'todays_due' ? 'Today\'s EMI Due Breakup' :
+              selectedKpi === 'pending' ? 'Pending Approvals Breakup' : 'Details'
+            }
+          >
+            <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm mt-4">
+              <table className="w-full text-left data-table">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    {selectedKpi === 'customers' && (
+                      <>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Customer ID</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Name</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Mobile</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Status</th>
+                      </>
+                    )}
+                    {selectedKpi === 'active_loans' && (
+                      <>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Loan No</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Customer</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Principal</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Outstanding</th>
+                      </>
+                    )}
+                    {selectedKpi === 'closed_loans' && (
+                      <>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Loan No</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Customer</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Amount</th>
+                      </>
+                    )}
+                    {selectedKpi === 'todays_collection' && (
+                      <>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Receipt No</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Customer</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Amount</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Mode</th>
+                      </>
+                    )}
+                    {selectedKpi === 'todays_due' && (
+                      <>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Customer</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Loan No</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Due Amount</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Paid</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Status</th>
+                      </>
+                    )}
+                    {selectedKpi === 'pending' && (
+                      <>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Applicant</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Amount</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Type</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {selectedKpi === 'customers' && data?.customers?.map((c: any) => (
+                    <tr key={c.id} className="hover:bg-blue-50/50 transition-colors">
+                      <td className="px-6 py-4 font-mono text-sm text-blue-600 font-bold">{c.customer_id}</td>
+                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{c.name}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{c.mobile}</td>
+                      <td className="px-6 py-4"><StatusBadge status={c.kyc_status} /></td>
+                    </tr>
+                  ))}
+                  {selectedKpi === 'active_loans' && data?.loans?.filter((l: any) => l.status === 'active' || l.status === 'overdue').map((l: any) => (
+                    <tr key={l.id} className="hover:bg-blue-50/50 transition-colors">
+                      <td className="px-6 py-4 font-mono text-sm text-blue-600 font-bold">{l.loan_number}</td>
+                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{l.customer_name}</td>
+                      <td className="px-6 py-4 amount-display font-semibold text-slate-700">{formatCurrency(l.loan_amount)}</td>
+                      <td className="px-6 py-4 amount-display font-bold text-orange-600">{formatCurrency(l.remaining_balance)}</td>
+                    </tr>
+                  ))}
+                  {selectedKpi === 'closed_loans' && data?.loans?.filter((l: any) => l.status === 'closed').map((l: any) => (
+                    <tr key={l.id} className="hover:bg-blue-50/50 transition-colors">
+                      <td className="px-6 py-4 font-mono text-sm text-blue-600 font-bold">{l.loan_number}</td>
+                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{l.customer_name}</td>
+                      <td className="px-6 py-4 amount-display font-semibold text-slate-700">{formatCurrency(l.loan_amount)}</td>
+                    </tr>
+                  ))}
+                  {selectedKpi === 'todays_collection' && data?.payments?.filter((p: any) => p.payment_date === todayStr).map((p: any) => (
+                    <tr key={p.id} className="hover:bg-blue-50/50 transition-colors">
+                      <td className="px-6 py-4 font-mono text-sm text-blue-600 font-bold">{p.receipt_number}</td>
+                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{p.customer_name || 'Unknown'}</td>
+                      <td className="px-6 py-4 amount-display font-extrabold text-emerald-600">{formatCurrency(p.amount_paid)}</td>
+                      <td className="px-6 py-4 uppercase text-xs font-bold text-slate-500">{p.payment_mode}</td>
+                    </tr>
+                  ))}
+                  {selectedKpi === 'todays_due' && todaysDueCustomers?.map((d: any) => (
+                    <tr key={d.id} className="hover:bg-blue-50/50 transition-colors">
+                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{d.name}</td>
+                      <td className="px-6 py-4 font-mono text-sm text-blue-600 font-bold">{d.loanNo}</td>
+                      <td className="px-6 py-4 amount-display font-semibold text-slate-700">{formatCurrency(d.amount)}</td>
+                      <td className="px-6 py-4 amount-display font-extrabold text-emerald-600">{formatCurrency(d.paid)}</td>
+                      <td className="px-6 py-4"><StatusBadge status={d.status} /></td>
+                    </tr>
+                  ))}
+                  {selectedKpi === 'pending' && data?.loans?.filter((l: any) => l.status === 'pending').map((l: any) => (
+                    <tr key={l.id} className="hover:bg-blue-50/50 transition-colors">
+                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{l.customer_name}</td>
+                      <td className="px-6 py-4 amount-display font-semibold text-slate-700">{formatCurrency(l.loan_amount)}</td>
+                      <td className="px-6 py-4 capitalize font-medium text-slate-600 text-sm">{l.loan_type}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end mt-6">
+              <Button onClick={() => setSelectedKpi(null)} variant="outline">Close Details</Button>
+            </div>
+          </Modal>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

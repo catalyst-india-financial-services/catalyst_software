@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/utils'
 import {
@@ -215,8 +216,8 @@ export function Card({ className, hover, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        'bg-white rounded-2xl border border-slate-200/80 shadow-card overflow-hidden',
-        hover && 'transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5 cursor-pointer',
+        'bg-white/60 backdrop-blur-xl rounded-2xl border border-white/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden relative',
+        hover && 'transition-all duration-300 hover:shadow-[0_20px_40px_rgb(0,0,0,0.08)] hover:-translate-y-1.5 hover:bg-white/80 cursor-pointer',
         className
       )}
       {...props}
@@ -225,7 +226,7 @@ export function Card({ className, hover, ...props }: CardProps) {
 }
 
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-6 py-4.5 border-b border-slate-100 flex items-center justify-between', className)} {...props} />
+  return <div className={cn('px-6 py-4.5 border-b border-slate-200/50 flex items-center justify-between', className)} {...props} />
 }
 
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
@@ -360,10 +361,10 @@ export function Modal({ isOpen, onClose, title, subtitle, children, size = 'md',
 
   const isFullSize = size === 'full' || size === '3xl' || size === '2xl'
 
-  return (
+  const content = (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -410,6 +411,9 @@ export function Modal({ isOpen, onClose, title, subtitle, children, size = 'md',
       )}
     </AnimatePresence>
   )
+  
+  if (typeof document === 'undefined') return content
+  return createPortal(content, document.body)
 }
 
 // ─── Tabs ───────────────────────────────────────────────────────────────────────
@@ -617,13 +621,23 @@ interface StatsCardProps {
   bgClass?: string
   iconBg?: string
   subtext?: string
+  onClick?: () => void
 }
 
-export function StatsCard({ title, value, icon, trend, bgClass = 'kpi-blue', iconBg = 'bg-brand-600', subtext }: StatsCardProps) {
+export function StatsCard({ title, value, icon, trend, bgClass = 'bg-white', iconBg = 'bg-blue-600', subtext, onClick }: StatsCardProps) {
   return (
-    <div className={cn('rounded-2xl p-5 border border-white/60 shadow-card transition-all duration-200 hover:shadow-card-hover hover:-translate-y-1', bgClass)}>
-      <div className="flex items-start justify-between mb-3">
-        <div className={cn('p-2.5 rounded-xl text-white shadow-2xs', iconBg)}>
+    <div 
+      onClick={onClick}
+      className={cn(
+        'group relative overflow-hidden rounded-2xl p-5 transition-all duration-300 flex flex-col', 
+        'bg-white/60 backdrop-blur-xl border border-white/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)]',
+        onClick ? 'cursor-pointer hover:-translate-y-1.5 hover:shadow-[0_20px_40px_rgb(0,0,0,0.08)] hover:bg-white/80' : ''
+      )}
+    >
+      <div className={cn('absolute inset-0 opacity-20 bg-linear-to-br', bgClass.replace('bg-', 'from-').replace('-50', '-100'), 'to-transparent')}></div>
+      <div className="relative z-10">
+      <div className="flex items-start justify-between mb-4">
+        <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-white shadow-sm', iconBg)}>
           {icon}
         </div>
         {trend && (
@@ -636,9 +650,10 @@ export function StatsCard({ title, value, icon, trend, bgClass = 'kpi-blue', ico
           </span>
         )}
       </div>
-      <div className="amount-display text-2xl font-bold text-slate-900 tracking-tight mb-1">{value}</div>
-      <div className="text-xs font-semibold text-slate-600">{title}</div>
-      {subtext && <div className="text-[11px] text-slate-400 mt-0.5">{subtext}</div>}
+      <div className="amount-display text-[1.625rem] font-bold text-slate-900 tracking-[-0.025em] mb-1.5">{value}</div>
+      <div className="text-sm font-semibold text-slate-600">{title}</div>
+      {subtext && <div className="text-[11px] text-slate-400 mt-1">{subtext}</div>}
+      </div>
     </div>
   )
 }

@@ -124,13 +124,13 @@
   body {
     background-color: #F8FAFC;
     color: #0F172A;
-    font-family: 'Inter', 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-family: 'Poppins', 'Inter', 'Plus Jakarta Sans', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    font-family: 'Poppins', 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
     font-weight: 600;
     letter-spacing: -0.02em;
   }
