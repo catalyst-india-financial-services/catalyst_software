@@ -123,29 +123,31 @@ export default function ReportsPage() {
   const [selectedReport, setSelectedReport] = useState<typeof REPORTS[0] | null>(null)
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Reports Center</h1>
-          <p className="text-sm text-slate-500 mt-1">Access all business reports in one place</p>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Reports Center</h1>
+          <p className="text-xs text-slate-500 mt-0.5">Access all business reports in one place</p>
         </div>
         <motion.button 
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl bg-white hover:bg-slate-50 text-sm font-bold text-slate-700 shadow-sm transition-colors"
+          className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-sm transition-colors"
         >
-          <Clock className="w-4 h-4 text-slate-400" />
+          <Clock className="w-3.5 h-3.5 text-slate-400" />
           Recently Viewed
-          <ChevronDown className="w-4 h-4 text-slate-400" />
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
         </motion.button>
       </div>
 
       {/* Grid */}
-      <motion.div layout className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <motion.div layout className={selectedReport ? "flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar space-y-4" : "flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pr-2 custom-scrollbar"}>
         {REPORTS.map((report, idx) => {
           const Icon = report.icon
           const isSelected = selectedReport?.id === report.id
+          
+          if (selectedReport && !isSelected) return null // Hide others when one is selected
           
           return (
             <motion.div
@@ -153,41 +155,41 @@ export default function ReportsPage() {
               key={report.id}
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              whileHover={!isSelected ? { scale: 1.02, y: -4 } : {}}
+              whileHover={!isSelected ? { scale: 1.02, y: -2 } : {}}
               whileTap={!isSelected ? { scale: 0.98 } : {}}
               transition={{ duration: 0.2, delay: idx * 0.05 }}
-              className={`bg-white rounded-2xl border transition-all overflow-hidden flex flex-col group ${
+              className={`bg-white rounded-xl border transition-all overflow-hidden flex flex-col group ${
                 isSelected 
-                  ? 'col-span-1 md:col-span-2 lg:col-span-3 border-blue-400 shadow-[0_8px_30px_-12px_rgba(59,130,246,0.3)] ring-4 ring-blue-50/50 z-10' 
-                  : 'border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 cursor-pointer'
+                  ? 'border-blue-400 shadow-md ring-2 ring-blue-50/50 z-10' 
+                  : 'border-slate-200 shadow-sm hover:shadow hover:border-blue-200 cursor-pointer'
               }`}
             >
               <div 
-                className="p-7 flex flex-col sm:flex-row sm:items-start gap-5 flex-1 cursor-pointer"
+                className="p-4 flex flex-col sm:flex-row sm:items-start gap-3 flex-1 cursor-pointer"
                 onClick={() => setSelectedReport(isSelected ? null : report)}
               >
-                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0 ${report.iconBg} ${report.iconColor}`}>
-                  <Icon className="w-8 h-8" strokeWidth={2.5} />
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${report.iconBg} ${report.iconColor}`}>
+                  <Icon className="w-5 h-5" strokeWidth={2.5} />
                 </div>
                 <div className="flex-1 pt-0.5">
-                  <div className="flex items-center justify-between gap-3 mb-2.5">
-                    <div className="flex items-center gap-3">
-                      <span className={`w-7 h-7 rounded flex items-center justify-center text-sm font-bold text-white ${report.badgeBg}`}>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-white ${report.badgeBg}`}>
                         {report.id}
                       </span>
-                      <h3 className="font-extrabold text-slate-800 text-lg leading-tight">{report.title}</h3>
+                      <h3 className="font-extrabold text-slate-800 text-sm leading-tight">{report.title}</h3>
                     </div>
                     {isSelected && (
-                      <span className="px-3 py-1 rounded bg-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      <span className="px-2 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                         {report.subReports.length} Reports
                       </span>
                     )}
                   </div>
-                  <p className="text-[15px] text-slate-500 leading-relaxed mb-4 max-w-3xl">
+                  <p className="text-xs text-slate-500 leading-relaxed mb-2 max-w-3xl line-clamp-2">
                     {report.desc}
                   </p>
                   {!isSelected && (
-                    <span className="text-[15px] font-semibold text-slate-400">
+                    <span className="text-[10px] font-semibold text-slate-400">
                       {report.subReports.length} Reports
                     </span>
                   )}
@@ -202,41 +204,41 @@ export default function ReportsPage() {
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.3, ease: 'easeInOut' }}
-                    className="border-t border-slate-100 bg-slate-50/50"
+                    className="border-t border-slate-100 bg-slate-50/50 flex flex-col flex-1"
                   >
-                    <div className="p-6">
-                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm custom-scrollbar">
+                    <div className="p-4 flex-1 overflow-y-auto custom-scrollbar">
+                      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
                         <table className="w-full text-left">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
-                              <th className="px-6 py-4 text-xs font-extrabold text-slate-500 uppercase tracking-wider">Report Identifier</th>
-                              <th className="px-6 py-4 text-xs font-extrabold text-slate-500 uppercase tracking-wider">Data Points Included</th>
-                              <th className="px-6 py-4 text-xs font-extrabold text-slate-500 uppercase tracking-wider">Frequency</th>
-                              <th className="px-6 py-4 text-xs font-extrabold text-slate-500 uppercase tracking-wider">Last Run</th>
-                              <th className="px-6 py-4 text-xs font-extrabold text-slate-500 uppercase tracking-wider text-right">Action</th>
+                              <th className="px-4 py-2.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Report Identifier</th>
+                              <th className="px-4 py-2.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Data Points Included</th>
+                              <th className="px-4 py-2.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Frequency</th>
+                              <th className="px-4 py-2.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Last Run</th>
+                              <th className="px-4 py-2.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider text-right">Action</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {report.subReports.map((sub, i) => (
                               <tr key={sub.id} className="hover:bg-blue-50/30 transition-colors group">
-                                <td className="px-6 py-4">
-                                  <div className="flex items-center gap-3.5">
-                                    <FileText className="w-5 h-5 text-slate-400 group-hover:text-blue-500" />
-                                    <span className="text-[15px] font-extrabold text-slate-800">{sub.name}</span>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-slate-400 group-hover:text-blue-500" />
+                                    <span className="text-xs font-extrabold text-slate-800">{sub.name}</span>
                                   </div>
                                 </td>
-                                <td className="px-6 py-4 text-[15px] text-slate-600 leading-relaxed max-w-[280px] truncate">
+                                <td className="px-4 py-2.5 text-xs text-slate-600 max-w-[200px] truncate">
                                   {sub.desc}
                                 </td>
-                                <td className="px-6 py-4 text-[15px] font-semibold text-slate-600">
+                                <td className="px-4 py-2.5 text-xs font-semibold text-slate-600">
                                   {sub.freq}
                                 </td>
-                                <td className="px-6 py-4 text-[15px] text-slate-500">
+                                <td className="px-4 py-2.5 text-xs text-slate-500">
                                   {sub.freq === 'Real-time' ? 'Just now' : `${Math.floor(Math.random() * 8) + 1} hrs ago`}
                                 </td>
-                                <td className="px-6 py-4 text-right">
-                                  <button className="px-5 py-2.5 rounded-lg bg-white border border-slate-200 text-sm font-extrabold text-slate-700 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shadow-sm">
-                                    Export CSV
+                                <td className="px-4 py-2.5 text-right">
+                                  <button className="px-3 py-1.5 rounded bg-white border border-slate-200 text-[10px] font-extrabold text-slate-700 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shadow-sm">
+                                    Export
                                   </button>
                                 </td>
                               </tr>
@@ -245,9 +247,9 @@ export default function ReportsPage() {
                         </table>
                       </div>
                       
-                      <div className="flex justify-end mt-4">
-                        <Button variant="outline" onClick={() => setSelectedReport(null)} className="font-bold">
-                          Close Breakup
+                      <div className="flex justify-end mt-3">
+                        <Button variant="outline" size="sm" onClick={() => setSelectedReport(null)} className="font-bold text-xs px-3 py-1.5 h-auto">
+                          Back to Reports
                         </Button>
                       </div>
                     </div>
@@ -258,11 +260,11 @@ export default function ReportsPage() {
               {/* View Reports Footer (only visible when collapsed) */}
               {!isSelected && (
                 <div 
-                  className="px-7 py-5 border-t border-slate-100 flex items-center justify-between bg-slate-50/50 group-hover:bg-blue-50/30 transition-colors cursor-pointer"
+                  className="px-4 py-2.5 border-t border-slate-100 flex items-center justify-between bg-slate-50/50 group-hover:bg-blue-50/30 transition-colors cursor-pointer"
                   onClick={() => setSelectedReport(report)}
                 >
-                  <span className="text-[15px] font-bold text-blue-600">View Breakups</span>
-                  <ChevronRight className="w-6 h-6 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                  <span className="text-xs font-bold text-blue-600">View Breakups</span>
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
                 </div>
               )}
             </motion.div>
@@ -271,32 +273,34 @@ export default function ReportsPage() {
       </motion.div>
 
       {/* Footer Search */}
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.3, delay: 0.4 }}
-        className="mt-10 bg-slate-50 rounded-2xl p-8 border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-sm transition-shadow"
-      >
-        <div className="flex items-center gap-5">
-          <div className="w-14 h-14 bg-white rounded-xl shadow-sm border border-slate-200 flex items-center justify-center text-blue-600 flex-shrink-0">
-            <FileSearch className="w-7 h-7" />
+      {!selectedReport && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3, delay: 0.4 }}
+          className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 flex-shrink-0"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-slate-200 flex items-center justify-center text-blue-600 flex-shrink-0">
+              <FileSearch className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-slate-800 text-sm">Can't find what you need?</h4>
+              <p className="text-xs text-slate-500">Use search to find reports.</p>
+            </div>
           </div>
-          <div>
-            <h4 className="font-extrabold text-slate-800 text-lg">Can't find what you need?</h4>
-            <p className="text-base text-slate-500 mt-1">Use search to find the right report or explore categories.</p>
+          <div className="relative w-full md:w-64">
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-3 pr-8 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm bg-white font-medium placeholder-slate-400"
+            />
+            <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           </div>
-        </div>
-        <div className="relative w-full md:w-96">
-          <input
-            type="text"
-            placeholder="Search any report..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-5 pr-12 py-4 rounded-xl border border-slate-200 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm bg-white font-medium placeholder-slate-400 transition-all"
-          />
-          <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-6 text-slate-400" />
-        </div>
-      </motion.div>
+        </motion.div>
+      )}
     </div>
   )
 }
