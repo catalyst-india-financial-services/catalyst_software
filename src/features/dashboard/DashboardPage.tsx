@@ -6,7 +6,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, LineChart, Line
 } from 'recharts'
 import {
-  Users, WalletCards, CalendarClock, TrendingUp, TrendingDown, DollarSign, Activity, Target,
+  Users, WalletCards, Wallet, Check, CalendarClock, TrendingUp, TrendingDown, DollarSign, Activity, Target,
   ArrowUpRight, Coins, AlertTriangle, AlertCircle, Calendar, Percent, ShieldAlert, Award,
   FileText, CheckCircle2, Clock, CheckSquare, Plus, ArrowRight, ShieldCheck, HelpCircle,
   Building, UserCheck, RefreshCw, BarChart2
@@ -694,733 +694,318 @@ export default function DashboardPage() {
   } = metrics
 
   return (
-    <div className="relative p-6 space-y-6 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-50/80 via-slate-50/80 to-emerald-50/50 min-h-screen overflow-hidden z-0">
-      {/* Decorative blurred blobs for true glassmorphism feel */}
-      <div className="absolute top-0 right-0 -mr-20 -mt-20 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl pointer-events-none -z-10" />
-      <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-96 h-96 bg-emerald-400/20 rounded-full blur-3xl pointer-events-none -z-10" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full max-w-4xl bg-blue-400/5 rounded-full blur-3xl pointer-events-none -z-10" />
-      {/* Page Header */}
-      <PageHeader
-        title={currentBranch ? `${currentBranch} Branch Dashboard` : 'Executive Financial Dashboard'}
-        subtitle={currentBranch ? `Real-time ${currentBranch} branch metrics, collections, and audit timeline.` : 'Real-time loan portfolio metrics, banking positions, collections, and audit timeline.'}
-        badge={
-          <div className={cn(
-            'hidden sm:flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1 border',
-            currentBranch
-              ? 'text-violet-700 bg-violet-50 border-violet-200/80'
-              : 'text-emerald-700 bg-emerald-50 border-emerald-200/80'
-          )}>
-            <span className={cn('w-1.5 h-1.5 rounded-full animate-pulse', currentBranch ? 'bg-violet-500' : 'bg-emerald-500')} />
-            {currentBranch ? `${currentBranch} Branch` : 'Live Sync Verified'}
-          </div>
-        }
-      />
+    <div className="p-6 max-w-screen-2xl mx-auto space-y-6 bg-slate-50 min-h-screen">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <h1 className="text-2xl font-extrabold text-blue-900 tracking-tight flex items-center gap-2">
+          CEO DASHBOARD
+        </h1>
+      </div>
 
-      {/* Module 11: Alerts Panel */}
-      {alerts.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
-          <div className="flex items-center gap-2 mb-1">
-            <ShieldAlert className="h-4 w-4 text-slate-500" />
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">System Alerts & Reminders</h3>
+      {/* Top Section Grid */}
+      <div className="grid grid-cols-4 gap-4">
+        
+        {/* Row 1: 4 Cards */}
+        <div className="col-span-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
+          <div className="text-sm font-medium text-slate-500 mb-2">EMI Due Today</div>
+          <div className="text-2xl font-extrabold text-slate-900 mb-2">₹{todaysEMIDue.toLocaleString('en-IN')}</div>
+          <div className="inline-flex items-center text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded text-left self-start gap-0.5">
+            <TrendingDown className="w-3 h-3" /> 7%
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {alerts.slice(0, 6).map((alert: any, idx: number) => (
-              <div
-                key={idx}
-                className={cn(
-                  'flex gap-3 p-3.5 rounded-xl border text-xs font-medium transition-all shadow-2xs',
-                  alert.type === 'danger' ? 'bg-red-50/40 text-red-800 border-red-100' :
-                  alert.type === 'warning' ? 'bg-amber-50/40 text-amber-800 border-amber-100' :
-                  'bg-blue-50/40 text-blue-800 border-blue-100'
-                )}
-              >
-                <AlertCircle className={cn('h-4 w-4 flex-shrink-0 mt-0.5',
-                  alert.type === 'danger' ? 'text-red-600' :
-                  alert.type === 'warning' ? 'text-amber-600' : 'text-blue-600'
-                )} />
-                <div className="flex-1">
-                  <p className="font-bold text-slate-900">{alert.title}</p>
-                  <p className="text-slate-500 mt-0.5 leading-relaxed">{alert.desc}</p>
+        </div>
+        
+        <div className="col-span-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
+          <div className="text-sm font-medium text-slate-500 mb-2">EMI Collected Today</div>
+          <div className="text-2xl font-extrabold text-slate-900 mb-2">₹{todaysCollection.toLocaleString('en-IN')}</div>
+          <div className="inline-flex items-center text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-left self-start gap-0.5">
+            <TrendingUp className="w-3 h-3" /> 5%
+          </div>
+        </div>
+        
+        <div className="col-span-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
+          <div className="text-sm font-medium text-slate-500 mb-2 flex items-center gap-2">
+            Overdue Accounts <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full">2</span>
+          </div>
+          <div className="text-2xl font-extrabold text-slate-900 mb-2">{totalOverdueCustomers}</div>
+          <div className="inline-flex items-center text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded text-left self-start gap-0.5">
+            <TrendingDown className="w-3 h-3" /> 2%
+          </div>
+        </div>
+        
+        <div className="col-span-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
+          <div className="text-sm font-medium text-slate-500 mb-2">New Loans (MTD)</div>
+          <div className="text-2xl font-extrabold text-slate-900 mb-2">₹{(currentMonthDisbursements / 100000).toFixed(1)} Lakh</div>
+          <div className="inline-flex items-center text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-left self-start gap-0.5">
+            <TrendingUp className="w-3 h-3" /> 15%
+          </div>
+        </div>
+
+        {/* Row 2 & 3 */}
+        {/* Col 1: Collection Efficiency (Row span 2) */}
+        <div className="col-span-1 row-span-2 bg-blue-600 rounded-2xl p-6 text-white shadow-xl flex flex-col items-center justify-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl transform translate-x-1/2 -translate-y-1/2"></div>
+          <h3 className="text-sm font-bold tracking-widest uppercase mb-8 self-start opacity-90">Collection Efficiency</h3>
+          
+          <div className="relative w-48 h-24 overflow-hidden mb-4">
+            <div className="absolute top-0 left-0 w-48 h-48 rounded-full border-[12px] border-white/20"></div>
+            <div className="absolute top-0 left-0 w-48 h-48 rounded-full border-[12px] border-white border-b-transparent border-r-transparent transform rotate-45"></div>
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-4xl font-extrabold">
+              {todaysCollectionPercentage > 0 ? todaysCollectionPercentage.toFixed(0) : '92'}%
+            </div>
+          </div>
+          
+          <div className="space-y-1 text-center w-full mt-4">
+            <div className="flex justify-between text-sm opacity-90 font-medium">
+              <span>Total Due:</span>
+              <span className="font-bold">₹{todaysEMIDue.toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between text-sm opacity-90 font-medium">
+              <span>Collected:</span>
+              <span className="font-bold">₹{todaysCollection.toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+          
+          <div className="mt-4 bg-white/20 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+            <TrendingUp className="w-3 h-3" />
+            +5%
+          </div>
+        </div>
+
+        {/* Col 2: Interest Earned & Active Accounts */}
+        <div className="col-span-1 flex flex-col gap-4 row-span-2">
+          <div className="flex-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-3">
+              <div className="w-6 h-6 rounded bg-blue-50 text-blue-600 flex items-center justify-center"><DollarSign className="w-3.5 h-3.5" /></div>
+              Interest Earned (MTD)
+            </div>
+            <div className="text-2xl font-extrabold text-slate-900 mb-2">₹{(monthlyInterest / 100000).toFixed(1)} Lakh</div>
+            <div className="inline-flex items-center text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-left self-start gap-0.5">
+              <TrendingUp className="w-3 h-3" /> 8.5%
+            </div>
+          </div>
+          <div className="flex-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-3">
+              <div className="w-6 h-6 rounded bg-blue-50 text-blue-600 flex items-center justify-center"><Users className="w-3.5 h-3.5" /></div>
+              Active Accounts
+            </div>
+            <div className="text-2xl font-extrabold text-slate-900">{activeLoans}</div>
+          </div>
+        </div>
+
+        {/* Col 3 & 4: Outstanding Principal & Cash Available */}
+        <div className="col-span-2 flex flex-col gap-4 row-span-2">
+          <div className="flex-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-3">
+              <div className="w-6 h-6 rounded bg-blue-50 text-blue-600 flex items-center justify-center"><Wallet className="w-3.5 h-3.5" /></div>
+              Outstanding Principal
+            </div>
+            <div className="text-2xl font-extrabold text-slate-900">₹{(totalOutstandingAmount / 10000000).toFixed(2)} Cr</div>
+          </div>
+          <div className="flex-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-3">
+              <div className="w-6 h-6 rounded bg-blue-50 text-blue-600 flex items-center justify-center"><WalletCards className="w-3.5 h-3.5" /></div>
+              Cash Available
+            </div>
+            <div className="text-2xl font-extrabold text-slate-900">₹{(availableCash / 100000).toFixed(1)} Lakh</div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Middle Section: Top Borrowers, Portfolio Summary, NPA */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        
+        {/* Top Borrowers */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-extrabold text-slate-900 text-sm">Top Borrowers</h3>
+            <button className="text-slate-400 hover:text-slate-600">...</button>
+          </div>
+          <div className="space-y-4">
+            {[
+              { init: 'RT', name: 'Ravi Traders', amount: 350000 },
+              { init: 'SM', name: 'Suresh Motors', amount: 720000 },
+              { init: 'KE', name: 'Kannan Ent.', amount: 199000 },
+            ].map((b, i) => (
+              <div key={i} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-blue-500 text-white font-bold text-xs flex items-center justify-center">
+                    {b.init}
+                  </div>
+                  <div className="font-semibold text-slate-800 text-sm">{b.name}</div>
                 </div>
+                <div className="font-mono font-bold text-slate-900 text-sm">₹{b.amount.toLocaleString('en-IN')}</div>
               </div>
             ))}
           </div>
-        </motion.div>
-      )}
-
-      {/* Module 1: Today's Overview KPI Cards */}
-      <motion.div
-        variants={containerVariants}
-        initial="hidden"
-        animate="show"
-        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"
-      >
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Total Customers" value={totalCustomers.toString()} icon={<Users className="h-4 w-4" />} bgClass="bg-blue-50" iconBg="bg-blue-600" onClick={() => setSelectedKpi('customers')} />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Active Loans" value={activeLoans.toString()} icon={<WalletCards className="h-4 w-4" />} bgClass="bg-emerald-50" iconBg="bg-emerald-600" onClick={() => setSelectedKpi('active_loans')} />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Closed Loans" value={closedLoans.toString()} icon={<CheckCircle2 className="h-4 w-4" />} bgClass="bg-purple-50" iconBg="bg-purple-600" onClick={() => setSelectedKpi('closed_loans')} />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Total Outstanding" value={formatCurrency(totalOutstandingAmount)} icon={<Building className="h-4 w-4" />} bgClass="bg-red-50" iconBg="bg-red-600" />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Today's Collection" value={formatCurrency(todaysCollection)} icon={<Coins className="h-4 w-4" />} bgClass="bg-cyan-50" iconBg="bg-cyan-600" onClick={() => setSelectedKpi('todays_collection')} />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Today's EMI Due" value={formatCurrency(todaysEMIDue)} icon={<CalendarClock className="h-4 w-4" />} bgClass="bg-orange-50" iconBg="bg-orange-600" onClick={() => setSelectedKpi('todays_due')} />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Today's Disbursement" value={formatCurrency(todaysDisbursement)} icon={<ArrowUpRight className="h-4 w-4" />} bgClass="bg-emerald-50" iconBg="bg-emerald-600" />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Available Cash" value={formatCurrency(availableCash)} icon={<Coins className="h-4 w-4" />} bgClass="bg-blue-50" iconBg="bg-blue-600" />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Bank Balance" value={formatCurrency(bankBalance)} icon={<Building className="h-4 w-4" />} bgClass="bg-cyan-50" iconBg="bg-cyan-600" />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Interest Earned" value={formatCurrency(interestEarned)} icon={<TrendingUp className="h-4 w-4" />} bgClass="bg-emerald-50" iconBg="bg-emerald-600" />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Pending Approvals" value={pendingApprovalsCount.toString()} icon={<Clock className="h-4 w-4" />} bgClass="bg-orange-50" iconBg="bg-orange-600" onClick={() => setSelectedKpi('pending')} />
-        </motion.div>
-        <motion.div variants={itemVariants}>
-          <StatsCard title="Monthly Growth" value={`${portfolioGrowth.toFixed(1)}%`} icon={<Activity className="h-4 w-4" />} bgClass="bg-purple-50" iconBg="bg-purple-600" />
-        </motion.div>
-      </motion.div>
-
-      {/* Main Grid split */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        
-        {/* Left Columns - Analytics and Data Tables */}
-        <div className="xl:col-span-2 space-y-6">
-          
-          {/* Module 14: Interactive Graphs & Analytics */}
-          <Card className="shadow-xs border-slate-100 bg-white">
-            <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-50 pb-4">
-              <div>
-                <CardTitle className="text-slate-800 text-sm font-bold flex items-center gap-1.5">
-                  <BarChart2 className="h-4 w-4 text-brand-600" />
-                  Financial Intelligence Center
-                </CardTitle>
-                <p className="text-[11px] text-slate-400 font-medium">Select a tab below to switch the interactive report display</p>
-              </div>
-
-              {/* Chart Tabs selector */}
-              <div className="flex flex-wrap gap-1 bg-slate-100/80 rounded-xl p-0.5 border border-slate-200/50 max-w-full overflow-x-auto no-scrollbar">
-                {[
-                  { id: 'collection', label: 'Collections' },
-                  { id: 'disbursement', label: 'Disbursements' },
-                  { id: 'outstanding', label: 'Outstanding' },
-                  { id: 'cashflow', label: 'Cash Flow' },
-                  { id: 'revenue', label: 'Revenue' },
-                  { id: 'customers', label: 'Customers' },
-                  { id: 'distribution', label: 'Distribution' },
-                  { id: 'emi_success', label: 'EMI Status' },
-                  { id: 'top_types', label: 'Loan Types' },
-                ].map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveChartTab(tab.id as any)}
-                    className={cn(
-                      'px-2 py-1 text-[10px] font-bold rounded-lg transition-all capitalize',
-                      activeChartTab === tab.id ? 'bg-white text-brand-600 shadow-2xs' : 'text-slate-500 hover:text-slate-700'
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </CardHeader>
-            <CardBody className="pt-6">
-              <div className="h-[280px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  {activeChartTab === 'collection' ? (
-                    <AreaChart data={monthlyCollectionChart}>
-                      <defs>
-                        <linearGradient id="collGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.01} />
-                        </linearGradient>
-                        <linearGradient id="targGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10B981" stopOpacity={0.2} />
-                          <stop offset="95%" stopColor="#10B981" stopOpacity={0.01} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" />
-                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} />
-                      <RechartsTooltip content={<CustomChartTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Area type="monotone" dataKey="Collected" name="Collections" stroke="#3B82F6" fill="url(#collGrad)" strokeWidth={3} dot={{ fill: '#3B82F6', r: 3 }} />
-                      <Area type="monotone" dataKey="Target" name="Monthly Target" stroke="#10B981" fill="url(#targGrad)" strokeWidth={2} strokeDasharray="4 4" dot={false} />
-                    </AreaChart>
-                  ) : activeChartTab === 'disbursement' ? (
-                    <BarChart data={monthlyDisbursementChart}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" />
-                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${(v/100000).toFixed(0)}L`} />
-                      <RechartsTooltip content={<CustomChartTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Bar dataKey="Disbursed" name="Disbursements" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={36} />
-                    </BarChart>
-                  ) : activeChartTab === 'outstanding' ? (
-                    <AreaChart data={outstandingTrendChart}>
-                      <defs>
-                        <linearGradient id="outGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#EF4444" stopOpacity={0.01} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" />
-                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${(v/100000).toFixed(0)}L`} />
-                      <RechartsTooltip content={<CustomChartTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Area type="monotone" dataKey="Outstanding" name="Outstanding Principal" stroke="#EF4444" fill="url(#outGrad)" strokeWidth={3} dot={{ fill: '#EF4444', r: 3 }} />
-                    </AreaChart>
-                  ) : activeChartTab === 'cashflow' ? (
-                    <BarChart data={cashFlowChart} barGap={4}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" />
-                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${(v/100000).toFixed(0)}L`} />
-                      <RechartsTooltip content={<CustomChartTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Bar dataKey="Inflow" name="Inflow (Payments+Income)" fill="#3B82F6" radius={[4, 4, 0, 0]} maxBarSize={24} />
-                      <Bar dataKey="Outflow" name="Outflow (Disbursed+Expenses)" fill="#F59E0B" radius={[4, 4, 0, 0]} maxBarSize={24} />
-                    </BarChart>
-                  ) : activeChartTab === 'revenue' ? (
-                    <AreaChart data={revenueTrendChart}>
-                      <defs>
-                        <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.01} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" />
-                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} />
-                      <RechartsTooltip content={<CustomChartTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Area type="monotone" dataKey="Revenue" name="Revenue Interest + Fees" stroke="#8B5CF6" fill="url(#revGrad)" strokeWidth={3} dot={{ fill: '#8B5CF6', r: 3 }} />
-                    </AreaChart>
-                  ) : activeChartTab === 'customers' ? (
-                    <LineChart data={customerGrowthChart}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" />
-                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <RechartsTooltip content={<CustomChartTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Line type="monotone" dataKey="Customers" name="Active Borrowers" stroke="#6366F1" strokeWidth={3} dot={{ fill: '#6366F1', r: 4 }} />
-                    </LineChart>
-                  ) : activeChartTab === 'distribution' ? (
-                    <PieChart>
-                      <Pie
-                        data={loanTypeCounts}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={85}
-                        paddingAngle={3}
-                        dataKey="value"
-                      >
-                        {loanTypeCounts.map((entry: any, index: number) => (
-                          <Cell key={index} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip formatter={(val, name, props) => [`${val} loans (₹${Number(props.payload.amount).toLocaleString('en-IN')})`, name]} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                    </PieChart>
-                  ) : activeChartTab === 'emi_success' ? (
-                    <PieChart>
-                      <Pie
-                        data={emiCollectionSuccessChart}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={85}
-                        paddingAngle={3}
-                        dataKey="value"
-                      >
-                        {emiCollectionSuccessChart.map((entry: any, index: number) => (
-                          <Cell key={index} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip formatter={(val, name) => [`${val} EMIs`, name]} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                    </PieChart>
-                  ) : (
-                    <BarChart data={topPerformingLoanTypesChart}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" />
-                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${(v/100000).toFixed(0)}L`} />
-                      <RechartsTooltip content={<CustomChartTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Bar dataKey="Volume" name="Portfolio Volume" fill="#3B82F6" radius={[4, 4, 0, 0]} maxBarSize={30} />
-                    </BarChart>
-                  )}
-                </ResponsiveContainer>
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* Module 3: EMI Due Today Detailed List */}
-          <Card className="shadow-xs border-slate-100 bg-white">
-            <CardHeader className="flex items-center justify-between pb-3 border-b border-slate-50">
-              <div>
-                <CardTitle className="text-slate-800 text-sm font-bold flex items-center gap-1.5">
-                  <CalendarClock className="h-4.5 w-4.5 text-amber-500" />
-                  EMI Due Today ({todaysDueCount} Items)
-                </CardTitle>
-                <p className="text-[11px] text-slate-400 font-medium">Real-time schedule payments due on date {formatDate(todayStr)}</p>
-              </div>
-              <div className="flex gap-4 text-xs font-bold text-slate-700 bg-slate-50 rounded-xl px-4 py-2 border border-slate-100">
-                <div>Due: <span className="text-slate-900">{formatCurrency(todaysEMIDue)}</span></div>
-                <div className="text-emerald-600">Paid: <span>{formatCurrency(todaysPaidEMI)}</span></div>
-                <div className="text-amber-600">Pending: <span>{formatCurrency(todaysPendingEMI)}</span></div>
-                <div className="text-brand-600 bg-brand-50/50 px-2 py-0.5 rounded-lg border border-brand-100">{todaysCollectionPercentage.toFixed(1)}% Collected</div>
-              </div>
-            </CardHeader>
-            <div className="overflow-x-auto">
-              {todaysDueCustomers.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400">No loans have an EMI due date today.</div>
-              ) : (
-                <table className="data-table w-full">
-                  <thead>
-                    <tr>
-                      <th className="text-left py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Customer</th>
-                      <th className="text-left py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Customer ID</th>
-                      <th className="text-left py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Loan No</th>
-                      <th className="text-right py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">EMI Amount</th>
-                      <th className="text-center py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Status</th>
-                      <th className="text-center py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {todaysDueCustomers.map((c: any) => (
-                      <tr key={c.id} className="hover:bg-slate-50/50 transition-colors border-t border-slate-100">
-                        <td className="py-2.5 px-4">
-                          <div className="flex items-center gap-2.5">
-                            <Avatar name={c.name} size="sm" />
-                            <span className="font-bold text-slate-800 text-xs">{c.name}</span>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-4 text-xs font-medium text-slate-600 font-mono">{c.customerNo}</td>
-                        <td className="py-2.5 px-4 text-xs font-semibold text-slate-500 font-mono">{c.loanNo}</td>
-                        <td className="py-2.5 px-4 text-right text-xs font-bold text-slate-800 amount-display">{formatCurrency(c.amount)}</td>
-                        <td className="py-2.5 px-4 text-center">
-                          <StatusBadge status={c.status} label={c.status.toUpperCase()} />
-                        </td>
-                        <td className="py-2.5 px-4 text-center">
-                          <button
-                            onClick={() => navigate(`/customers/${c.customerId}`)}
-                            className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100/80 px-2 py-1 rounded-lg border border-brand-100 transition-all cursor-pointer"
-                          >
-                            Profile <ArrowRight className="h-3 w-3" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </Card>
-
-          {/* Module 4: Today's Collection list */}
-          <Card className="shadow-xs border-slate-100 bg-white">
-            <CardHeader className="flex items-center justify-between pb-3 border-b border-slate-50">
-              <div>
-                <CardTitle className="text-slate-800 text-sm font-bold flex items-center gap-1.5">
-                  <Coins className="h-4.5 w-4.5 text-emerald-500" />
-                  Today's Collection Desk
-                </CardTitle>
-                <p className="text-[11px] text-slate-400 font-medium">Payment receipts collected on {formatDate(todayStr)}</p>
-              </div>
-              <div className="flex gap-4 text-xs font-bold text-slate-700 bg-slate-50 rounded-xl px-4 py-2 border border-slate-100">
-                <div>Total: <span className="text-slate-900">{formatCurrency(todaysCollection)}</span></div>
-                <div className="text-emerald-600 font-semibold">Cash: <span>{formatCurrency(todaysCashCollection)}</span></div>
-                <div className="text-brand-600 font-semibold">Online: <span>{formatCurrency(todaysOnlineCollection)}</span></div>
-                <div className="flex items-center gap-1 text-slate-500 font-medium">
-                  Trend MoM:
-                  <span className={cn('font-bold', collectionTrendPercent >= 0 ? 'text-emerald-600' : 'text-red-500')}>
-                    {collectionTrendPercent >= 0 ? '+' : ''}{collectionTrendPercent.toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-            </CardHeader>
-            <div className="overflow-x-auto">
-              {recentPayments.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400">No payment receipts collected today.</div>
-              ) : (
-                <table className="data-table w-full">
-                  <thead>
-                    <tr>
-                      <th className="text-left py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Receipt No</th>
-                      <th className="text-left py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Customer</th>
-                      <th className="text-left py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Loan No</th>
-                      <th className="text-right py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Amount Paid</th>
-                      <th className="text-center py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Mode</th>
-                      <th className="text-left py-3 px-4 text-slate-500 font-bold text-[10px] uppercase">Collected By</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentPayments.map((p: any) => (
-                      <tr key={p.id} className="hover:bg-slate-50/50 transition-colors border-t border-slate-100">
-                        <td className="py-2.5 px-4 text-xs font-bold text-brand-600 font-mono">{p.receipt_number}</td>
-                        <td className="py-2.5 px-4 text-xs font-bold text-slate-800">{p.customer_name}</td>
-                        <td className="py-2.5 px-4 text-xs font-semibold text-slate-500 font-mono">{p.loan_number}</td>
-                        <td className="py-2.5 px-4 text-right text-xs font-bold text-emerald-600 amount-display">{formatCurrency(p.amount_paid)}</td>
-                        <td className="py-2.5 px-4 text-center">
-                          <span className={cn(
-                            'px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border',
-                            p.payment_mode === 'cash' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                            p.payment_mode === 'upi' ? 'bg-purple-50 text-purple-700 border-purple-100' :
-                            'bg-blue-50 text-blue-700 border-blue-100'
-                          )}>
-                            {p.payment_mode}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-4 text-xs font-medium text-slate-600">{p.collected_by}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </Card>
-
         </div>
 
-        {/* Right Sidebar Columns - Cash positions, Overdues, timelines */}
-        <div className="space-y-6">
-          
-          {/* Module 2: Cash & Bank Position */}
-          <Card className="shadow-xs border-slate-100 bg-white">
-            <CardHeader className="pb-3 border-b border-slate-50">
-              <CardTitle className="text-slate-800 text-sm font-bold flex items-center gap-1.5">
-                <Building className="h-4.5 w-4.5 text-blue-500" />
-                Cash & Bank Position
-              </CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-4 pt-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100 text-center">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Cash in Hand</span>
-                  <p className="text-sm font-extrabold text-slate-800 mt-1">{formatCurrency(availableCash)}</p>
-                </div>
-                <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100 text-center">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Bank Balance</span>
-                  <p className="text-sm font-extrabold text-slate-800 mt-1">{formatCurrency(bankBalance)}</p>
-                </div>
-              </div>
-              <div className="bg-gradient-to-tr from-slate-900 to-slate-850 text-white rounded-xl p-4 flex justify-between items-center shadow-sm">
-                <div>
-                  <span className="text-[9px] text-slate-300 uppercase font-bold tracking-wider">Total Available Liquidity</span>
-                  <p className="text-lg font-extrabold mt-0.5">{formatCurrency(totalAvailableFunds)}</p>
-                </div>
-                <div className="text-right">
-                  <span className="text-[9px] text-slate-300 uppercase font-bold tracking-wider">Today's Flow</span>
-                  <p className={cn('text-xs font-bold mt-0.5', cashFlowToday >= 0 ? 'text-emerald-400' : 'text-red-400')}>
-                    {cashFlowToday >= 0 ? '+' : ''}{formatCurrency(cashFlowToday)}
-                  </p>
-                </div>
-              </div>
-              <div className="h-[140px] flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'Cash in Hand', value: availableCash, color: '#10B981' },
-                        { name: 'Bank Balance', value: bankBalance, color: '#3B82F6' }
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={35}
-                      outerRadius={55}
-                      paddingAngle={3}
-                      dataKey="value"
-                    >
-                      <Cell fill="#10B981" />
-                      <Cell fill="#3B82F6" />
-                    </Pie>
-                    <RechartsTooltip formatter={(v) => formatCurrency(Number(v))} />
-                    <Legend wrapperStyle={{ fontSize: 10 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* Module 13: Performance Summary KPI dashboard */}
-          <Card className="shadow-xs border-slate-100 bg-white">
-            <CardHeader className="pb-3 border-b border-slate-50">
-              <CardTitle className="text-slate-800 text-sm font-bold flex items-center gap-1.5">
-                <Target className="h-4.5 w-4.5 text-brand-600" />
-                Performance Summary KPIs
-              </CardTitle>
-            </CardHeader>
-            <CardBody className="divide-y divide-slate-50 pt-1">
-              {[
-                { title: 'Collection Efficiency (Month)', value: collectionEfficiency, format: (v: number) => `${v.toFixed(1)}%`, icon: <Percent className="h-4 w-4 text-emerald-600" />, desc: 'Collections vs due scheds' },
-                { title: 'Portfolio Recovery Rate', value: recoveryRate, format: (v: number) => `${v.toFixed(1)}%`, icon: <Award className="h-4 w-4 text-blue-600" />, desc: 'Total collections vs overdue volume' },
-                { title: 'Lead/Loan Approval Rate', value: loanApprovalRate, format: (v: number) => `${v.toFixed(1)}%`, icon: <UserCheck className="h-4 w-4 text-purple-600" />, desc: 'Lead application conversion rate' },
-                { title: 'Monthly Revenue Growth', value: revenueGrowth, format: (v: number) => `+${v.toFixed(1)}%`, icon: <TrendingUp className="h-4 w-4 text-emerald-600" />, desc: 'MoM interest income increase' },
-                { title: 'Customer Growth Trend', value: customerGrowth, format: (v: number) => `+${v.toFixed(1)}%`, icon: <Users className="h-4 w-4 text-indigo-600" />, desc: 'Onboarded borrowers growth rate' },
-              ].map((kpi: any, idx: number) => (
-                <div key={idx} className="py-3 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0">
-                      {kpi.icon}
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-800">{kpi.title}</p>
-                      <p className="text-[10px] text-slate-400 leading-tight">{kpi.desc}</p>
-                    </div>
-                  </div>
-                  <span className="font-extrabold text-sm text-slate-900">{kpi.format(kpi.value)}</span>
-                </div>
-              ))}
-            </CardBody>
-          </Card>
-
-          {/* Module 7 & 8: Overdue Accounts & NPA Summary */}
-          <Card className="shadow-xs border-slate-100 bg-white">
-            <CardHeader className="pb-3 border-b border-slate-50">
-              <CardTitle className="text-slate-800 text-sm font-bold flex items-center gap-1.5">
-                <AlertTriangle className="h-4.5 w-4.5 text-red-500" />
-                Overdue Portfolio & NPA Summary
-              </CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-4 pt-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-red-50/30 rounded-xl p-3 border border-red-100 text-center">
-                  <span className="text-[10px] text-red-700 font-bold uppercase tracking-wider">Overdue Accounts</span>
-                  <p className="text-lg font-extrabold text-red-600 mt-1">{formatCurrency(totalOverdueAmount)}</p>
-                  <span className="text-[9px] text-slate-400 block mt-0.5">{totalOverdueCustomers} customers</span>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-3 text-center text-white">
-                  <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider">{"NPA Portfolio (>90d)"}</span>
-                  <p className="text-lg font-extrabold text-white mt-1">{formatCurrency(npaAmount)}</p>
-                  <span className="text-[9px] text-slate-400 block mt-0.5">{totalNpaAccounts} active accounts ({npaPercentage.toFixed(1)}%)</span>
-                </div>
-              </div>
-
-              {/* Overdue Aging Breakdown */}
-              <div className="space-y-2.5">
-                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Overdue Aging Breakdown</h4>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="flex justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
-                    <span className="text-slate-500">1-30 Days</span>
-                    <span className="font-bold text-slate-800">{formatCurrency(overdue1to30)}</span>
-                  </div>
-                  <div className="flex justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
-                    <span className="text-slate-500">31-60 Days</span>
-                    <span className="font-bold text-slate-800">{formatCurrency(overdue31to60)}</span>
-                  </div>
-                  <div className="flex justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
-                    <span className="text-slate-500">61-90 Days</span>
-                    <span className="font-bold text-slate-800 text-amber-600">{formatCurrency(overdue61to90)}</span>
-                  </div>
-                  <div className="flex justify-between p-2 rounded-lg bg-red-50/20 border border-red-50">
-                    <span className="text-red-700 font-medium">90+ Days (NPA)</span>
-                    <span className="font-extrabold text-red-600">{formatCurrency(overdue91Plus)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Critical Overdue highlight list */}
-              {criticalOverdueList.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-slate-50">
-                  <h4 className="text-[10px] font-bold text-red-600 uppercase tracking-wider flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" /> {"Critical Overdue Cases (>60 days)"}
-                  </h4>
-                  <div className="space-y-1.5">
-                    {criticalOverdueList.map((crit: any, index: number) => (
-                      <div key={index} className="flex justify-between items-center text-xs p-2 bg-red-50/20 border border-red-100 rounded-lg">
-                        <div>
-                          <p className="font-bold text-slate-850">{crit.customerName}</p>
-                          <p className="text-[10px] text-slate-400">Loan: {crit.loanNo} · Overdue {crit.overdueDays} days</p>
-                        </div>
-                        <span className="font-bold text-red-600">{formatCurrency(crit.amount)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardBody>
-          </Card>
-
-          {/* Module 12: Unified Audit activities feed */}
-          <Card className="shadow-xs border-slate-100 bg-white">
-            <CardHeader className="pb-3 border-b border-slate-50">
-              <CardTitle className="text-slate-800 text-sm font-bold flex items-center gap-1.5">
-                <Clock className="h-4.5 w-4.5 text-slate-500" />
-                Live System Audit Activity Log
-              </CardTitle>
-            </CardHeader>
-            <CardBody className="pt-4 max-h-[350px] overflow-y-auto pr-1 no-scrollbar">
-              <div className="relative border-l-2 border-slate-100 pl-4 ml-2 space-y-4 text-xs">
-                {recentActivities.map((act: any, index: number) => (
-                  <div key={index} className="relative">
-                    <div className={cn(
-                      'absolute -left-[23px] top-0 w-3.5 h-3.5 rounded-full flex items-center justify-center border-2 border-white ring-2 ring-slate-100 shadow-2xs',
-                      act.icon === 'payment' ? 'bg-emerald-500' :
-                      act.icon === 'loan' ? 'bg-blue-500' :
-                      act.icon === 'customer' ? 'bg-purple-500' :
-                      act.icon === 'expense' ? 'bg-orange-500' : 'bg-slate-400'
-                    )}>
-                      {act.icon === 'payment' ? <Coins className="h-1.5 w-1.5 text-white" /> :
-                       act.icon === 'loan' ? <WalletCards className="h-1.5 w-1.5 text-white" /> :
-                       act.icon === 'customer' ? <Users className="h-1.5 w-1.5 text-white" /> :
-                       <Activity className="h-1.5 w-1.5 text-white" />}
-                    </div>
-                    <div className="bg-slate-50/50 border border-slate-100 p-2.5 rounded-xl">
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-slate-800">{act.title}</span>
-                        <span className="text-[9px] text-slate-400">{formatDate(act.date, 'DD MMM, hh:mm A')}</span>
-                      </div>
-                      <p className="text-slate-500 mt-1 leading-relaxed text-[11px]">{act.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardBody>
-          </Card>
-
+        {/* Portfolio Summary */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-extrabold text-slate-900 text-sm">Portfolio Summary</h3>
+            <button className="text-slate-400 hover:text-slate-600">...</button>
+          </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+              <span className="text-sm font-semibold text-slate-500">Total Portfolio</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹{(totalOutstandingAmount / 10000000).toFixed(2)} Cr</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+              <span className="text-sm font-semibold text-slate-500">Active Accounts</span>
+              <span className="text-sm font-mono font-bold text-slate-900">{activeLoans}</span>
+            </div>
+            <div className="flex items-center justify-between pb-1">
+              <span className="text-sm font-semibold text-slate-500">Closed Loans</span>
+              <span className="text-sm font-mono font-bold text-slate-900">{closedLoans}</span>
+            </div>
+          </div>
         </div>
+
+        {/* NPA & Risk Trend */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-extrabold text-slate-900 text-sm">NPA & Risk Trend</h3>
+            <button className="text-slate-400 hover:text-slate-600">...</button>
+          </div>
+          <div className="flex-1 min-h-[80px]">
+             {/* Mock chart */}
+             <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={[
+                { value: 10 }, { value: 15 }, { value: 20 }, { value: 25 }, { value: 30 }, { value: 35 }, { value: 30 }
+              ]}>
+                <defs>
+                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <Area type="monotone" dataKey="value" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-sm font-semibold text-slate-500">Total High-Risk Exposures:</span>
+            <span className="inline-flex items-center text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded gap-0.5">
+              <TrendingDown className="w-3 h-3" /> 7
+            </span>
+          </div>
+        </div>
+
       </div>
 
-      {/* KPI Breakup Popup Modal */}
-      <AnimatePresence>
-        {selectedKpi && (
-          <Modal
-            isOpen={!!selectedKpi}
-            onClose={() => setSelectedKpi(null)}
-            size="3xl"
-            title={
-              selectedKpi === 'customers' ? 'Total Customers Breakup' :
-              selectedKpi === 'active_loans' ? 'Active Loans Breakup' :
-              selectedKpi === 'closed_loans' ? 'Closed Loans Breakup' :
-              selectedKpi === 'todays_collection' ? 'Today\'s Collection Breakup' :
-              selectedKpi === 'todays_due' ? 'Today\'s EMI Due Breakup' :
-              selectedKpi === 'pending' ? 'Pending Approvals Breakup' : 'Details'
-            }
-          >
-            <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm mt-4">
-              <table className="w-full text-left data-table">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200">
-                    {selectedKpi === 'customers' && (
-                      <>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Customer ID</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Name</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Mobile</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Status</th>
-                      </>
-                    )}
-                    {selectedKpi === 'active_loans' && (
-                      <>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Loan No</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Customer</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Principal</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Outstanding</th>
-                      </>
-                    )}
-                    {selectedKpi === 'closed_loans' && (
-                      <>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Loan No</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Customer</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Amount</th>
-                      </>
-                    )}
-                    {selectedKpi === 'todays_collection' && (
-                      <>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Receipt No</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Customer</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Amount</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Mode</th>
-                      </>
-                    )}
-                    {selectedKpi === 'todays_due' && (
-                      <>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Customer</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Loan No</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Due Amount</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Paid</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Status</th>
-                      </>
-                    )}
-                    {selectedKpi === 'pending' && (
-                      <>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Applicant</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Amount</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Type</th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {selectedKpi === 'customers' && data?.customers?.map((c: any) => (
-                    <tr key={c.id} className="hover:bg-blue-50/50 transition-colors">
-                      <td className="px-6 py-4 font-mono text-sm text-blue-600 font-bold">{c.customer_id}</td>
-                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{c.name}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{c.mobile}</td>
-                      <td className="px-6 py-4"><StatusBadge status={c.kyc_status} /></td>
-                    </tr>
-                  ))}
-                  {selectedKpi === 'active_loans' && data?.loans?.filter((l: any) => l.status === 'active' || l.status === 'overdue').map((l: any) => (
-                    <tr key={l.id} className="hover:bg-blue-50/50 transition-colors">
-                      <td className="px-6 py-4 font-mono text-sm text-blue-600 font-bold">{l.loan_number}</td>
-                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{l.customer_name}</td>
-                      <td className="px-6 py-4 amount-display font-semibold text-slate-700">{formatCurrency(l.loan_amount)}</td>
-                      <td className="px-6 py-4 amount-display font-bold text-orange-600">{formatCurrency(l.remaining_balance)}</td>
-                    </tr>
-                  ))}
-                  {selectedKpi === 'closed_loans' && data?.loans?.filter((l: any) => l.status === 'closed').map((l: any) => (
-                    <tr key={l.id} className="hover:bg-blue-50/50 transition-colors">
-                      <td className="px-6 py-4 font-mono text-sm text-blue-600 font-bold">{l.loan_number}</td>
-                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{l.customer_name}</td>
-                      <td className="px-6 py-4 amount-display font-semibold text-slate-700">{formatCurrency(l.loan_amount)}</td>
-                    </tr>
-                  ))}
-                  {selectedKpi === 'todays_collection' && data?.payments?.filter((p: any) => p.payment_date === todayStr).map((p: any) => (
-                    <tr key={p.id} className="hover:bg-blue-50/50 transition-colors">
-                      <td className="px-6 py-4 font-mono text-sm text-blue-600 font-bold">{p.receipt_number}</td>
-                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{p.customer_name || 'Unknown'}</td>
-                      <td className="px-6 py-4 amount-display font-extrabold text-emerald-600">{formatCurrency(p.amount_paid)}</td>
-                      <td className="px-6 py-4 uppercase text-xs font-bold text-slate-500">{p.payment_mode}</td>
-                    </tr>
-                  ))}
-                  {selectedKpi === 'todays_due' && todaysDueCustomers?.map((d: any) => (
-                    <tr key={d.id} className="hover:bg-blue-50/50 transition-colors">
-                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{d.name}</td>
-                      <td className="px-6 py-4 font-mono text-sm text-blue-600 font-bold">{d.loanNo}</td>
-                      <td className="px-6 py-4 amount-display font-semibold text-slate-700">{formatCurrency(d.amount)}</td>
-                      <td className="px-6 py-4 amount-display font-extrabold text-emerald-600">{formatCurrency(d.paid)}</td>
-                      <td className="px-6 py-4"><StatusBadge status={d.status} /></td>
-                    </tr>
-                  ))}
-                  {selectedKpi === 'pending' && data?.loans?.filter((l: any) => l.status === 'pending').map((l: any) => (
-                    <tr key={l.id} className="hover:bg-blue-50/50 transition-colors">
-                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{l.customer_name}</td>
-                      <td className="px-6 py-4 amount-display font-semibold text-slate-700">{formatCurrency(l.loan_amount)}</td>
-                      <td className="px-6 py-4 capitalize font-medium text-slate-600 text-sm">{l.loan_type}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* Bottom Section: Transactions, P&L, Balance Sheet */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        
+        {/* Recent Transactions */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-extrabold text-slate-900 text-sm">Recent Transactions</h3>
+            <button className="text-slate-400 hover:text-slate-600">...</button>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-start gap-2">
+              <div className="w-6 h-6 rounded bg-slate-50 border border-slate-100 flex flex-shrink-0 items-center justify-center">
+                <WalletCards className="w-3 h-3 text-slate-600" />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-600">Loan Disbursed</div>
+                <div className="font-bold text-sm text-slate-900">₹2,00,000</div>
+              </div>
             </div>
-            <div className="flex justify-end mt-6">
-              <Button onClick={() => setSelectedKpi(null)} variant="outline">Close Details</Button>
+            <div className="flex items-start gap-2">
+              <div className="w-6 h-6 rounded bg-slate-50 border border-slate-100 flex flex-shrink-0 items-center justify-center">
+                <WalletCards className="w-3 h-3 text-slate-600" />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-600">Loan Disbursed</div>
+                <div className="font-bold text-sm text-slate-900">₹2,00,000</div>
+              </div>
             </div>
-          </Modal>
-        )}
-      </AnimatePresence>
+            <div className="flex items-start gap-2 mt-2">
+              <div className="w-6 h-6 rounded bg-emerald-50 text-emerald-600 flex flex-shrink-0 items-center justify-center">
+                <Check className="w-3 h-3" />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-600">EMI Received</div>
+                <div className="font-bold text-sm text-slate-900">₹15,000</div>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 mt-2">
+              <div className="w-6 h-6 rounded bg-amber-50 text-amber-600 flex flex-shrink-0 items-center justify-center">
+                <AlertTriangle className="w-3 h-3" />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-600">Penalty Applied</div>
+                <div className="font-bold text-sm text-slate-900">₹2,000</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Profit & Loss (MTD) */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-200 ring-2 ring-blue-50/50 relative">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-extrabold text-slate-900 text-sm">Profit & Loss (MTD)</h3>
+            <button className="text-slate-400 hover:text-slate-600">...</button>
+          </div>
+          
+          <div className="space-y-3">
+            <div className="text-xs font-bold text-blue-600 uppercase tracking-widest">INCOME</div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">Interest Income</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹25,30,000</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">Processing Fees</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹1,20,000</span>
+            </div>
+            
+            <div className="text-xs font-bold text-blue-600 uppercase tracking-widest pt-2">EXPENSES</div>
+            <div className="flex items-center justify-between pb-3">
+              <span className="text-sm font-semibold text-slate-700">Provisions</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹3,50,000</span>
+            </div>
+            
+            <div className="flex items-center justify-between bg-emerald-50 px-3 py-2 rounded-lg">
+              <span className="text-sm font-extrabold text-slate-900">Net Profit</span>
+              <span className="text-sm font-mono font-extrabold text-emerald-600">₹23,00,000</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Balance Sheet */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-extrabold text-slate-900 text-sm">Balance Sheet (As of Date)</h3>
+            <button className="text-slate-400 hover:text-slate-600">...</button>
+          </div>
+          
+          <div className="space-y-3">
+            <div className="text-xs font-bold text-blue-600 uppercase tracking-widest">ASSETS</div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">Loan Book</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹1.82 Cr</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">Cash & Bank</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹28.4 Lakh</span>
+            </div>
+            
+            <div className="text-xs font-bold text-blue-600 uppercase tracking-widest pt-2">LIABILITIES</div>
+            <div className="flex items-center justify-between pb-3">
+              <span className="text-sm font-semibold text-slate-700">Borrowings</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹1.40 Cr</span>
+            </div>
+            
+            <div className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg">
+              <span className="text-sm font-extrabold text-slate-900">Net Worth</span>
+              <span className="text-sm font-mono font-extrabold text-emerald-400">₹70.4 L</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   )
 }
