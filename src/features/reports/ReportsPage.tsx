@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  TrendingUp, Wallet, Percent, FileText, Briefcase,
-  Users, ClipboardCheck, Building2, ShieldAlert,
+  TrendingUp, CreditCard, Percent, FileText, Briefcase,
+  Users, ClipboardCheck, Landmark, ShieldAlert,
   ChevronRight, Search, FileSearch, Clock, ChevronDown
 } from 'lucide-react'
 import { Modal, Button } from '@/components/ui'
@@ -10,112 +10,76 @@ import { Modal, Button } from '@/components/ui'
 const REPORTS = [
   { 
     id: 1, 
-    title: 'KYC & Compliance', 
-    desc: 'Audit customer profiles, Aadhaar/PAN verification, and KYC statuses.', 
-    icon: ShieldAlert, 
+    title: 'Performance Reports', 
+    desc: 'Track business performance over time (DOD, MOM, YTD, YOY).', 
+    icon: TrendingUp, 
     iconColor: 'text-blue-600', iconBg: 'bg-blue-50', badgeBg: 'bg-blue-600',
-    subReports: [
-      { id: 'KYC_01', name: 'Pending KYC Approvals', desc: 'Customers awaiting manual KYC verification.', freq: 'Real-time' },
-      { id: 'KYC_02', name: 'Rejected KYC Log', desc: 'History of rejected profiles with reasons.', freq: 'Daily' },
-      { id: 'KYC_03', name: 'Fraud Check Watchlist', desc: 'Profiles flagged by the internal fraud database check.', freq: 'Real-time' }
-    ]
+    subReports: Array.from({ length: 4 }).map((_, i) => ({ id: `PERF_0${i+1}`, name: `Performance Report ${i+1}`, desc: 'Detailed performance metrics.', freq: 'Daily' }))
   },
   { 
     id: 2, 
-    title: 'Loan Portfolio', 
-    desc: 'Track active loans, pending approvals, and total principal disbursed.', 
-    icon: Briefcase, 
+    title: 'Collection & EMI Reports', 
+    desc: 'Monitor collections, EMI status, efficiency and overdue aging.', 
+    icon: CreditCard, 
     iconColor: 'text-emerald-600', iconBg: 'bg-emerald-50', badgeBg: 'bg-emerald-600',
-    subReports: [
-      { id: 'LOAN_01', name: 'Active Accounts Ledger', desc: 'All active loans with outstanding balances.', freq: 'Daily' },
-      { id: 'LOAN_02', name: 'Pending Disbursals', desc: 'Approved loans waiting for fund disbursement.', freq: 'Real-time' },
-      { id: 'LOAN_03', name: 'Draft Loans Aging', desc: 'Incomplete loan setups that have been abandoned.', freq: 'Weekly' }
-    ]
+    subReports: Array.from({ length: 6 }).map((_, i) => ({ id: `COL_0${i+1}`, name: `Collection Report ${i+1}`, desc: 'EMI and collection details.', freq: 'Daily' }))
   },
   { 
     id: 3, 
-    title: 'Collections & EMI', 
-    desc: 'Monitor daily collections, bounced payments, and overdue EMIs.', 
-    icon: Wallet, 
+    title: 'Interest & Profitability', 
+    desc: 'Analyze interest performance and profitability metrics.', 
+    icon: Percent, 
     iconColor: 'text-orange-600', iconBg: 'bg-orange-50', badgeBg: 'bg-orange-600',
-    subReports: [
-      { id: 'EMI_01', name: 'Daily Collection Report', desc: 'Total EMI collections recorded today across all branches.', freq: 'Daily' },
-      { id: 'EMI_02', name: 'Overdue EMI Aging', desc: 'Accounts missing EMI payments categorized by 30/60/90 days.', freq: 'Weekly' },
-      { id: 'EMI_03', name: 'Upcoming EMI Reminders', desc: 'Customers with EMIs due in the next 3 days.', freq: 'Daily' }
-    ]
+    subReports: Array.from({ length: 5 }).map((_, i) => ({ id: `INT_0${i+1}`, name: `Interest Report ${i+1}`, desc: 'Profitability analysis.', freq: 'Monthly' }))
   },
   { 
     id: 4, 
-    title: 'Branch Performance', 
-    desc: 'Compare Vallipuram, Namakkal, and Aniyapuram branch metrics.', 
-    icon: Building2, 
+    title: 'Financial Reports (Accounts)', 
+    desc: 'Core financial statements and accounting reports.', 
+    icon: FileText, 
     iconColor: 'text-purple-600', iconBg: 'bg-purple-50', badgeBg: 'bg-purple-600',
-    subReports: [
-      { id: 'BR_01', name: 'Branch Disbursement Stats', desc: 'Total loans and principal disbursed per branch.', freq: 'Monthly' },
-      { id: 'BR_02', name: 'Cross-Branch Requests', desc: 'Log of customers shared between Base and Operating branches.', freq: 'Real-time' },
-      { id: 'BR_03', name: 'Branch Recovery Rate', desc: 'Percentage of expected collections recovered per branch.', freq: 'Monthly' }
-    ]
+    subReports: Array.from({ length: 7 }).map((_, i) => ({ id: `FIN_0${i+1}`, name: `Financial Report ${i+1}`, desc: 'Core accounting statements.', freq: 'Monthly' }))
   },
   { 
     id: 5, 
-    title: 'Lead Management', 
-    desc: 'Pipeline of leads, follow-ups, and conversion metrics.', 
-    icon: Users, 
-    iconColor: 'text-pink-600', iconBg: 'bg-pink-50', badgeBg: 'bg-pink-600',
-    subReports: [
-      { id: 'LEAD_01', name: 'Pending Follow-ups', desc: 'Leads scheduled for follow-up today or overdue.', freq: 'Real-time' },
-      { id: 'LEAD_02', name: 'Lead Conversion Ratio', desc: 'Number of leads converted into active customers.', freq: 'Monthly' },
-      { id: 'LEAD_03', name: 'Rejected Leads Log', desc: 'Leads declined categorized by rejection reason.', freq: 'Weekly' }
-    ]
+    title: 'Loan Portfolio Reports', 
+    desc: 'View loan portfolio status and aging analysis.', 
+    icon: Briefcase, 
+    iconColor: 'text-teal-600', iconBg: 'bg-teal-50', badgeBg: 'bg-teal-600',
+    subReports: Array.from({ length: 5 }).map((_, i) => ({ id: `LOAN_0${i+1}`, name: `Portfolio Report ${i+1}`, desc: 'Loan status analysis.', freq: 'Weekly' }))
   },
   { 
     id: 6, 
-    title: 'Transactions Ledger', 
-    desc: 'Full audit trail of receipts, payments, and system ledger entries.', 
-    icon: FileText, 
-    iconColor: 'text-teal-600', iconBg: 'bg-teal-50', badgeBg: 'bg-teal-600',
-    subReports: [
-      { id: 'TXN_01', name: 'Daily Cash Book', desc: 'All cash in and cash out transactions for the day.', freq: 'Daily' },
-      { id: 'TXN_02', name: 'Reversed Transactions', desc: 'Audit log of payments or disbursals that were deleted/reversed.', freq: 'Real-time' },
-      { id: 'TXN_03', name: 'Bank Transfer Reconciliation', desc: 'NEFT/IMPS/UPI payments pending bank clearing.', freq: 'Daily' }
-    ]
+    title: 'Staff Performance Reports', 
+    desc: 'Track staff targets, productivity and recovery performance.', 
+    icon: Users, 
+    iconColor: 'text-pink-600', iconBg: 'bg-pink-50', badgeBg: 'bg-pink-600',
+    subReports: Array.from({ length: 5 }).map((_, i) => ({ id: `STAFF_0${i+1}`, name: `Staff Report ${i+1}`, desc: 'Staff productivity metrics.', freq: 'Daily' }))
   },
   { 
     id: 7, 
-    title: 'Risk & Segmentation', 
-    desc: 'Customer risk categorization, occupational stability, and NPAs.', 
-    icon: TrendingUp, 
-    iconColor: 'text-rose-600', iconBg: 'bg-rose-50', badgeBg: 'bg-rose-600',
-    subReports: [
-      { id: 'RISK_01', name: 'High Risk Customers', desc: 'Customers flagged with Category C or high-risk segments.', freq: 'Real-time' },
-      { id: 'RISK_02', name: 'NPA Prediction', desc: 'Accounts showing early signs of becoming Non-Performing Assets.', freq: 'Weekly' },
-      { id: 'RISK_03', name: 'Customer Demographics', desc: 'Distribution by occupation, location, and income bracket.', freq: 'Monthly' }
-    ]
+    title: 'Task & Operations Reports', 
+    desc: 'Daily tasks, activities, calls and operational reports.', 
+    icon: ClipboardCheck, 
+    iconColor: 'text-amber-500', iconBg: 'bg-amber-50', badgeBg: 'bg-amber-500',
+    subReports: Array.from({ length: 4 }).map((_, i) => ({ id: `TASK_0${i+1}`, name: `Operations Report ${i+1}`, desc: 'Daily operational tasks.', freq: 'Real-time' }))
   },
   { 
     id: 8, 
-    title: 'Staff Activity', 
-    desc: 'System logs for loan officers, managers, and admins.', 
-    icon: ClipboardCheck, 
-    iconColor: 'text-indigo-600', iconBg: 'bg-indigo-50', badgeBg: 'bg-indigo-600',
-    subReports: [
-      { id: 'STAFF_01', name: 'Customer Creation Log', desc: 'Count of new profiles created by each staff member.', freq: 'Weekly' },
-      { id: 'STAFF_02', name: 'Approval Turnaround Time', desc: 'Average time taken by managers to approve branch requests.', freq: 'Monthly' },
-      { id: 'STAFF_03', name: 'System Access Log', desc: 'Audit trail of staff logins and sensitive data access.', freq: 'Real-time' }
-    ]
+    title: 'Bank & Cash Reports', 
+    desc: 'Banking, reconciliation, cash book and fund flow reports.', 
+    icon: Landmark, 
+    iconColor: 'text-blue-600', iconBg: 'bg-blue-50', badgeBg: 'bg-blue-600',
+    subReports: Array.from({ length: 4 }).map((_, i) => ({ id: `BANK_0${i+1}`, name: `Bank Report ${i+1}`, desc: 'Fund flow and reconciliation.', freq: 'Daily' }))
   },
   { 
     id: 9, 
-    title: 'Financial Statements', 
-    desc: 'Profit & Loss, balance sheets, and interest revenue recognition.', 
-    icon: Percent, 
-    iconColor: 'text-amber-600', iconBg: 'bg-amber-50', badgeBg: 'bg-amber-600',
-    subReports: [
-      { id: 'FIN_01', name: 'Interest Realized', desc: 'Total interest collected vs accrued.', freq: 'Monthly' },
-      { id: 'FIN_02', name: 'Principal Outstanding', desc: 'Total capital currently deployed in the market.', freq: 'Daily' },
-      { id: 'FIN_03', name: 'Processing Fees Revenue', desc: 'Revenue generated strictly from loan processing and document fees.', freq: 'Monthly' }
-    ]
-  },
+    title: 'Risk & Control Reports', 
+    desc: 'Monitor risk, NPAs, defaults and recovery efficiency.', 
+    icon: ShieldAlert, 
+    iconColor: 'text-rose-600', iconBg: 'bg-rose-50', badgeBg: 'bg-rose-600',
+    subReports: Array.from({ length: 4 }).map((_, i) => ({ id: `RISK_0${i+1}`, name: `Risk Report ${i+1}`, desc: 'NPA and default tracking.', freq: 'Monthly' }))
+  }
 ]
 
 export default function ReportsPage() {
@@ -257,16 +221,7 @@ export default function ReportsPage() {
                 )}
               </AnimatePresence>
 
-              {/* View Reports Footer (only visible when collapsed) */}
-              {!isSelected && (
-                <div 
-                  className="px-4 py-2.5 border-t border-slate-100 flex items-center justify-between bg-slate-50/50 group-hover:bg-blue-50/30 transition-colors cursor-pointer"
-                  onClick={() => setSelectedReport(report)}
-                >
-                  <span className="text-xs font-bold text-blue-600">View Breakups</span>
-                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
-                </div>
-              )}
+
             </motion.div>
           )
         })}
@@ -286,13 +241,13 @@ export default function ReportsPage() {
             </div>
             <div>
               <h4 className="font-bold text-slate-800 text-sm">Can't find what you need?</h4>
-              <p className="text-xs text-slate-500">Use search to find reports.</p>
+              <p className="text-xs text-slate-500">Use search to find the right report or explore categories.</p>
             </div>
           </div>
           <div className="relative w-full md:w-64">
             <input
               type="text"
-              placeholder="Search..."
+              placeholder="Search any report..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-3 pr-8 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm bg-white font-medium placeholder-slate-400"
