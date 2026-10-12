@@ -6,6 +6,7 @@ import {
   ChevronRight, Search, FileSearch, Clock, ChevronDown
 } from 'lucide-react'
 import { Modal, Button } from '@/components/ui'
+import BusinessPerformanceReport from './BusinessPerformanceReport'
 
 const REPORTS = [
   { 
@@ -89,24 +90,31 @@ export default function ReportsPage() {
   return (
     <div className="p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 flex-shrink-0">
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Reports Center</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Access all business reports in one place</p>
+      {!selectedReport && (
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 flex-shrink-0">
+          <div>
+            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Reports Center</h1>
+            <p className="text-xs text-slate-500 mt-0.5">Access all business reports in one place</p>
+          </div>
+          <motion.button 
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-sm transition-colors"
+          >
+            <Clock className="w-3.5 h-3.5 text-slate-400" />
+            Recently Viewed
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          </motion.button>
         </div>
-        <motion.button 
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-sm transition-colors"
-        >
-          <Clock className="w-3.5 h-3.5 text-slate-400" />
-          Recently Viewed
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-        </motion.button>
-      </div>
+      )}
 
-      {/* Grid */}
-      <motion.div layout className={selectedReport ? "flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar space-y-4" : "flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pr-2 custom-scrollbar"}>
+      {/* Main View */}
+      {selectedReport?.id === 1 ? (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <BusinessPerformanceReport onBack={() => setSelectedReport(null)} />
+        </div>
+      ) : (
+        <motion.div layout className={selectedReport ? "flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar space-y-4" : "flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pr-2 custom-scrollbar"}>
         {REPORTS.map((report, idx) => {
           const Icon = report.icon
           const isSelected = selectedReport?.id === report.id
@@ -226,6 +234,7 @@ export default function ReportsPage() {
           )
         })}
       </motion.div>
+      )}
 
       {/* Footer Search */}
       {!selectedReport && (
