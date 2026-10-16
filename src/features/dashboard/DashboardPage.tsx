@@ -558,6 +558,84 @@ export default function DashboardPage() {
       Count: t.value
     }))
 
+    // Real dynamic top borrowers from active loans
+    const topBorrowers = loans
+      .filter(l => l.status === 'active' || l.status === 'overdue' || Number(l.loan_amount || 0) > 0)
+      .sort((a, b) => Number(b.loan_amount || 0) - Number(a.loan_amount || 0))
+      .slice(0, 4)
+      .map(l => {
+        const name = l.customer_name || 'Customer'
+        const parts = name.trim().split(' ')
+        const init = parts.length > 1 ? (parts[0][0] + parts[1][0]).toUpperCase() : name.slice(0, 2).toUpperCase()
+        return {
+          init: init || 'LN',
+          name,
+          amount: Number(l.loan_amount || 0),
+          loanNo: l.loan_number
+        }
+      })
+
+    // Real dynamic recent transactions from payments and disbursements
+    const recentTransactions: {
+      id: string
+      type: 'payment' | 'disbursement'
+      title: string
+      desc: string
+      amount: number
+      date: string
+    }[] = []
+
+    payments.slice(0, 4).forEach(p => {
+      recentTransactions.push({
+        id: p.id,
+        type: 'payment',
+        title: 'EMI Received',
+        desc: p.receipt_number || (p.payment_mode ? p.payment_mode.toUpperCase() : 'Cash'),
+        amount: Number(p.amount_paid || 0),
+        date: p.payment_date || p.created_at
+      })
+    })
+
+    loans.slice(0, 3).forEach(l => {
+      recentTransactions.push({
+        id: l.id,
+        type: 'disbursement',
+        title: 'Loan Disbursed',
+        desc: l.loan_number || l.customer_name || 'Loan',
+        amount: Number(l.loan_amount || 0),
+        date: l.loan_date || l.created_at
+      })
+    })
+
+    recentTransactions.sort((a, b) => dayjs(b.date).unix() - dayjs(a.date).unix())
+
+    // Real dynamic NPA & Overdue Risk Trend (last 6 months)
+    const npaRiskTrendChart = last6Months.map(m => {
+      const dateLimit = m.endOf('month')
+      const count = emiSchedule.filter(s =>
+        (s.status === 'pending' || s.status === 'overdue' || s.status === 'partial') &&
+        dayjs(s.due_date).isBefore(dateLimit)
+      ).length
+      return {
+        name: m.format('MMM'),
+        value: count
+      }
+    })
+    const totalHighRiskCount = totalNpaAccounts + overdueSchedules.filter(s => today.diff(dayjs(s.due_date), 'day') > 60).length
+
+    // Real dynamic P&L (MTD)
+    const pnlInterestIncome = monthlyInterest > 0 ? monthlyInterest : interestEarned
+    const pnlProcessingFees = income.filter(i => dayjs(i.date).format('YYYY-MM') === currentMonth).reduce((sum, i) => sum + Number(i.amount || 0), 0)
+    const pnlProvisions = Math.round(totalOverdueAmount * 0.05)
+    const pnlExpenses = expenses.filter(e => dayjs(e.date).format('YYYY-MM') === currentMonth).reduce((sum, e) => sum + Number(e.amount || 0), 0)
+    const pnlNetProfit = (pnlInterestIncome + pnlProcessingFees) - (pnlExpenses + pnlProvisions)
+
+    // Real dynamic Balance Sheet
+    const bsLoanBook = totalOutstandingAmount
+    const bsCashAndBank = totalAvailableFunds
+    const bsLiabilities = totalInterestOutstanding
+    const bsNetWorth = Math.max(0, bsLoanBook + bsCashAndBank - bsLiabilities)
+
     return {
       totalCustomers,
       activeLoans,
@@ -619,7 +697,22 @@ export default function DashboardPage() {
       topPerformingLoanTypesChart,
       recentPayments: payments.slice(0, 5),
       todaysDueCount,
-      todayStr
+      todayStr,
+      thisMonthDues,
+      thisMonthPayments,
+      topBorrowers,
+      recentTransactions,
+      npaRiskTrendChart,
+      totalHighRiskCount,
+      pnlInterestIncome,
+      pnlProcessingFees,
+      pnlExpenses,
+      pnlProvisions,
+      pnlNetProfit,
+      bsLoanBook,
+      bsCashAndBank,
+      bsLiabilities,
+      bsNetWorth,
     }
   }, [data])
 
@@ -690,8 +783,13 @@ export default function DashboardPage() {
     portfolioGrowth, revenueGrowth, monthlyCollectionChart, monthlyDisbursementChart,
     outstandingTrendChart, cashFlowChart, revenueTrendChart, customerGrowthChart,
     loanTypeCounts, emiCollectionSuccessChart, topPerformingLoanTypesChart, recentPayments,
-    todaysDueCount, todayStr
+    todaysDueCount, todayStr, thisMonthDues, thisMonthPayments,
+    topBorrowers, recentTransactions, npaRiskTrendChart, totalHighRiskCount,
+    pnlInterestIncome, pnlProcessingFees, pnlExpenses, pnlProvisions, pnlNetProfit,
+    bsLoanBook, bsCashAndBank, bsLiabilities, bsNetWorth,
   } = metrics
+
+  const effDisplay = collectionEfficiency > 0 ? collectionEfficiency : (todaysCollectionPercentage > 0 ? todaysCollectionPercentage : 0)
 
   return (
     <div className="p-6 max-w-screen-2xl mx-auto space-y-6 bg-slate-50 min-h-screen">
@@ -700,6 +798,13 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-extrabold text-blue-900 tracking-tight flex items-center gap-2">
           CEO DASHBOARD
         </h1>
+        <button
+          onClick={() => refetch()}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-2xs transition-colors"
+        >
+          <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+          Refresh Real Data
+        </button>
       </div>
 
       {/* Top Section Grid */}
@@ -709,34 +814,36 @@ export default function DashboardPage() {
         <div className="col-span-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
           <div className="text-sm font-medium text-slate-500 mb-2">EMI Due Today</div>
           <div className="text-2xl font-extrabold text-slate-900 mb-2">₹{todaysEMIDue.toLocaleString('en-IN')}</div>
-          <div className="inline-flex items-center text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded text-left self-start gap-0.5">
-            <TrendingDown className="w-3 h-3" /> 7%
+          <div className="inline-flex items-center text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded text-left self-start gap-0.5">
+            {todaysDueCount > 0 ? `${todaysDueCount} accounts due` : 'No dues scheduled today'}
           </div>
         </div>
         
         <div className="col-span-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
           <div className="text-sm font-medium text-slate-500 mb-2">EMI Collected Today</div>
           <div className="text-2xl font-extrabold text-slate-900 mb-2">₹{todaysCollection.toLocaleString('en-IN')}</div>
-          <div className="inline-flex items-center text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-left self-start gap-0.5">
-            <TrendingUp className="w-3 h-3" /> 5%
+          <div className={`inline-flex items-center text-[10px] font-bold ${collectionTrendPercent >= 0 ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'} px-2 py-0.5 rounded text-left self-start gap-0.5`}>
+            {collectionTrendPercent >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+            {Math.abs(collectionTrendPercent).toFixed(1)}% DoD
           </div>
         </div>
         
         <div className="col-span-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
           <div className="text-sm font-medium text-slate-500 mb-2 flex items-center gap-2">
-            Overdue Accounts <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full">2</span>
+            Overdue Accounts {totalOverdueCustomers > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">{totalOverdueCustomers}</span>}
           </div>
           <div className="text-2xl font-extrabold text-slate-900 mb-2">{totalOverdueCustomers}</div>
           <div className="inline-flex items-center text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded text-left self-start gap-0.5">
-            <TrendingDown className="w-3 h-3" /> 2%
+            ₹{totalOverdueAmount.toLocaleString('en-IN')} overdue
           </div>
         </div>
         
         <div className="col-span-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
           <div className="text-sm font-medium text-slate-500 mb-2">New Loans (MTD)</div>
           <div className="text-2xl font-extrabold text-slate-900 mb-2">₹{(currentMonthDisbursements / 100000).toFixed(1)} Lakh</div>
-          <div className="inline-flex items-center text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-left self-start gap-0.5">
-            <TrendingUp className="w-3 h-3" /> 15%
+          <div className={`inline-flex items-center text-[10px] font-bold ${monthlyDisbursementTrend >= 0 ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'} px-2 py-0.5 rounded text-left self-start gap-0.5`}>
+            {monthlyDisbursementTrend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+            {Math.abs(monthlyDisbursementTrend).toFixed(1)}% MoM
           </div>
         </div>
 
@@ -750,24 +857,19 @@ export default function DashboardPage() {
             <div className="absolute top-0 left-0 w-48 h-48 rounded-full border-[12px] border-white/20"></div>
             <div className="absolute top-0 left-0 w-48 h-48 rounded-full border-[12px] border-white border-b-transparent border-r-transparent transform rotate-45"></div>
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-4xl font-extrabold">
-              {todaysCollectionPercentage > 0 ? todaysCollectionPercentage.toFixed(0) : '92'}%
+              {effDisplay.toFixed(0)}%
             </div>
           </div>
           
           <div className="space-y-1 text-center w-full mt-4">
             <div className="flex justify-between text-sm opacity-90 font-medium">
-              <span>Total Due:</span>
-              <span className="font-bold">₹{todaysEMIDue.toLocaleString('en-IN')}</span>
+              <span>Total Demand:</span>
+              <span className="font-bold">₹{(todaysEMIDue > 0 ? todaysEMIDue : thisMonthDues).toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between text-sm opacity-90 font-medium">
               <span>Collected:</span>
-              <span className="font-bold">₹{todaysCollection.toLocaleString('en-IN')}</span>
+              <span className="font-bold">₹{(todaysCollection > 0 ? todaysCollection : thisMonthPayments).toLocaleString('en-IN')}</span>
             </div>
-          </div>
-          
-          <div className="mt-4 bg-white/20 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-            <TrendingUp className="w-3 h-3" />
-            +5%
           </div>
         </div>
 
@@ -779,8 +881,9 @@ export default function DashboardPage() {
               Interest Earned (MTD)
             </div>
             <div className="text-2xl font-extrabold text-slate-900 mb-2">₹{(monthlyInterest / 100000).toFixed(1)} Lakh</div>
-            <div className="inline-flex items-center text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-left self-start gap-0.5">
-              <TrendingUp className="w-3 h-3" /> 8.5%
+            <div className={`inline-flex items-center text-[10px] font-bold ${revenueGrowth >= 0 ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'} px-2 py-0.5 rounded text-left self-start gap-0.5`}>
+              {revenueGrowth >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+              {Math.abs(revenueGrowth).toFixed(1)}% MoM
             </div>
           </div>
           <div className="flex-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
@@ -799,7 +902,11 @@ export default function DashboardPage() {
               <div className="w-6 h-6 rounded bg-blue-50 text-blue-600 flex items-center justify-center"><Wallet className="w-3.5 h-3.5" /></div>
               Outstanding Principal
             </div>
-            <div className="text-2xl font-extrabold text-slate-900">₹{(totalOutstandingAmount / 10000000).toFixed(2)} Cr</div>
+            <div className="text-2xl font-extrabold text-slate-900">
+              {totalOutstandingAmount >= 10000000
+                ? `₹${(totalOutstandingAmount / 10000000).toFixed(2)} Cr`
+                : `₹${(totalOutstandingAmount / 100000).toFixed(2)} Lakh`}
+            </div>
           </div>
           <div className="flex-1 bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
             <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-3">
@@ -819,24 +926,28 @@ export default function DashboardPage() {
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-extrabold text-slate-900 text-sm">Top Borrowers</h3>
-            <button className="text-slate-400 hover:text-slate-600">...</button>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active</span>
           </div>
           <div className="space-y-4">
-            {[
-              { init: 'RT', name: 'Ravi Traders', amount: 350000 },
-              { init: 'SM', name: 'Suresh Motors', amount: 720000 },
-              { init: 'KE', name: 'Kannan Ent.', amount: 199000 },
-            ].map((b, i) => (
+            {topBorrowers.map((b, i) => (
               <div key={i} className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-blue-500 text-white font-bold text-xs flex items-center justify-center">
                     {b.init}
                   </div>
-                  <div className="font-semibold text-slate-800 text-sm">{b.name}</div>
+                  <div>
+                    <div className="font-semibold text-slate-800 text-sm">{b.name}</div>
+                    {b.loanNo && <div className="text-[10px] text-slate-400">{b.loanNo}</div>}
+                  </div>
                 </div>
                 <div className="font-mono font-bold text-slate-900 text-sm">₹{b.amount.toLocaleString('en-IN')}</div>
               </div>
             ))}
+            {topBorrowers.length === 0 && (
+              <div className="text-center py-6 text-xs text-slate-400">
+                No active borrowers found.
+              </div>
+            )}
           </div>
         </div>
 
@@ -844,12 +955,16 @@ export default function DashboardPage() {
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-extrabold text-slate-900 text-sm">Portfolio Summary</h3>
-            <button className="text-slate-400 hover:text-slate-600">...</button>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Overall</span>
           </div>
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-50 pb-3">
               <span className="text-sm font-semibold text-slate-500">Total Portfolio</span>
-              <span className="text-sm font-mono font-bold text-slate-900">₹{(totalOutstandingAmount / 10000000).toFixed(2)} Cr</span>
+              <span className="text-sm font-mono font-bold text-slate-900">
+                {totalOutstandingAmount >= 10000000
+                  ? `₹${(totalOutstandingAmount / 10000000).toFixed(2)} Cr`
+                  : `₹${(totalOutstandingAmount / 100000).toFixed(2)} Lakh`}
+              </span>
             </div>
             <div className="flex items-center justify-between border-b border-slate-50 pb-3">
               <span className="text-sm font-semibold text-slate-500">Active Accounts</span>
@@ -866,28 +981,25 @@ export default function DashboardPage() {
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-extrabold text-slate-900 text-sm">NPA & Risk Trend</h3>
-            <button className="text-slate-400 hover:text-slate-600">...</button>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Last 6 Mos</span>
           </div>
           <div className="flex-1 min-h-[80px]">
-             {/* Mock chart */}
-             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={[
-                { value: 10 }, { value: 15 }, { value: 20 }, { value: 25 }, { value: 30 }, { value: 35 }, { value: 30 }
-              ]}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={npaRiskTrendChart}>
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <Area type="monotone" dataKey="value" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
+                <Area type="monotone" dataKey="value" stroke="#EF4444" strokeWidth={2.5} fillOpacity={1} fill="url(#colorValue)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
           <div className="mt-2 flex items-center justify-between">
             <span className="text-sm font-semibold text-slate-500">Total High-Risk Exposures:</span>
             <span className="inline-flex items-center text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded gap-0.5">
-              <TrendingDown className="w-3 h-3" /> 7
+              <TrendingDown className="w-3 h-3" /> {totalHighRiskCount}
             </span>
           </div>
         </div>
@@ -901,45 +1013,35 @@ export default function DashboardPage() {
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-extrabold text-slate-900 text-sm">Recent Transactions</h3>
-            <button className="text-slate-400 hover:text-slate-600">...</button>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Live</span>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-start gap-2">
-              <div className="w-6 h-6 rounded bg-slate-50 border border-slate-100 flex flex-shrink-0 items-center justify-center">
-                <WalletCards className="w-3 h-3 text-slate-600" />
+          <div className="space-y-3">
+            {recentTransactions.map((t) => (
+              <div key={t.id} className="flex items-center justify-between border-b border-slate-50 pb-2 last:border-0 last:pb-0">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                    t.type === 'payment' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
+                  }`}>
+                    {t.type === 'payment' ? <Check className="w-3.5 h-3.5" /> : <WalletCards className="w-3.5 h-3.5" />}
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-800">{t.title}</div>
+                    <div className="text-[10px] text-slate-400">{t.desc}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className={`font-mono font-bold text-xs ${t.type === 'payment' ? 'text-emerald-600' : 'text-slate-900'}`}>
+                    {t.type === 'payment' ? '+' : ''}₹{t.amount.toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-[9px] text-slate-400">{t.date ? dayjs(t.date).format('DD MMM') : ''}</div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-semibold text-slate-600">Loan Disbursed</div>
-                <div className="font-bold text-sm text-slate-900">₹2,00,000</div>
+            ))}
+            {recentTransactions.length === 0 && (
+              <div className="text-center py-6 text-xs text-slate-400">
+                No recent transactions recorded.
               </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="w-6 h-6 rounded bg-slate-50 border border-slate-100 flex flex-shrink-0 items-center justify-center">
-                <WalletCards className="w-3 h-3 text-slate-600" />
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-slate-600">Loan Disbursed</div>
-                <div className="font-bold text-sm text-slate-900">₹2,00,000</div>
-              </div>
-            </div>
-            <div className="flex items-start gap-2 mt-2">
-              <div className="w-6 h-6 rounded bg-emerald-50 text-emerald-600 flex flex-shrink-0 items-center justify-center">
-                <Check className="w-3 h-3" />
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-slate-600">EMI Received</div>
-                <div className="font-bold text-sm text-slate-900">₹15,000</div>
-              </div>
-            </div>
-            <div className="flex items-start gap-2 mt-2">
-              <div className="w-6 h-6 rounded bg-amber-50 text-amber-600 flex flex-shrink-0 items-center justify-center">
-                <AlertTriangle className="w-3 h-3" />
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-slate-600">Penalty Applied</div>
-                <div className="font-bold text-sm text-slate-900">₹2,000</div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -947,29 +1049,35 @@ export default function DashboardPage() {
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-200 ring-2 ring-blue-50/50 relative">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-extrabold text-slate-900 text-sm">Profit & Loss (MTD)</h3>
-            <button className="text-slate-400 hover:text-slate-600">...</button>
+            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Real-Time</span>
           </div>
           
           <div className="space-y-3">
             <div className="text-xs font-bold text-blue-600 uppercase tracking-widest">INCOME</div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-700">Interest Income</span>
-              <span className="text-sm font-mono font-bold text-slate-900">₹25,30,000</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹{pnlInterestIncome.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-700">Processing Fees</span>
-              <span className="text-sm font-mono font-bold text-slate-900">₹1,20,000</span>
+              <span className="text-sm font-semibold text-slate-700">Processing Fees / Other</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹{pnlProcessingFees.toLocaleString('en-IN')}</span>
             </div>
             
             <div className="text-xs font-bold text-blue-600 uppercase tracking-widest pt-2">EXPENSES</div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">Operating Expenses</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹{pnlExpenses.toLocaleString('en-IN')}</span>
+            </div>
             <div className="flex items-center justify-between pb-3">
               <span className="text-sm font-semibold text-slate-700">Provisions</span>
-              <span className="text-sm font-mono font-bold text-slate-900">₹3,50,000</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹{pnlProvisions.toLocaleString('en-IN')}</span>
             </div>
             
             <div className="flex items-center justify-between bg-emerald-50 px-3 py-2 rounded-lg">
               <span className="text-sm font-extrabold text-slate-900">Net Profit</span>
-              <span className="text-sm font-mono font-extrabold text-emerald-600">₹23,00,000</span>
+              <span className={`text-sm font-mono font-extrabold ${pnlNetProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                ₹{pnlNetProfit.toLocaleString('en-IN')}
+              </span>
             </div>
           </div>
         </div>
@@ -978,29 +1086,31 @@ export default function DashboardPage() {
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-extrabold text-slate-900 text-sm">Balance Sheet (As of Date)</h3>
-            <button className="text-slate-400 hover:text-slate-600">...</button>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">As on {dayjs().format('DD MMM')}</span>
           </div>
           
           <div className="space-y-3">
             <div className="text-xs font-bold text-blue-600 uppercase tracking-widest">ASSETS</div>
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-700">Loan Book</span>
-              <span className="text-sm font-mono font-bold text-slate-900">₹1.82 Cr</span>
+              <span className="text-sm font-semibold text-slate-700">Loan Book (Outstanding)</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹{bsLoanBook.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-700">Cash & Bank</span>
-              <span className="text-sm font-mono font-bold text-slate-900">₹28.4 Lakh</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹{bsCashAndBank.toLocaleString('en-IN')}</span>
             </div>
             
             <div className="text-xs font-bold text-blue-600 uppercase tracking-widest pt-2">LIABILITIES</div>
             <div className="flex items-center justify-between pb-3">
-              <span className="text-sm font-semibold text-slate-700">Borrowings</span>
-              <span className="text-sm font-mono font-bold text-slate-900">₹1.40 Cr</span>
+              <span className="text-sm font-semibold text-slate-700">Pending Payables / Dues</span>
+              <span className="text-sm font-mono font-bold text-slate-900">₹{bsLiabilities.toLocaleString('en-IN')}</span>
             </div>
             
-            <div className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg">
+            <div className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
               <span className="text-sm font-extrabold text-slate-900">Net Worth</span>
-              <span className="text-sm font-mono font-extrabold text-emerald-400">₹70.4 L</span>
+              <span className="text-sm font-mono font-extrabold text-emerald-600">
+                ₹{bsNetWorth.toLocaleString('en-IN')}
+              </span>
             </div>
           </div>
         </div>
