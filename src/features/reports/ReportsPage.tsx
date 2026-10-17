@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { Modal, Button } from '@/components/ui'
 import BusinessPerformanceReport from './BusinessPerformanceReport'
+import CollectionEMIReport from './CollectionEMIReport'
 
 const REPORTS = [
   { 
@@ -112,6 +113,10 @@ export default function ReportsPage() {
       {selectedReport?.id === 1 ? (
         <div className="flex-1 min-h-0 flex flex-col">
           <BusinessPerformanceReport onBack={() => setSelectedReport(null)} />
+        </div>
+      ) : selectedReport?.id === 2 ? (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <CollectionEMIReport onBack={() => setSelectedReport(null)} />
         </div>
       ) : (
         <motion.div layout className={selectedReport ? "flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar space-y-4" : "flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pr-2 custom-scrollbar"}>
