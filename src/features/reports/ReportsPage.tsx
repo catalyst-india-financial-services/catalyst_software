@@ -87,9 +87,8 @@ const REPORTS = [
 export default function ReportsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedReport, setSelectedReport] = useState<typeof REPORTS[0] | null>(null)
-
   return (
-    <div className="p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4">
+    <div className={selectedReport?.id === 2 ? "h-full w-full flex flex-col overflow-hidden p-1.5" : "p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4"}>
       {/* Header */}
       {!selectedReport && (
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 flex-shrink-0">
