@@ -4,7 +4,7 @@ import {
   FileText, Building2, Coins, Wallet, ShieldCheck,
   Percent, ArrowUpRight, ArrowDownRight, Layers,
   Receipt, BarChart3, Scale, PieChart, CheckCircle2,
-  Calendar, Briefcase, CreditCard, Maximize2, Minimize2
+  Calendar, Briefcase, CreditCard
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
@@ -48,43 +48,6 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
   const [selectedBranch, setSelectedBranch] = useState<string>(initialBranch)
   const [selectedPeriod, setSelectedPeriod] = useState<string>('Sep 2026')
   const [activeModal, setActiveModal] = useState<string | null>(null)
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const containerRef = React.useRef<HTMLDivElement>(null)
-
-  React.useEffect(() => {
-    const handleFsChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
-    }
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullscreen) {
-        setIsFullscreen(false)
-        if (document.fullscreenElement) {
-          document.exitFullscreen?.().catch(() => {})
-        }
-      }
-    }
-    document.addEventListener('fullscreenchange', handleFsChange)
-    window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFsChange)
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [isFullscreen])
-
-  const toggleFullscreen = () => {
-    if (!isFullscreen && !document.fullscreenElement) {
-      setIsFullscreen(true)
-      const el = containerRef.current || document.documentElement
-      el?.requestFullscreen?.().catch(() => {
-        // Fallback gracefully to CSS overlay full screen mode
-      })
-    } else {
-      setIsFullscreen(false)
-      if (document.fullscreenElement) {
-        document.exitFullscreen?.().catch(() => {})
-      }
-    }
-  }
 
   // Fetch real database records from Supabase
   const { data: dbData, isLoading } = useQuery({
@@ -251,14 +214,7 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
   }
 
   return (
-    <div
-      ref={containerRef}
-      className={
-        isFullscreen
-          ? "fixed inset-0 z-50 w-screen h-screen bg-slate-50 text-slate-800 flex flex-col overflow-hidden select-none"
-          : "h-full w-full flex-1 flex flex-col overflow-hidden bg-slate-50 text-slate-800 select-none"
-      }
-    >
+    <div className="h-full w-full flex-1 flex flex-col overflow-hidden bg-slate-50 text-slate-800 select-none">
       
       {/* ─── Top Header Bar ─── */}
       <div className="bg-white px-4 py-2 border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-3 flex-shrink-0 shadow-2xs">
@@ -294,7 +250,7 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
           <p className="text-[11px] text-slate-500">View consolidated financial position with key schedules</p>
         </div>
 
-        {/* Right: Branch & Period Dropdowns + Export + Fullscreen */}
+        {/* Right: Branch & Period Dropdowns + Export */}
         <div className="flex items-center gap-2.5">
           {/* Branch Dropdown */}
           <div className="flex flex-col">
@@ -323,25 +279,6 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
               ))}
             </select>
           </div>
-
-          {/* Full Screen Toggle Button */}
-          <button
-            onClick={toggleFullscreen}
-            className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 shadow-2xs transition-colors self-end mb-0.5 cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
-            title={isFullscreen ? "Exit Full Screen" : "Full Screen (Maximize)"}
-          >
-            {isFullscreen ? (
-              <>
-                <Minimize2 className="w-3.5 h-3.5 text-blue-600" />
-                <span className="hidden sm:inline text-blue-600 font-bold">Exit Fullscreen</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Full Screen</span>
-              </>
-            )}
-          </button>
 
           {/* Export Excel Button */}
           <button
