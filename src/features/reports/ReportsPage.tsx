@@ -8,6 +8,7 @@ import {
 import { Modal, Button } from '@/components/ui'
 import BusinessPerformanceReport from './BusinessPerformanceReport'
 import CollectionEMIReport from './CollectionEMIReport'
+import InterestProfitabilityReport from './InterestProfitabilityReport'
 
 const REPORTS = [
   { 
@@ -88,7 +89,7 @@ export default function ReportsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedReport, setSelectedReport] = useState<typeof REPORTS[0] | null>(null)
   return (
-    <div className={selectedReport?.id === 2 ? "h-full w-full flex flex-col overflow-hidden p-1.5" : "p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4"}>
+    <div className={selectedReport?.id === 2 || selectedReport?.id === 3 ? "h-full w-full flex flex-col overflow-hidden p-1.5" : "p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4"}>
       {/* Header */}
       {!selectedReport && (
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 flex-shrink-0">
@@ -116,6 +117,10 @@ export default function ReportsPage() {
       ) : selectedReport?.id === 2 ? (
         <div className="flex-1 min-h-0 flex flex-col">
           <CollectionEMIReport onBack={() => setSelectedReport(null)} />
+        </div>
+      ) : selectedReport?.id === 3 ? (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <InterestProfitabilityReport onBack={() => setSelectedReport(null)} />
         </div>
       ) : (
         <motion.div layout className={selectedReport ? "flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar space-y-4" : "flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pr-2 custom-scrollbar"}>
