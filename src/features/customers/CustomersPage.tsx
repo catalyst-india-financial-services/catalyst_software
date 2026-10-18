@@ -1541,6 +1541,7 @@ export default function CustomersPage() {
   const prefillLeadId = searchParams.get('leadId')
   const [prefilledLeadId, setPrefilledLeadId] = useState<string | null>(null)
   const [showInterBranchModal, setShowInterBranchModal] = useState(false)
+  const [viewMode, setViewMode] = useLocalStorage<'table' | 'grid'>('customers_view_mode', 'table')
 
   const { user, isBranchUser, userBranch, selectedBranch } = useAuthStore()
   const activeBranch = isBranchUser ? userBranch : selectedBranch
@@ -1845,6 +1846,35 @@ export default function CustomersPage() {
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
           />
+
+          {/* Table / Grid Segmented Toggle */}
+          <div className="inline-flex items-center bg-slate-100/90 p-0.5 rounded-full border border-slate-200/80">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={cn(
+                'px-3.5 py-1 text-xs font-bold rounded-full transition-all duration-150 cursor-pointer',
+                viewMode === 'table'
+                  ? 'bg-white text-blue-600 shadow-2xs font-extrabold'
+                  : 'text-slate-500 hover:text-slate-700'
+              )}
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={cn(
+                'px-3.5 py-1 text-xs font-bold rounded-full transition-all duration-150 cursor-pointer',
+                viewMode === 'grid'
+                  ? 'bg-white text-blue-600 shadow-2xs font-extrabold'
+                  : 'text-slate-500 hover:text-slate-700'
+              )}
+            >
+              Grid
+            </button>
+          </div>
+
           <div className="flex gap-1.5 ml-auto bg-slate-100 p-1 rounded-lg border border-slate-200/50">
             {[
               { id: 'all', label: 'All' },
@@ -1869,81 +1899,226 @@ export default function CustomersPage() {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="relative group/table">
-          {/* Scroll Left Button */}
-          {canScrollLeft && (
-            <button
-              onClick={() => scrollTable('left')}
-              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
-              aria-label="Scroll table left"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-          )}
+        {/* View Mode: Table vs Grid */}
+        {viewMode === 'table' ? (
+          <div className="relative group/table">
+            {/* Scroll Left Button */}
+            {canScrollLeft && (
+              <button
+                onClick={() => scrollTable('left')}
+                className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
+                aria-label="Scroll table left"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+            )}
 
-          {/* Scroll Right Button */}
-          {canScrollRight && (
-            <button
-              onClick={() => scrollTable('right')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
-              aria-label="Scroll table right"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          )}
+            {/* Scroll Right Button */}
+            {canScrollRight && (
+              <button
+                onClick={() => scrollTable('right')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
+                aria-label="Scroll table right"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            )}
 
-          <div ref={tableContainerRef} className="overflow-x-auto">
-            <table className="data-table">
-            <thead>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      onClick={header.column.getToggleSortingHandler()}
+            <div ref={tableContainerRef} className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <tr key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <th
+                          key={header.id}
+                          onClick={header.column.getToggleSortingHandler()}
+                          className={cn(
+                            header.column.getCanSort() && 'cursor-pointer select-none hover:text-slate-900'
+                          )}
+                        >
+                          <div className="flex items-center gap-1">
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                            {header.column.getIsSorted() === 'asc' && ' ↑'}
+                            {header.column.getIsSorted() === 'desc' && ' ↓'}
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  ))}
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <tr><td colSpan={columns.length} className="py-12 text-center text-sm text-slate-400">Loading customers...</td></tr>
+                  ) : table.getRowModel().rows.length === 0 ? (
+                    <tr><td colSpan={columns.length} className="py-12"><EmptyState title="No customers found" description="Try adjusting your search filters or add a new customer" /></td></tr>
+                  ) : (
+                    table.getRowModel().rows.map((row) => (
+                      <motion.tr
+                        key={row.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className={cn(
+                          'hover:bg-slate-50/80 transition-colors',
+                          row.original.status === 'draft' && 'bg-amber-50/30'
+                        )}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <td key={cell.id}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </motion.tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="p-6">
+            {isLoading ? (
+              <div className="py-12 text-center text-sm text-slate-400">Loading customers...</div>
+            ) : table.getRowModel().rows.length === 0 ? (
+              <EmptyState title="No customers found" description="Try adjusting your search filters or add a new customer" />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {table.getRowModel().rows.map((row) => {
+                  const c = row.original
+                  return (
+                    <motion.div
+                      key={row.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
                       className={cn(
-                        header.column.getCanSort() && 'cursor-pointer select-none hover:text-slate-900'
+                        "relative bg-white rounded-xl border border-slate-200/80 p-5 hover:border-blue-400 hover:shadow-md transition-all duration-200 flex flex-col justify-between group",
+                        c.status === 'draft' && "bg-amber-50/20 border-amber-200/80"
                       )}
                     >
-                      <div className="flex items-center gap-1">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {header.column.getIsSorted() === 'asc' && ' ↑'}
-                        {header.column.getIsSorted() === 'desc' && ' ↓'}
+                      <div>
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Avatar name={c.name} size="md" />
+                            <div className="min-w-0">
+                              <button
+                                onClick={() => navigate(`/customers/${c.id}`)}
+                                className="text-sm font-bold text-slate-800 hover:text-blue-600 truncate block text-left transition-colors cursor-pointer"
+                                title={c.name}
+                              >
+                                {c.name}
+                              </button>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[11px] font-mono font-semibold text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-100/60">
+                                  {c.customer_id}
+                                </span>
+                                {c.branch && (
+                                  <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                    <Building2 className="h-2.5 w-2.5 text-slate-400" />
+                                    {c.branch}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <DropdownMenu
+                            align="right"
+                            trigger={
+                              <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+                                <SlidersHorizontal className="h-4 w-4" />
+                              </button>
+                            }
+                            items={[
+                              ...(c.status === 'draft' ? [
+                                { label: 'Edit Draft', icon: <SquarePen className="h-4 w-4" />, onClick: () => { setEditCustomer(c); setShowModal(true) } },
+                              ] : [
+                                { label: 'View Profile', icon: <Eye className="h-4 w-4" />, onClick: () => navigate(`/customers/${c.id}`) },
+                                { label: 'Edit Customer', icon: <SquarePen className="h-4 w-4" />, onClick: () => { setEditCustomer(c); setShowModal(true) } },
+                                { label: 'Call Phone', icon: <Phone className="h-4 w-4" />, onClick: () => {} },
+                              ]),
+                              { separator: true, label: 'Delete Record', icon: <Trash2 className="h-4 w-4" />, variant: 'danger', onClick: () => openDeleteModal(c) },
+                            ]}
+                          />
+                        </div>
+
+                        {/* Badges */}
+                        <div className="flex items-center gap-1.5 mb-3.5 flex-wrap">
+                          {c.status === 'draft' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                              Draft
+                            </span>
+                          ) : (
+                            <StatusBadge status={c.kyc_status === 'verified' ? 'active' : c.status} />
+                          )}
+                          <StatusBadge status={c.kyc_status} />
+                          {c.access_type === 'Shared' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                              Shared
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                              Local
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Details */}
+                        <div className="space-y-1.5 text-xs text-slate-600 bg-slate-50/70 p-3 rounded-lg border border-slate-100">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400 flex items-center gap-1.5">
+                              <Phone className="h-3.5 w-3.5 text-slate-400" /> Mobile
+                            </span>
+                            <span className="font-medium text-slate-800">{c.mobile || '—'}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400 flex items-center gap-1.5">
+                              <Building2 className="h-3.5 w-3.5 text-slate-400" /> City
+                            </span>
+                            <span className="font-medium text-slate-700 truncate max-w-[120px]">{c.city || '—'}</span>
+                          </div>
+                          {c.occupation && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400">Occupation</span>
+                              <span className="font-medium text-slate-700 truncate max-w-[120px]">{c.occupation}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={columns.length} className="py-12 text-center text-sm text-slate-400">Loading customers...</td></tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr><td colSpan={columns.length} className="py-12"><EmptyState title="No customers found" description="Try adjusting your search filters or add a new customer" /></td></tr>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <motion.tr
-                    key={row.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className={cn(
-                      'hover:bg-slate-50/80 transition-colors',
-                      row.original.status === 'draft' && 'bg-amber-50/30'
-                    )}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </motion.tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+
+                      {/* Card Footer */}
+                      <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-[11px] text-slate-400">
+                          Joined {formatDate(c.created_at)}
+                        </span>
+                        {c.status === 'draft' ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => { setEditCustomer(c); setShowModal(true) }}
+                            className="h-7 text-xs border-amber-200 text-amber-700 hover:bg-amber-50 font-bold"
+                          >
+                            <SquarePen className="h-3 w-3 mr-1" /> Resume Draft
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => navigate(`/customers/${c.id}`)}
+                            className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 font-bold"
+                          >
+                            View Profile <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </motion.div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <Pagination
           page={table.getState().pagination.pageIndex + 1}

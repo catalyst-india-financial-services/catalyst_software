@@ -2309,6 +2309,7 @@ export default function LoansPage() {
   const [prefillCustomerOverride, setPrefillCustomerOverride] = useState<string | null>(null)
   const [loanFormCompletion, setLoanFormCompletion] = useState(0)
   const [statusFilter, setStatusFilter] = useLocalStorage<string>('loans_status_filter', 'all')
+  const [viewMode, setViewMode] = useLocalStorage<'table' | 'grid'>('loans_view_mode', 'table')
   const [showInterBranchModal, setShowInterBranchModal] = useState(false)
   const [selectedRequestDetails, setSelectedRequestDetails] = useState<CustomerBranchAccess | null>(null)
 
@@ -3069,6 +3070,35 @@ export default function LoansPage() {
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
           />
+
+          {/* Table / Grid Segmented Toggle */}
+          <div className="inline-flex items-center bg-slate-100/90 p-0.5 rounded-full border border-slate-200/80">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={cn(
+                'px-3.5 py-1 text-xs font-bold rounded-full transition-all duration-150 cursor-pointer',
+                viewMode === 'table'
+                  ? 'bg-white text-blue-600 shadow-2xs font-extrabold'
+                  : 'text-slate-500 hover:text-slate-700'
+              )}
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={cn(
+                'px-3.5 py-1 text-xs font-bold rounded-full transition-all duration-150 cursor-pointer',
+                viewMode === 'grid'
+                  ? 'bg-white text-blue-600 shadow-2xs font-extrabold'
+                  : 'text-slate-500 hover:text-slate-700'
+              )}
+            >
+              Grid
+            </button>
+          </div>
+
           <div className="flex gap-1.5 ml-auto bg-slate-100 p-1 rounded-lg border border-slate-200/50 flex-wrap">
             {(() => {
               const activeRequestsCount = combinedAccountRows.filter(r => r.rowType === 'request').length
@@ -3104,69 +3134,316 @@ export default function LoansPage() {
           </div>
         </div>
 
-        <div className="relative group/table">
-          {/* Scroll Left Button */}
-          {canScrollLeft && (
-            <button
-              onClick={() => scrollTable('left')}
-              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
-              aria-label="Scroll table left"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-          )}
+        {/* View Mode: Table vs Grid */}
+        {viewMode === 'table' ? (
+          <div className="relative group/table">
+            {/* Scroll Left Button */}
+            {canScrollLeft && (
+              <button
+                onClick={() => scrollTable('left')}
+                className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
+                aria-label="Scroll table left"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+            )}
 
-          {/* Scroll Right Button */}
-          {canScrollRight && (
-            <button
-              onClick={() => scrollTable('right')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
-              aria-label="Scroll table right"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          )}
+            {/* Scroll Right Button */}
+            {canScrollRight && (
+              <button
+                onClick={() => scrollTable('right')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md border border-slate-200/80 hover:bg-white hover:text-brand-600 active:scale-95 transition-all duration-200 cursor-pointer"
+                aria-label="Scroll table right"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            )}
 
-          <div ref={tableContainerRef} className="overflow-x-auto">
-            <table className="data-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((h) => (
-                    <th
-                      key={h.id}
-                      onClick={h.column.getToggleSortingHandler()}
+            <div ref={tableContainerRef} className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  {table.getHeaderGroups().map((hg) => (
+                    <tr key={hg.id}>
+                      {hg.headers.map((h) => (
+                        <th
+                          key={h.id}
+                          onClick={h.column.getToggleSortingHandler()}
+                          className={cn(
+                            'whitespace-nowrap',
+                            h.column.getCanSort() && 'cursor-pointer select-none hover:text-slate-900'
+                          )}
+                        >
+                          {flexRender(h.column.columnDef.header, h.getContext())}
+                          {h.column.getIsSorted() === 'asc' && ' ↑'}
+                          {h.column.getIsSorted() === 'desc' && ' ↓'}
+                        </th>
+                      ))}
+                    </tr>
+                  ))}
+                </thead>
+                <tbody>
+                  {table.getRowModel().rows.length === 0 ? (
+                    <tr><td colSpan={columns.length}><EmptyState title="No loans or requests found" /></td></tr>
+                  ) : (
+                    table.getRowModel().rows.map((row) => (
+                      <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                        {row.getVisibleCells().map((cell) => (
+                          <td key={cell.id} className="whitespace-nowrap">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="p-6">
+            {isLoading ? (
+              <div className="py-12 text-center text-sm text-slate-400">Loading accounts...</div>
+            ) : table.getRowModel().rows.length === 0 ? (
+              <EmptyState title="No loans or requests found" />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {table.getRowModel().rows.map((row) => {
+                  const item = row.original
+                  const isRequest = item.rowType === 'request'
+                  return (
+                    <motion.div
+                      key={row.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
                       className={cn(
-                        'whitespace-nowrap',
-                        h.column.getCanSort() && 'cursor-pointer select-none hover:text-slate-900'
+                        "relative bg-white rounded-xl border border-slate-200/80 p-5 hover:border-blue-400 hover:shadow-md transition-all duration-200 flex flex-col justify-between group",
+                        isRequest && "bg-amber-50/15 border-amber-200/70"
                       )}
                     >
-                      {flexRender(h.column.columnDef.header, h.getContext())}
-                      {h.column.getIsSorted() === 'asc' && ' ↑'}
-                      {h.column.getIsSorted() === 'desc' && ' ↓'}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.length === 0 ? (
-                <tr><td colSpan={columns.length}><EmptyState title="No loans or requests found" /></td></tr>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="whitespace-nowrap">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                      <div>
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-3 mb-2.5">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              {isRequest ? (
+                                <button
+                                  onClick={() => setSelectedRequestDetails(item.original_request || null)}
+                                  className="text-xs font-mono font-bold text-violet-700 hover:text-violet-900 transition-colors cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <span className="underline decoration-dotted underline-offset-2">{item.loan_number}</span>
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-200">
+                                    Request
+                                  </span>
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => navigate(`/loans/${item.id}`)}
+                                  className="text-xs font-mono font-bold text-brand-600 hover:text-brand-700 hover:underline transition-colors cursor-pointer"
+                                >
+                                  {item.loan_number}
+                                </button>
+                              )}
+                            </div>
+                            <div className="mt-1">
+                              <p className="text-sm font-bold text-slate-800 tracking-tight leading-snug truncate" title={item.customer_name}>
+                                {item.customer_name}
+                              </p>
+                              {item.customer_custom_id && (
+                                <span className="text-[10px] font-mono text-slate-400 font-semibold">{item.customer_custom_id}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Actions */}
+                          {!isRequest ? (
+                            <DropdownMenu
+                              align="right"
+                              trigger={
+                                <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+                                  <SlidersHorizontal className="h-4 w-4" />
+                                </button>
+                              }
+                              items={[
+                                { label: 'View Loan', icon: <Eye className="h-4 w-4" />, onClick: () => navigate(`/loans/${item.id}`) },
+                                { label: 'Edit Loan', icon: <SquarePen className="h-4 w-4" />, onClick: () => { setEditLoan(item.original_loan); setShowModal(true) } },
+                                { label: 'View Agreement', icon: <FileText className="h-4 w-4" />, onClick: () => { } },
+                                { label: 'Delete Account', icon: <Trash2 className="h-4 w-4 text-red-500" />, onClick: () => handleDeleteLoan(item.id, item.loan_number), variant: 'danger' as const, separator: true },
+                              ]}
+                            />
+                          ) : item.access_status === 'APPROVED' ? (
+                            <DropdownMenu
+                              align="right"
+                              trigger={
+                                <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+                                  <SlidersHorizontal className="h-4 w-4" />
+                                </button>
+                              }
+                              items={[
+                                {
+                                  label: 'Create Loan Account',
+                                  icon: <Plus className="h-4 w-4 text-emerald-600" />,
+                                  onClick: () => {
+                                    setPrefillCustomerOverride(item.customer_id || '')
+                                    setEditLoan(undefined)
+                                    setShowModal(true)
+                                  }
+                                },
+                                {
+                                  label: 'View Request Details',
+                                  icon: <Eye className="h-4 w-4" />,
+                                  onClick: () => setSelectedRequestDetails(item.original_request || null)
+                                }
+                              ]}
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setSelectedRequestDetails(item.original_request || null)}
+                              className="p-1.5 rounded-lg hover:bg-amber-100/70 text-amber-600 transition-colors"
+                              title="View Request Details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Badges: Category & Status */}
+                        <div className="flex items-center gap-1.5 mb-3.5 flex-wrap">
+                          <Badge variant="outline" className="capitalize text-[10px] font-bold">
+                            {item.loan_type ? item.loan_type.replace('_', ' ') : 'General'}
+                          </Badge>
+                          {isRequest ? (
+                            item.access_status === 'PENDING' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                                Pending Auth
+                              </span>
+                            ) : item.access_status === 'APPROVED' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                Approved
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                                <AlertTriangle className="h-3 w-3 text-rose-600" />
+                                Declined
+                              </span>
+                            )
+                          ) : (
+                            <>
+                              {item.status === 'draft' ? (
+                                <StatusBadge status="draft" label="Draft" />
+                              ) : (Number(item.disbursed_amount) || 0) <= 0 ? (
+                                <StatusBadge status="pending" label="Pending Disb." />
+                              ) : item.status === 'closed' ? (
+                                <StatusBadge status="closed" label="Closed" />
+                              ) : item.status === 'overdue' ? (
+                                <StatusBadge status="overdue" label="Overdue" />
+                              ) : (
+                                <StatusBadge status="active" label="Active" />
+                              )}
+                            </>
+                          )}
+                          {item.branch && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-100">
+                              <Building2 className="h-2.5 w-2.5 text-violet-500" />
+                              {item.branch}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Financial Metrics */}
+                        <div className="bg-slate-50/70 p-3 rounded-lg border border-slate-100 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">Principal</span>
+                            <span className="text-xs font-bold text-slate-800 amount-display">
+                              {item.loan_amount ? formatCurrency(item.loan_amount) : '—'}
+                            </span>
+                          </div>
+                          {!isRequest && (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-slate-400">Monthly EMI</span>
+                                <span className="text-xs font-extrabold text-emerald-600 amount-display">
+                                  {item.emi_amount ? formatCurrency(item.emi_amount) : '—'}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-slate-400">Interest</span>
+                                <span className="text-xs font-semibold text-slate-700">
+                                  {item.interest_rate}% <span className="text-[10px] text-slate-400 capitalize">({item.interest_type})</span>
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-slate-400">Outstanding</span>
+                                <span className="text-xs font-bold text-slate-800 amount-display">
+                                  {(Number(item.disbursed_amount) || 0) <= 0 ? (
+                                    <span className="text-amber-600 font-semibold text-[10px] uppercase">Pending Disb.</span>
+                                  ) : (
+                                    formatCurrency(item.remaining_balance || 0)
+                                  )}
+                                </span>
+                              </div>
+                            </>
+                          )}
+                          {isRequest && (
+                            <div className="pt-1 text-[11px] text-amber-800 bg-amber-50/60 p-2 rounded border border-amber-100/80">
+                              <p className="font-semibold flex items-center gap-1">
+                                <Building2 className="h-3 w-3 text-amber-600 inline" /> Base: {item.base_branch} Branch
+                              </p>
+                              <p className="text-[10px] text-amber-700 mt-0.5">
+                                {item.access_status === 'APPROVED' ? 'Access granted. Ready to create loan.' : 'Awaiting approval from base branch.'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Card Footer */}
+                      <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-[11px] text-slate-400">
+                          {item.loan_date ? formatDate(item.loan_date) : (item.created_at ? formatDate(item.created_at) : '—')}
+                        </span>
+                        {isRequest ? (
+                          item.access_status === 'APPROVED' ? (
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setPrefillCustomerOverride(item.customer_id || '')
+                                setEditLoan(undefined)
+                                setShowModal(true)
+                              }}
+                              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                            >
+                              <Plus className="h-3 w-3 mr-1" /> Create Account
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setSelectedRequestDetails(item.original_request || null)}
+                              className="h-7 text-xs border-amber-300 text-amber-800 hover:bg-amber-50 font-bold"
+                            >
+                              View Status
+                            </Button>
+                          )
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => navigate(`/loans/${item.id}`)}
+                            className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 font-bold"
+                          >
+                            View Account <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </motion.div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <Pagination
           page={table.getState().pagination.pageIndex + 1}
