@@ -54,7 +54,7 @@ const REPORTS = [
   },
   { 
     id: 6, 
-    title: 'Staff Performance Reports', 
+    title: 'Daily Reports', 
     desc: 'Track staff targets, productivity and recovery performance.', 
     icon: Users, 
     iconColor: 'text-pink-600', iconBg: 'bg-pink-50', badgeBg: 'bg-pink-600',
@@ -90,7 +90,7 @@ export default function ReportsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedReport, setSelectedReport] = useState<typeof REPORTS[0] | null>(null)
   return (
-    <div className={selectedReport?.id === 2 || selectedReport?.id === 3 || selectedReport?.id === 4 ? "h-full w-full flex flex-col overflow-hidden p-1.5" : "p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4"}>
+    <div className={selectedReport?.id === 2 || selectedReport?.id === 3 || selectedReport?.id === 4 ? "h-full w-full flex-1 flex flex-col overflow-hidden" : "p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4"}>
       {/* Header */}
       {!selectedReport && (
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 flex-shrink-0">
