@@ -13,6 +13,7 @@ import FinancialStatementsReport from './FinancialStatementsReport'
 import LoanPortfolioReport from './LoanPortfolioReport'
 import TaskOperationsReport from './TaskOperationsReport'
 import BankCashReport from './BankCashReport'
+import RiskControlReport from './RiskControlReport'
 
 const REPORTS = [
   { 
@@ -93,7 +94,7 @@ export default function ReportsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedReport, setSelectedReport] = useState<typeof REPORTS[0] | null>(null)
   return (
-    <div className={selectedReport?.id === 2 || selectedReport?.id === 3 || selectedReport?.id === 4 || selectedReport?.id === 5 || selectedReport?.id === 7 || selectedReport?.id === 8 ? "h-full w-full flex-1 flex flex-col overflow-hidden" : "p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4"}>
+    <div className={selectedReport?.id === 2 || selectedReport?.id === 3 || selectedReport?.id === 4 || selectedReport?.id === 5 || selectedReport?.id === 7 || selectedReport?.id === 8 || selectedReport?.id === 9 ? "h-full w-full flex-1 flex flex-col overflow-hidden" : "p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4"}>
       {/* Header */}
       {!selectedReport && (
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 flex-shrink-0">
@@ -141,6 +142,10 @@ export default function ReportsPage() {
       ) : selectedReport?.id === 8 ? (
         <div className="flex-1 min-h-0 flex flex-col">
           <BankCashReport onBack={() => setSelectedReport(null)} />
+        </div>
+      ) : selectedReport?.id === 9 ? (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <RiskControlReport onBack={() => setSelectedReport(null)} />
         </div>
       ) : (
         <motion.div layout className={selectedReport ? "flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar space-y-4" : "flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pr-2 custom-scrollbar"}>
