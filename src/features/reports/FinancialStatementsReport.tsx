@@ -214,23 +214,23 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
   }
 
   return (
-    <div className="h-full w-full flex flex-col overflow-hidden bg-slate-50 text-slate-800">
+    <div className="h-full w-full flex flex-col overflow-hidden bg-slate-50 text-slate-800 select-none">
       
       {/* ─── Top Header Bar ─── */}
-      <div className="bg-white px-5 py-3 border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-4 flex-shrink-0 shadow-2xs">
+      <div className="bg-white px-4 py-2 border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-3 flex-shrink-0 shadow-2xs">
         {/* Left: Brand Logo & Back Button */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-2xs transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-2xs transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Back</span>
           </button>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {/* Catalyst Blue 3-Bar Logo */}
-            <div className="w-8 h-8 flex items-center justify-center bg-blue-50/80 rounded-lg p-1.5 flex-shrink-0 border border-blue-100">
+            <div className="w-7 h-7 flex items-center justify-center bg-blue-50/80 rounded-lg p-1 flex-shrink-0 border border-blue-100">
               <svg viewBox="0 0 24 24" className="w-full h-full fill-blue-600">
                 <rect x="3" y="10" width="4" height="11" rx="1.5" />
                 <rect x="10" y="6" width="4" height="15" rx="1.5" />
@@ -238,27 +238,27 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
               </svg>
             </div>
             <div>
-              <div className="text-sm font-black tracking-wider text-slate-900 leading-tight">CATALYST OS</div>
-              <div className="text-[9px] font-bold text-slate-500 tracking-widest uppercase">FINANCIAL SERVICES</div>
+              <div className="text-xs font-black tracking-wider text-slate-900 leading-tight">CATALYST OS</div>
+              <div className="text-[8.5px] font-bold text-slate-500 tracking-widest uppercase">FINANCIAL SERVICES</div>
             </div>
           </div>
         </div>
 
         {/* Center: Title & Subtitle */}
         <div className="text-center hidden md:block">
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Financial Statements</h1>
-          <p className="text-xs text-slate-500">View consolidated financial position with key schedules</p>
+          <h1 className="text-base font-extrabold text-slate-900 tracking-tight leading-tight">Financial Statements</h1>
+          <p className="text-[11px] text-slate-500">View consolidated financial position with key schedules</p>
         </div>
 
         {/* Right: Branch & Period Dropdowns + Export */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {/* Branch Dropdown */}
           <div className="flex flex-col">
-            <span className="text-[10px] font-medium text-slate-500 mb-0.5">Branch</span>
+            <span className="text-[9.5px] font-medium text-slate-500 mb-0.5">Branch</span>
             <select
               value={selectedBranch}
               onChange={(e) => setSelectedBranch(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[120px]"
+              className="px-2 py-1 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[110px]"
             >
               {branchList.map(b => (
                 <option key={b} value={b}>{b}</option>
@@ -268,11 +268,11 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
 
           {/* Period Dropdown */}
           <div className="flex flex-col">
-            <span className="text-[10px] font-medium text-slate-500 mb-0.5">Period</span>
+            <span className="text-[9.5px] font-medium text-slate-500 mb-0.5">Period</span>
             <select
               value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[110px]"
+              className="px-2 py-1 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[100px]"
             >
               {periodOptions.map(p => (
                 <option key={p} value={p}>{p}</option>
@@ -282,83 +282,83 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
 
           <button
             onClick={handleExportFullReport}
-            className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 shadow-2xs transition-colors self-end mb-0.5"
+            className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 shadow-2xs transition-colors self-end mb-0.5 cursor-pointer"
             title="Export Consolidated Statements (Excel)"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* ─── Scrollable Main Canvas (Adjusts as per Full Screen) ─── */}
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 md:p-6">
+      {/* ─── Compact Non-Scrollable Main Canvas ─── */}
+      <div className="flex-1 min-h-0 overflow-hidden p-2.5 md:p-3 flex flex-col">
         
         {/* ════════ TWO LARGE MAIN PANELS: BALANCE SHEET & PROFIT & LOSS ════════ */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
           
           {/* ══════════════ LEFT PANEL: BALANCE SHEET ══════════════ */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 md:p-6 flex flex-col justify-between">
+          <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 md:p-3.5 flex flex-col justify-between overflow-hidden h-full">
             <div>
               {/* Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 border border-blue-100/60">
-                    <Landmark className="w-5 h-5" />
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 border border-blue-100/60">
+                    <Landmark className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-base font-extrabold text-slate-900 leading-snug">Balance Sheet</h2>
-                    <p className="text-xs font-medium text-slate-400">As on 30 Sep 2026</p>
+                    <h2 className="text-sm font-extrabold text-slate-900 leading-snug">Balance Sheet</h2>
+                    <p className="text-[10px] font-medium text-slate-400">As on 30 Sep 2026</p>
                   </div>
                 </div>
 
                 <button
                   onClick={() => setActiveModal('Balance Sheet Details')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50/70 hover:bg-blue-100/80 text-blue-700 text-xs font-bold transition-colors cursor-pointer border border-blue-100"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50/70 hover:bg-blue-100/80 text-blue-700 text-[10.5px] font-bold transition-colors cursor-pointer border border-blue-100"
                 >
-                  View Details <ChevronRight className="w-3.5 h-3.5" />
+                  View Details <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
 
               {/* 3 Metric Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 my-5">
+              <div className="grid grid-cols-3 gap-2 my-2.5">
                 
                 {/* Total Assets */}
-                <div className="bg-blue-50/40 border border-blue-100/80 rounded-xl p-3.5 flex flex-col justify-between">
-                  <span className="text-xs font-semibold text-slate-600">Total Assets</span>
-                  <div className="my-1.5">
-                    <div className="text-xl font-black text-slate-900 tracking-tight">
+                <div className="bg-blue-50/40 border border-blue-100/80 rounded-lg p-2.5 flex flex-col justify-between">
+                  <span className="text-[10px] font-semibold text-slate-600 truncate">Total Assets</span>
+                  <div className="my-0.5">
+                    <div className="text-base font-black text-slate-900 tracking-tight">
                       {formatCrores(finData.bsAssets)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                  <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
                     <span>▲ +8.5%</span>
                     <span className="text-slate-400 font-normal">vs Mar 2026</span>
                   </div>
                 </div>
 
                 {/* Total Liabilities */}
-                <div className="bg-cyan-50/40 border border-cyan-100/80 rounded-xl p-3.5 flex flex-col justify-between">
-                  <span className="text-xs font-semibold text-slate-600">Total Liabilities</span>
-                  <div className="my-1.5">
-                    <div className="text-xl font-black text-slate-900 tracking-tight">
+                <div className="bg-cyan-50/40 border border-cyan-100/80 rounded-lg p-2.5 flex flex-col justify-between">
+                  <span className="text-[10px] font-semibold text-slate-600 truncate">Total Liabilities</span>
+                  <div className="my-0.5">
+                    <div className="text-base font-black text-slate-900 tracking-tight">
                       {formatCrores(finData.bsLiabilities)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                  <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
                     <span>▲ +6.2%</span>
                     <span className="text-slate-400 font-normal">vs Mar 2026</span>
                   </div>
                 </div>
 
                 {/* Net Worth */}
-                <div className="bg-amber-50/40 border border-amber-100/80 rounded-xl p-3.5 flex flex-col justify-between">
-                  <span className="text-xs font-semibold text-slate-600">Net Worth</span>
-                  <div className="my-1.5">
-                    <div className="text-xl font-black text-slate-900 tracking-tight">
+                <div className="bg-amber-50/40 border border-amber-100/80 rounded-lg p-2.5 flex flex-col justify-between">
+                  <span className="text-[10px] font-semibold text-slate-600 truncate">Net Worth</span>
+                  <div className="my-0.5">
+                    <div className="text-base font-black text-slate-900 tracking-tight">
                       {formatCrores(finData.bsNetWorth)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                  <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
                     <span>▲ +13.2%</span>
                     <span className="text-slate-400 font-normal">vs Mar 2026</span>
                   </div>
@@ -367,52 +367,52 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
               </div>
 
               {/* Assets vs Liabilities Breakdown Bars */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-bold text-slate-800">
+              <div className="mb-2.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <h3 className="text-[11px] font-bold text-slate-800">
                     Assets vs Liabilities <span className="text-slate-400 font-normal">(₹ in Crores)</span>
                   </h3>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-1.5">
                   {/* Total Assets Bar */}
-                  <div className="flex items-center gap-3">
-                    <span className="w-28 text-xs font-semibold text-slate-700 truncate">Total Assets</span>
-                    <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-24 text-[10.5px] font-semibold text-slate-700 truncate">Total Assets</span>
+                    <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
                       <div
                         className="bg-[#3B82F6] h-full rounded-full transition-all duration-500"
                         style={{ width: `${finData.assetsBarPct}%` }}
                       />
                     </div>
-                    <span className="w-12 text-right font-mono text-xs font-bold text-slate-800">
+                    <span className="w-10 text-right font-mono text-[10.5px] font-bold text-slate-800">
                       {finData.bsAssets.toFixed(2)}
                     </span>
                   </div>
 
                   {/* Total Liabilities Bar */}
-                  <div className="flex items-center gap-3">
-                    <span className="w-28 text-xs font-semibold text-slate-700 truncate">Total Liabilities</span>
-                    <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-24 text-[10.5px] font-semibold text-slate-700 truncate">Total Liabilities</span>
+                    <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
                       <div
                         className="bg-[#10B981] h-full rounded-full transition-all duration-500"
                         style={{ width: `${finData.liabBarPct}%` }}
                       />
                     </div>
-                    <span className="w-12 text-right font-mono text-xs font-bold text-slate-800">
+                    <span className="w-10 text-right font-mono text-[10.5px] font-bold text-slate-800">
                       {finData.bsLiabilities.toFixed(2)}
                     </span>
                   </div>
 
                   {/* Net Worth Bar */}
-                  <div className="flex items-center gap-3">
-                    <span className="w-28 text-xs font-semibold text-slate-700 truncate">Net Worth</span>
-                    <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-24 text-[10.5px] font-semibold text-slate-700 truncate">Net Worth</span>
+                    <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
                       <div
                         className="bg-[#8B5CF6] h-full rounded-full transition-all duration-500"
                         style={{ width: `${finData.netWorthBarPct}%` }}
                       />
                     </div>
-                    <span className="w-12 text-right font-mono text-xs font-bold text-slate-800">
+                    <span className="w-10 text-right font-mono text-[10.5px] font-bold text-slate-800">
                       {finData.bsNetWorth.toFixed(2)}
                     </span>
                   </div>
@@ -421,15 +421,15 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
             </div>
 
             {/* Schedules Section (Left) */}
-            <div className="pt-4 border-t border-slate-100">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-5 h-5 rounded bg-blue-600 text-white flex items-center justify-center">
-                  <FileText className="w-3 h-3" />
+            <div className="pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <div className="w-4 h-4 rounded bg-blue-600 text-white flex items-center justify-center">
+                  <FileText className="w-2.5 h-2.5" />
                 </div>
-                <h3 className="text-xs font-extrabold text-slate-900">Schedules</h3>
+                <h3 className="text-[11px] font-extrabold text-slate-900">Schedules</h3>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 {[
                   { title: 'Loan Portfolio Schedule', key: 'loan_portfolio' },
                   { title: 'Other Assets Schedule', key: 'other_assets' },
@@ -443,12 +443,12 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
                   <button
                     key={item.key}
                     onClick={() => setActiveModal(item.title)}
-                    className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-slate-200/90 bg-slate-50/50 hover:bg-blue-50/60 hover:border-blue-200 text-left transition-all group cursor-pointer shadow-2xs"
+                    className="flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-slate-200/90 bg-slate-50/50 hover:bg-blue-50/60 hover:border-blue-200 text-left transition-all group cursor-pointer shadow-2xs"
                   >
-                    <span className="text-[11.5px] font-bold text-slate-700 group-hover:text-blue-700 truncate">
+                    <span className="text-[10.5px] font-bold text-slate-700 group-hover:text-blue-700 truncate">
                       {item.title}
                     </span>
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 flex-shrink-0 transition-transform group-hover:translate-x-0.5 ml-2" />
+                    <ChevronRight className="w-3 h-3 text-slate-400 group-hover:text-blue-600 flex-shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
                   </button>
                 ))}
               </div>
@@ -456,68 +456,68 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
           </div>
 
           {/* ══════════════ RIGHT PANEL: PROFIT & LOSS STATEMENT ══════════════ */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 md:p-6 flex flex-col justify-between">
+          <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 md:p-3.5 flex flex-col justify-between overflow-hidden h-full">
             <div>
               {/* Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 border border-emerald-100/60">
-                    <TrendingUp className="w-5 h-5" />
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 border border-emerald-100/60">
+                    <TrendingUp className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-base font-extrabold text-slate-900 leading-snug">Profit & Loss Statement</h2>
-                    <p className="text-xs font-medium text-slate-400">Apr 2026 – Sep 2026</p>
+                    <h2 className="text-sm font-extrabold text-slate-900 leading-snug">Profit & Loss Statement</h2>
+                    <p className="text-[10px] font-medium text-slate-400">Apr 2026 – Sep 2026</p>
                   </div>
                 </div>
 
                 <button
                   onClick={() => setActiveModal('Profit & Loss Details')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50/70 hover:bg-emerald-100/80 text-emerald-700 text-xs font-bold transition-colors cursor-pointer border border-emerald-100"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50/70 hover:bg-emerald-100/80 text-emerald-700 text-[10.5px] font-bold transition-colors cursor-pointer border border-emerald-100"
                 >
-                  View Details <ChevronRight className="w-3.5 h-3.5" />
+                  View Details <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
 
               {/* 3 Metric Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 my-5">
+              <div className="grid grid-cols-3 gap-2 my-2.5">
                 
                 {/* Total Income */}
-                <div className="bg-emerald-50/40 border border-emerald-100/80 rounded-xl p-3.5 flex flex-col justify-between">
-                  <span className="text-xs font-semibold text-slate-600">Total Income</span>
-                  <div className="my-1.5">
-                    <div className="text-xl font-black text-slate-900 tracking-tight">
+                <div className="bg-emerald-50/40 border border-emerald-100/80 rounded-lg p-2.5 flex flex-col justify-between">
+                  <span className="text-[10px] font-semibold text-slate-600 truncate">Total Income</span>
+                  <div className="my-0.5">
+                    <div className="text-base font-black text-slate-900 tracking-tight">
                       {formatCrores(finData.pnlIncome)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                  <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
                     <span>▲ +11.0%</span>
                     <span className="text-slate-400 font-normal">vs Apr–Sep 2025</span>
                   </div>
                 </div>
 
                 {/* Total Expenses */}
-                <div className="bg-rose-50/40 border border-rose-100/80 rounded-xl p-3.5 flex flex-col justify-between">
-                  <span className="text-xs font-semibold text-slate-600">Total Expenses</span>
-                  <div className="my-1.5">
-                    <div className="text-xl font-black text-slate-900 tracking-tight">
+                <div className="bg-rose-50/40 border border-rose-100/80 rounded-lg p-2.5 flex flex-col justify-between">
+                  <span className="text-[10px] font-semibold text-slate-600 truncate">Total Expenses</span>
+                  <div className="my-0.5">
+                    <div className="text-base font-black text-slate-900 tracking-tight">
                       {formatCrores(finData.pnlExpenses)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-rose-600">
+                  <div className="flex items-center gap-1 text-[9.5px] font-bold text-rose-600">
                     <span>▲ +6.0%</span>
                     <span className="text-slate-400 font-normal">vs Apr–Sep 2025</span>
                   </div>
                 </div>
 
                 {/* Net Profit (PBT) */}
-                <div className="bg-emerald-50/40 border border-emerald-100/80 rounded-xl p-3.5 flex flex-col justify-between">
-                  <span className="text-xs font-semibold text-slate-600">Net Profit (PBT)</span>
-                  <div className="my-1.5">
-                    <div className="text-xl font-black text-slate-900 tracking-tight">
+                <div className="bg-emerald-50/40 border border-emerald-100/80 rounded-lg p-2.5 flex flex-col justify-between">
+                  <span className="text-[10px] font-semibold text-slate-600 truncate">Net Profit (PBT)</span>
+                  <div className="my-0.5">
+                    <div className="text-base font-black text-slate-900 tracking-tight">
                       {formatCrores(finData.pnlNetProfit)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                  <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
                     <span>▲ +14.0%</span>
                     <span className="text-slate-400 font-normal">vs Apr–Sep 2025</span>
                   </div>
@@ -526,52 +526,52 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
               </div>
 
               {/* Income vs Expenses Breakdown Bars */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-bold text-slate-800">
+              <div className="mb-2.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <h3 className="text-[11px] font-bold text-slate-800">
                     Income vs Expenses <span className="text-slate-400 font-normal">(₹ in Crores)</span>
                   </h3>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-1.5">
                   {/* Total Income Bar */}
-                  <div className="flex items-center gap-3">
-                    <span className="w-28 text-xs font-semibold text-slate-700 truncate">Total Income</span>
-                    <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-24 text-[10.5px] font-semibold text-slate-700 truncate">Total Income</span>
+                    <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
                       <div
                         className="bg-[#3B82F6] h-full rounded-full transition-all duration-500"
                         style={{ width: `${finData.incomeBarPct}%` }}
                       />
                     </div>
-                    <span className="w-12 text-right font-mono text-xs font-bold text-slate-800">
+                    <span className="w-10 text-right font-mono text-[10.5px] font-bold text-slate-800">
                       {finData.pnlIncome.toFixed(2)}
                     </span>
                   </div>
 
                   {/* Total Expenses Bar */}
-                  <div className="flex items-center gap-3">
-                    <span className="w-28 text-xs font-semibold text-slate-700 truncate">Total Expenses</span>
-                    <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-24 text-[10.5px] font-semibold text-slate-700 truncate">Total Expenses</span>
+                    <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
                       <div
                         className="bg-[#F97316] h-full rounded-full transition-all duration-500"
                         style={{ width: `${finData.expenseBarPct}%` }}
                       />
                     </div>
-                    <span className="w-12 text-right font-mono text-xs font-bold text-slate-800">
+                    <span className="w-10 text-right font-mono text-[10.5px] font-bold text-slate-800">
                       {finData.pnlExpenses.toFixed(2)}
                     </span>
                   </div>
 
                   {/* Net Profit Bar */}
-                  <div className="flex items-center gap-3">
-                    <span className="w-28 text-xs font-semibold text-slate-700 truncate">Net Profit (PBT)</span>
-                    <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-24 text-[10.5px] font-semibold text-slate-700 truncate">Net Profit (PBT)</span>
+                    <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
                       <div
                         className="bg-[#10B981] h-full rounded-full transition-all duration-500"
                         style={{ width: `${finData.profitBarPct}%` }}
                       />
                     </div>
-                    <span className="w-12 text-right font-mono text-xs font-bold text-slate-800">
+                    <span className="w-10 text-right font-mono text-[10.5px] font-bold text-slate-800">
                       {finData.pnlNetProfit.toFixed(2)}
                     </span>
                   </div>
@@ -580,15 +580,15 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
             </div>
 
             {/* Schedules Section (Right) */}
-            <div className="pt-4 border-t border-slate-100">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-5 h-5 rounded bg-emerald-700 text-white flex items-center justify-center">
-                  <FileText className="w-3 h-3" />
+            <div className="pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <div className="w-4 h-4 rounded bg-emerald-700 text-white flex items-center justify-center">
+                  <FileText className="w-2.5 h-2.5" />
                 </div>
-                <h3 className="text-xs font-extrabold text-slate-900">Schedules</h3>
+                <h3 className="text-[11px] font-extrabold text-slate-900">Schedules</h3>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 {[
                   { title: 'Income Schedule – Product Wise', key: 'inc_prod' },
                   { title: 'Interest Expense Schedule', key: 'int_exp' },
@@ -602,12 +602,12 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
                   <button
                     key={item.key}
                     onClick={() => setActiveModal(item.title)}
-                    className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-slate-200/90 bg-slate-50/50 hover:bg-emerald-50/60 hover:border-emerald-200 text-left transition-all group cursor-pointer shadow-2xs"
+                    className="flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-slate-200/90 bg-slate-50/50 hover:bg-emerald-50/60 hover:border-emerald-200 text-left transition-all group cursor-pointer shadow-2xs"
                   >
-                    <span className="text-[11.5px] font-bold text-slate-700 group-hover:text-emerald-800 truncate">
+                    <span className="text-[10.5px] font-bold text-slate-700 group-hover:text-emerald-800 truncate">
                       {item.title}
                     </span>
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 flex-shrink-0 transition-transform group-hover:translate-x-0.5 ml-2" />
+                    <ChevronRight className="w-3 h-3 text-slate-400 group-hover:text-emerald-600 flex-shrink-0 transition-transform group-hover:translate-x-0.5 ml-1" />
                   </button>
                 ))}
               </div>
