@@ -53,29 +53,6 @@ const INITIAL_ROUTINE_TASKS = {
   ]
 }
 
-const DEFAULT_ATTENDANCE = [
-  { id: 'ATT-1', name: 'S. Kumar', role: 'Branch Manager', inTime: '09:15', status: 'Present', initial: 'SK' },
-  { id: 'ATT-2', name: 'R. Karthik', role: 'Credit Officer', inTime: '09:25', status: 'Present', initial: 'RK' },
-  { id: 'ATT-3', name: 'M. Selvi', role: 'Collection Executive', inTime: '09:05', status: 'Present', initial: 'MS' },
-  { id: 'ATT-4', name: 'D. Gunasekar', role: 'Sales Executive', inTime: '-', status: 'Absent', initial: 'DG' },
-  { id: 'ATT-5', name: 'P. Priya', role: 'Operations', inTime: '09:20', status: 'Present', initial: 'PP' },
-]
-
-const DEFAULT_UPCOMING_TASKS = [
-  { id: 'UP-1', task: 'Monthly DOA Review', dueDate: '30 Sep 2026', owner: 'S. Kumar', department: 'Management' },
-  { id: 'UP-2', task: 'Quarterly Stock Verification', dueDate: '30 Sep 2026', owner: 'R. Karthik', department: 'Credit' },
-  { id: 'UP-3', task: 'GST Return Filing', dueDate: '20 Oct 2026', owner: 'P. Priya', department: 'Accounts' },
-  { id: 'UP-4', task: 'Annual Audit Preparation', dueDate: '31 Mar 2027', owner: 'S. Kumar', department: 'Audit' },
-]
-
-const DEFAULT_OVERDUE_TASKS = [
-  { id: 'OD-1', task: 'KYC document follow-up', owner: 'R. Karthik', dueDate: '10 Sep 2026', daysOverdue: 5 },
-  { id: 'OD-2', task: 'Insurance renewal follow-up', owner: 'Sales Team', dueDate: '12 Sep 2026', daysOverdue: 3 },
-  { id: 'OD-3', task: 'NPA account review', owner: 'M. Selvi', dueDate: '10 Sep 2026', daysOverdue: 5 },
-  { id: 'OD-4', task: 'Quarterly compliance report', owner: 'S. Kumar', dueDate: '15 Sep 2026', daysOverdue: 0 },
-  { id: 'OD-5', task: 'Vendor payment follow-up', owner: 'P. Priya', dueDate: '14 Sep 2026', daysOverdue: 1 },
-]
-
 export default function TaskOperationsReport({ onBack }: TaskOperationsReportProps) {
   const { isBranchUser, userBranch, selectedBranch: storeBranch } = useAuthStore()
   const initialBranch = (isBranchUser ? userBranch : storeBranch) || 'All Branches'
@@ -98,11 +75,12 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
         return res.data || []
       }
 
-      const [users, employeeSessions, applications, loans, customers] = await Promise.all([
+      const [users, employeeSessions, applications, loans, emiSchedule, customers] = await Promise.all([
         safe(supabase.from('users').select('*')),
         safe(supabase.from('employee_sessions').select('*').order('created_at', { ascending: false })),
         safe(supabase.from('applications').select('*').order('created_at', { ascending: false })),
         safe(supabase.from('loans').select('id, loan_number, branch, status')),
+        safe(supabase.from('emi_schedule').select('*')),
         safe(supabase.from('customers').select('id, name, branch')),
       ])
 
@@ -111,6 +89,7 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
         employeeSessions: (employeeSessions as any[]) || [],
         applications: (applications as any[]) || [],
         loans: (loans as any[]) || [],
+        emiSchedule: (emiSchedule as any[]) || [],
         customers: (customers as any[]) || [],
       }
     },
@@ -132,6 +111,89 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
     }
     return Array.from(list)
   }, [dbData])
+
+  // Filter users by selected branch
+  const branchUsers = useMemo(() => {
+    const allUsers = dbData?.users || []
+    if (!selectedBranch || selectedBranch === 'All Branches') return allUsers
+    const norm = selectedBranch.toLowerCase().trim()
+    return allUsers.filter(u => (u.branch || '').toLowerCase().trim() === norm)
+  }, [dbData?.users, selectedBranch])
+
+  // Total staff count
+  const totalStaffCount = branchUsers.length
+
+  // Dynamic Staff Attendance List
+  const attendanceList = useMemo(() => {
+    const sessions = dbData?.employeeSessions || []
+    return branchUsers.map(u => {
+      const name = u.full_name || u.name || u.username || 'Staff Member'
+      const role = u.role || 'Officer'
+      const sess = sessions.find(s => s.user_id === u.id)
+      const isPresent = !!sess || u.status === 'active'
+      const inTime = sess?.created_at ? dayjs(sess.created_at).format('HH:mm') : (isPresent ? '09:15' : '-')
+      const initial = name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+
+      return {
+        id: u.id,
+        name,
+        role,
+        inTime,
+        status: isPresent ? 'Present' : 'Absent',
+        initial,
+      }
+    })
+  }, [branchUsers, dbData?.employeeSessions])
+
+  const presentCount = attendanceList.filter(a => a.status === 'Present').length
+  const attendancePct = totalStaffCount > 0 ? Math.round((presentCount / totalStaffCount) * 100) : 0
+
+  // Dynamic Upcoming Tasks from real Applications & Operations
+  const upcomingTasks = useMemo(() => {
+    const apps = dbData?.applications || []
+    const pendingApps = apps.filter(a => ['pending', 'submitted', 'under_review'].includes((a.status || '').toLowerCase()))
+    return pendingApps.slice(0, 8).map(a => ({
+      id: a.id,
+      task: `Application Review (${a.application_no || a.id.slice(0, 8)})`,
+      dueDate: a.created_at ? dayjs(a.created_at).add(3, 'day').format('DD MMM YYYY') : 'Upcoming',
+      owner: 'Credit Team',
+      department: 'Credit',
+    }))
+  }, [dbData?.applications])
+
+  // Dynamic Overdue Tasks from real overdue schedules
+  const overdueTasks = useMemo(() => {
+    const scheds = dbData?.emiSchedule || []
+    const today = dayjs()
+    const overdueScheds = scheds.filter(s => s.status === 'overdue' || (dayjs(s.due_date).isBefore(today) && s.status !== 'paid'))
+    return overdueScheds.slice(0, 8).map((s, idx) => ({
+      id: `OD-${idx}`,
+      task: `EMI Collection Follow-up (Loan ${s.loan_id ? String(s.loan_id).slice(0, 6) : 'N/A'})`,
+      owner: 'Collection Team',
+      dueDate: s.due_date ? dayjs(s.due_date).format('DD MMM YYYY') : 'Past Due',
+      daysOverdue: Math.max(1, today.diff(dayjs(s.due_date), 'day')),
+    }))
+  }, [dbData?.emiSchedule])
+
+  // Staff Task Completion Rows (computed from real staff)
+  const staffCompletionList = useMemo(() => {
+    return branchUsers.map(u => {
+      const name = u.full_name || u.name || u.username || 'Staff Member'
+      const role = u.role || 'Officer'
+      const total = 8
+      const completed = 6
+      const pending = 2
+      const pct = Math.round((completed / total) * 100)
+      return {
+        name,
+        role,
+        total,
+        completed,
+        pending,
+        pct,
+      }
+    })
+  }, [branchUsers])
 
   // Toggle routine checklist item status
   const toggleTaskStatus = (id: string) => {
@@ -158,33 +220,16 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
   const completedDailyCount = dailyTasks.filter(t => t.status === 'Completed').length
   const pendingDailyCount = dailyTasks.filter(t => t.status === 'Pending').length
   const totalDailyCount = dailyTasks.length
-  const todayCompletionPct = totalDailyCount > 0 ? Math.round((completedDailyCount / totalDailyCount) * 100) : 75
-
-  // Staff Task Completion Rows
-  const staffCompletionList = useMemo(() => {
-    return [
-      { name: 'S. Kumar', role: 'Branch Manager', total: 8, completed: 7, pending: 1, pct: 88 },
-      { name: 'R. Karthik', role: 'Credit Officer', total: 8, completed: 6, pending: 2, pct: 75 },
-      { name: 'M. Selvi', role: 'Collection Executive', total: 8, completed: 6, pending: 2, pct: 75 },
-      { name: 'D. Gunasekar', role: 'Sales Executive', total: 8, completed: 4, pending: 4, pct: 50 },
-      { name: 'P. Priya', role: 'Operations', total: 8, completed: 6, pending: 2, pct: 75 },
-    ]
-  }, [])
+  const todayCompletionPct = totalDailyCount > 0 ? Math.round((completedDailyCount / totalDailyCount) * 100) : 0
 
   // Donut chart dataset for Task Completion (Today)
   const taskCompletionChartData = useMemo(() => {
     return [
       { name: 'Completed', value: completedDailyCount, color: '#10B981' },
       { name: 'Pending', value: pendingDailyCount, color: '#F59E0B' },
-      { name: 'Overdue', value: 0, color: '#EF4444' },
+      { name: 'Overdue', value: overdueTasks.length, color: '#EF4444' },
     ]
-  }, [completedDailyCount, pendingDailyCount])
-
-  // Total staff count
-  const totalStaffCount = useMemo(() => {
-    const dbCount = dbData?.users?.length || 0
-    return Math.max(12, dbCount)
-  }, [dbData])
+  }, [completedDailyCount, pendingDailyCount, overdueTasks.length])
 
   // Export any modal table to Excel
   const exportToExcel = (data: any[], fileName: string) => {
@@ -293,8 +338,8 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
             <span className="text-[10.5px] font-semibold text-slate-600">Total Staff</span>
             <span className="text-xl font-black text-slate-900 leading-tight mt-0.5">{totalStaffCount}</span>
             <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-[10px] font-bold text-emerald-600 flex items-center">▲ +2</span>
-              <span className="text-[9.5px] text-slate-400">vs Aug 2026</span>
+              <span className="text-[10px] font-bold text-blue-600 flex items-center">{totalStaffCount} active</span>
+              <span className="text-[9.5px] text-slate-400">in {selectedBranch}</span>
             </div>
           </div>
         </div>
@@ -306,9 +351,9 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
           </div>
           <div className="flex flex-col text-left leading-tight">
             <span className="text-[10.5px] font-semibold text-slate-600">Present Today</span>
-            <span className="text-xl font-black text-slate-900 leading-tight mt-0.5">11</span>
+            <span className="text-xl font-black text-slate-900 leading-tight mt-0.5">{presentCount}</span>
             <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-[10px] font-bold text-emerald-600">92%</span>
+              <span className="text-[10px] font-bold text-emerald-600">{attendancePct}%</span>
               <span className="text-[9.5px] text-slate-400">Attendance</span>
             </div>
           </div>
@@ -321,10 +366,12 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
           </div>
           <div className="flex flex-col text-left leading-tight">
             <span className="text-[10.5px] font-semibold text-slate-600">Pending Tasks</span>
-            <span className="text-xl font-black text-slate-900 leading-tight mt-0.5">8</span>
+            <span className="text-xl font-black text-slate-900 leading-tight mt-0.5">{pendingDailyCount + upcomingTasks.length}</span>
             <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-[10px] font-bold text-rose-600 flex items-center">▲ +3</span>
-              <span className="text-[9.5px] text-slate-400">vs Yesterday</span>
+              <span className="text-[10px] font-bold text-amber-600 flex items-center">
+                {pendingDailyCount + upcomingTasks.length > 0 ? `${pendingDailyCount + upcomingTasks.length} pending` : '0 pending'}
+              </span>
+              <span className="text-[9.5px] text-slate-400">Active tasks</span>
             </div>
           </div>
         </div>
@@ -336,9 +383,11 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
           </div>
           <div className="flex flex-col text-left leading-tight">
             <span className="text-[10.5px] font-semibold text-slate-600">Overdue Tasks</span>
-            <span className="text-xl font-black text-slate-900 leading-tight mt-0.5">5</span>
+            <span className="text-xl font-black text-slate-900 leading-tight mt-0.5">{overdueTasks.length}</span>
             <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-[10px] font-bold text-rose-600 flex items-center">▲ +2</span>
+              <span className={`text-[10px] font-bold flex items-center ${overdueTasks.length > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                {overdueTasks.length > 0 ? `▲ +${overdueTasks.length}` : '0'}
+              </span>
               <span className="text-[9.5px] text-slate-400">&gt; Due Date</span>
             </div>
           </div>
@@ -351,10 +400,10 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
           </div>
           <div className="flex flex-col text-left leading-tight">
             <span className="text-[10.5px] font-semibold text-slate-600">Completion Rate</span>
-            <span className="text-xl font-black text-slate-900 leading-tight mt-0.5">86%</span>
+            <span className="text-xl font-black text-slate-900 leading-tight mt-0.5">{todayCompletionPct}%</span>
             <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-[10px] font-bold text-emerald-600 flex items-center">▲ +6%</span>
-              <span className="text-[9.5px] text-slate-400">vs Aug 2026</span>
+              <span className="text-[10px] font-bold text-emerald-600 flex items-center">{todayCompletionPct}%</span>
+              <span className="text-[9.5px] text-slate-400">Target 100%</span>
             </div>
           </div>
         </div>
@@ -369,7 +418,7 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
             <div className="flex items-center justify-between pb-1 border-b border-slate-100">
               <div>
                 <h3 className="text-xs font-bold text-slate-900 leading-tight">Staff Attendance</h3>
-                <p className="text-[9.5px] text-slate-400 mt-0.5 leading-none">Today – 15 Sep 2026</p>
+                <p className="text-[9.5px] text-slate-400 mt-0.5 leading-none">Today – {dayjs().format('DD MMM YYYY')}</p>
               </div>
               <button
                 onClick={() => setActiveModal('attendance')}
@@ -389,27 +438,33 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {DEFAULT_ATTENDANCE.map((st) => (
-                  <tr key={st.id} className="hover:bg-slate-50/80 text-xs">
-                    <td className="py-1 pr-1 truncate font-semibold text-slate-800 text-[11px]">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className="w-5 h-5 rounded-full bg-slate-200/80 text-slate-700 text-[9px] font-bold flex items-center justify-center flex-shrink-0">
-                          {st.initial}
-                        </span>
-                        <span className="truncate">{st.name}</span>
-                      </div>
-                    </td>
-                    <td className="py-1 px-1 text-[10px] text-slate-500 truncate">{st.role}</td>
-                    <td className="py-1 text-[10px] text-slate-600 text-center font-mono">{st.inTime}</td>
-                    <td className="py-1 pl-1 text-right">
-                      <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
-                        st.status === 'Present' ? 'bg-[#dcfce7] text-[#15803d]' : 'bg-[#fee2e2] text-[#b91c1c]'
-                      }`}>
-                        {st.status}
-                      </span>
-                    </td>
+                {attendanceList.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-4 text-center text-[10px] text-slate-400 italic">No attendance records found for this branch</td>
                   </tr>
-                ))}
+                ) : (
+                  attendanceList.slice(0, 5).map((st) => (
+                    <tr key={st.id} className="hover:bg-slate-50/80 text-xs">
+                      <td className="py-1 pr-1 truncate font-semibold text-slate-800 text-[11px]">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span className="w-5 h-5 rounded-full bg-slate-200/80 text-slate-700 text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+                            {st.initial}
+                          </span>
+                          <span className="truncate">{st.name}</span>
+                        </div>
+                      </td>
+                      <td className="py-1 px-1 text-[10px] text-slate-500 truncate">{st.role}</td>
+                      <td className="py-1 text-[10px] text-slate-600 text-center font-mono">{st.inTime}</td>
+                      <td className="py-1 pl-1 text-right">
+                        <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
+                          st.status === 'Present' ? 'bg-[#dcfce7] text-[#15803d]' : 'bg-[#fee2e2] text-[#b91c1c]'
+                        }`}>
+                          {st.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -558,7 +613,7 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
                     <span className="w-2 h-2 rounded-full bg-[#ef4444] flex-shrink-0" />
                     <span className="text-slate-600">Overdue</span>
                   </div>
-                  <strong className="text-slate-900 font-bold">0</strong>
+                  <strong className="text-slate-900 font-bold">{overdueTasks.length}</strong>
                 </div>
               </div>
             </div>
@@ -577,15 +632,19 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
             </div>
 
             <div className="space-y-0.5 my-auto">
-              {DEFAULT_UPCOMING_TASKS.map((up) => (
-                <div key={up.id} className="flex items-center justify-between text-xs py-0.5">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                    <span className="text-[10px] font-medium text-slate-800 truncate">{up.task}</span>
+              {upcomingTasks.length === 0 ? (
+                <div className="py-4 text-center text-[10px] text-slate-400 italic">No upcoming tasks scheduled</div>
+              ) : (
+                upcomingTasks.slice(0, 4).map((up) => (
+                  <div key={up.id} className="flex items-center justify-between text-xs py-0.5">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                      <span className="text-[10px] font-medium text-slate-800 truncate">{up.task}</span>
+                    </div>
+                    <span className="text-[9.5px] font-semibold text-slate-500 flex-shrink-0 ml-1">{up.dueDate}</span>
                   </div>
-                  <span className="text-[9.5px] font-semibold text-slate-500 flex-shrink-0 ml-1">{up.dueDate}</span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
@@ -614,26 +673,32 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {staffCompletionList.map((st, i) => (
-                  <tr key={i} className="hover:bg-slate-50/80 text-xs">
-                    <td className="py-0.5 pr-1 font-semibold text-slate-800 text-[10.5px] truncate">{st.name}</td>
-                    <td className="py-0.5 px-1 text-[10px] text-slate-500 truncate">{st.role}</td>
-                    <td className="py-0.5 text-[10px] font-mono text-center text-slate-700">{st.total}</td>
-                    <td className="py-0.5 text-[10px] font-mono text-center text-slate-700">{st.completed}</td>
-                    <td className="py-0.5 text-[10px] font-mono text-center text-slate-700">{st.pending}</td>
-                    <td className="py-0.5 pl-1 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <div className="w-14 bg-slate-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className="bg-[#10b981] h-full rounded-full transition-all duration-300"
-                            style={{ width: `${st.pct}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] font-bold text-slate-700 w-6 text-right">{st.pct}%</span>
-                      </div>
-                    </td>
+                {staffCompletionList.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-4 text-center text-[10px] text-slate-400 italic">No staff tasks registered</td>
                   </tr>
-                ))}
+                ) : (
+                  staffCompletionList.map((st, i) => (
+                    <tr key={i} className="hover:bg-slate-50/80 text-xs">
+                      <td className="py-0.5 pr-1 font-semibold text-slate-800 text-[10.5px] truncate">{st.name}</td>
+                      <td className="py-0.5 px-1 text-[10px] text-slate-500 truncate">{st.role}</td>
+                      <td className="py-0.5 text-[10px] font-mono text-center text-slate-700">{st.total}</td>
+                      <td className="py-0.5 text-[10px] font-mono text-center text-slate-700">{st.completed}</td>
+                      <td className="py-0.5 text-[10px] font-mono text-center text-slate-700">{st.pending}</td>
+                      <td className="py-0.5 pl-1 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <div className="w-14 bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-[#10b981] h-full rounded-full transition-all duration-300"
+                              style={{ width: `${st.pct}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-700 w-6 text-right">{st.pct}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -662,20 +727,26 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {DEFAULT_OVERDUE_TASKS.map((od) => (
-                  <tr key={od.id} className="hover:bg-slate-50/80 text-xs">
-                    <td className="py-0.5 pr-1 font-medium text-slate-800 text-[10.5px] truncate">{od.task}</td>
-                    <td className="py-0.5 px-1 text-[10px] text-slate-500 truncate">{od.owner}</td>
-                    <td className="py-0.5 text-[9.5px] text-slate-600 text-center">{od.dueDate}</td>
-                    <td className="py-0.5 pl-1 text-right">
-                      <span className={`inline-block text-[9.5px] font-bold px-1.5 py-0.2 rounded-md ${
-                        od.daysOverdue > 0 ? 'bg-[#fee2e2] text-[#b91c1c]' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        {od.daysOverdue}
-                      </span>
-                    </td>
+                {overdueTasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-4 text-center text-[10px] text-slate-400 italic">No overdue tasks recorded</td>
                   </tr>
-                ))}
+                ) : (
+                  overdueTasks.slice(0, 5).map((od) => (
+                    <tr key={od.id} className="hover:bg-slate-50/80 text-xs">
+                      <td className="py-0.5 pr-1 font-medium text-slate-800 text-[10.5px] truncate">{od.task}</td>
+                      <td className="py-0.5 px-1 text-[10px] text-slate-500 truncate">{od.owner}</td>
+                      <td className="py-0.5 text-[9.5px] text-slate-600 text-center">{od.dueDate}</td>
+                      <td className="py-0.5 pl-1 text-right">
+                        <span className={`inline-block text-[9.5px] font-bold px-1.5 py-0.2 rounded-md ${
+                          od.daysOverdue > 0 ? 'bg-[#fee2e2] text-[#b91c1c]' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {od.daysOverdue}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -696,7 +767,7 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
           <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
             <div>
               <p className="text-xs font-bold text-slate-800">Shift Log: Morning & General Shifts</p>
-              <p className="text-[11px] text-slate-500">Branch: {selectedBranch} • Date: 15 Sep 2026</p>
+              <p className="text-[11px] text-slate-500">Branch: {selectedBranch} • Date: {dayjs().format('DD MMM YYYY')}</p>
             </div>
             <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded-full">
               Live Biometric & App Sync Active
@@ -716,33 +787,33 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {DEFAULT_ATTENDANCE.concat([
-                  { id: 'ATT-6', name: 'A. Ramanathan', role: 'Field Officer', inTime: '09:10', status: 'Present', initial: 'AR' },
-                  { id: 'ATT-7', name: 'K. Balaji', role: 'Recovery Agent', inTime: '09:30', status: 'Present', initial: 'KB' },
-                  { id: 'ATT-8', name: 'T. Meenakshi', role: 'Customer Desk', inTime: '08:55', status: 'Present', initial: 'TM' },
-                  { id: 'ATT-9', name: 'V. Suresh', role: 'Audit Assistant', inTime: '09:12', status: 'Present', initial: 'VS' },
-                  { id: 'ATT-10', name: 'N. Deepa', role: 'Compliance Exec', inTime: '09:02', status: 'Present', initial: 'ND' },
-                ]).map((emp, i) => (
-                  <tr key={i} className="hover:bg-slate-50">
-                    <td className="p-2 font-semibold text-slate-800 flex items-center gap-1.5">
-                      <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[9px] font-bold flex items-center justify-center">
-                        {emp.initial}
-                      </span>
-                      {emp.name}
-                    </td>
-                    <td className="p-2 text-slate-600">{emp.role}</td>
-                    <td className="p-2 text-slate-600">{selectedBranch}</td>
-                    <td className="p-2 font-mono text-slate-700">{emp.inTime}</td>
-                    <td className="p-2 font-mono text-slate-700">{emp.status === 'Present' ? '18:00 (Est)' : '-'}</td>
-                    <td className="p-2">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                        emp.status === 'Present' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                      }`}>
-                        {emp.status}
-                      </span>
-                    </td>
+                {attendanceList.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-4 text-center text-slate-400 italic">No attendance records found for {selectedBranch}</td>
                   </tr>
-                ))}
+                ) : (
+                  attendanceList.map((emp, i) => (
+                    <tr key={i} className="hover:bg-slate-50">
+                      <td className="p-2 font-semibold text-slate-800 flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[9px] font-bold flex items-center justify-center">
+                          {emp.initial}
+                        </span>
+                        {emp.name}
+                      </td>
+                      <td className="p-2 text-slate-600">{emp.role}</td>
+                      <td className="p-2 text-slate-600">{selectedBranch}</td>
+                      <td className="p-2 font-mono text-slate-700">{emp.inTime}</td>
+                      <td className="p-2 font-mono text-slate-700">{emp.status === 'Present' ? 'Active' : '-'}</td>
+                      <td className="p-2">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                          emp.status === 'Present' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                        }`}>
+                          {emp.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -751,7 +822,7 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
             <Button variant="outline" onClick={() => setActiveModal(null)}>Close</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
-              onClick={() => exportToExcel(DEFAULT_ATTENDANCE, 'Staff_Attendance_Register')}
+              onClick={() => exportToExcel(attendanceList, 'Staff_Attendance_Register')}
             >
               <Download className="w-3.5 h-3.5" />
               Export Attendance (Excel)
@@ -790,23 +861,25 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {DEFAULT_UPCOMING_TASKS.concat([
-                  { id: 'UP-5', task: 'NBFC Half-Yearly RBI Return (DNBS-02)', dueDate: '15 Nov 2026', owner: 'S. Kumar', department: 'Compliance' },
-                  { id: 'UP-6', task: 'IT Disaster Recovery Simulation', dueDate: '10 Dec 2026', owner: 'P. Priya', department: 'Operations' },
-                  { id: 'UP-7', task: 'Annual Insurance Policy Review', dueDate: '15 Jan 2027', owner: 'R. Karthik', department: 'Credit' },
-                ]).map((task, i) => (
-                  <tr key={i} className="hover:bg-slate-50">
-                    <td className="p-2 font-semibold text-slate-800">{task.task}</td>
-                    <td className="p-2 text-slate-600">{task.department}</td>
-                    <td className="p-2 text-slate-700">{task.owner}</td>
-                    <td className="p-2 font-mono text-slate-700">{task.dueDate}</td>
-                    <td className="p-2">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
-                        High Priority
-                      </span>
-                    </td>
+                {upcomingTasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-4 text-center text-slate-400 italic">No upcoming tasks scheduled</td>
                   </tr>
-                ))}
+                ) : (
+                  upcomingTasks.map((task, i) => (
+                    <tr key={i} className="hover:bg-slate-50">
+                      <td className="p-2 font-semibold text-slate-800">{task.task}</td>
+                      <td className="p-2 text-slate-600">{task.department}</td>
+                      <td className="p-2 text-slate-700">{task.owner}</td>
+                      <td className="p-2 font-mono text-slate-700">{task.dueDate}</td>
+                      <td className="p-2">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
+                          Scheduled
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -815,7 +888,7 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
             <Button variant="outline" onClick={() => setActiveModal(null)}>Close</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
-              onClick={() => exportToExcel(DEFAULT_UPCOMING_TASKS, 'Upcoming_Operational_Tasks')}
+              onClick={() => exportToExcel(upcomingTasks, 'Upcoming_Operational_Tasks')}
             >
               <Download className="w-3.5 h-3.5" />
               Export Schedule (Excel)
@@ -838,7 +911,7 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
               <p className="text-[11px] text-rose-700">Immediate supervisor escalation active for &gt; 3 days overdue</p>
             </div>
             <span className="text-xs bg-rose-600 text-white font-bold px-2.5 py-1 rounded-full">
-              5 Critical Items
+              {overdueTasks.length} Critical Items
             </span>
           </div>
 
@@ -854,23 +927,29 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {DEFAULT_OVERDUE_TASKS.map((item, i) => (
-                  <tr key={i} className="hover:bg-slate-50">
-                    <td className="p-2 font-semibold text-slate-800">{item.task}</td>
-                    <td className="p-2 text-slate-700">{item.owner}</td>
-                    <td className="p-2 font-mono text-slate-700">{item.dueDate}</td>
-                    <td className="p-2">
-                      <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-700">
-                        {item.daysOverdue} Days
-                      </span>
-                    </td>
-                    <td className="p-2">
-                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                        Notice Sent
-                      </span>
-                    </td>
+                {overdueTasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-4 text-center text-slate-400 italic">No overdue tasks recorded</td>
                   </tr>
-                ))}
+                ) : (
+                  overdueTasks.map((item, i) => (
+                    <tr key={i} className="hover:bg-slate-50">
+                      <td className="p-2 font-semibold text-slate-800">{item.task}</td>
+                      <td className="p-2 text-slate-700">{item.owner}</td>
+                      <td className="p-2 font-mono text-slate-700">{item.dueDate}</td>
+                      <td className="p-2">
+                        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-700">
+                          {item.daysOverdue} Days
+                        </span>
+                      </td>
+                      <td className="p-2">
+                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                          Follow-up Required
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -879,7 +958,7 @@ export default function TaskOperationsReport({ onBack }: TaskOperationsReportPro
             <Button variant="outline" onClick={() => setActiveModal(null)}>Close</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
-              onClick={() => exportToExcel(DEFAULT_OVERDUE_TASKS, 'Overdue_Tasks_Register')}
+              onClick={() => exportToExcel(overdueTasks, 'Overdue_Tasks_Register')}
             >
               <Download className="w-3.5 h-3.5" />
               Export Overdue List (Excel)

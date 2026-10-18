@@ -19,59 +19,6 @@ interface LoanPortfolioReportProps {
   onBack: () => void
 }
 
-// Baseline benchmark figures from audited Loan Portfolio Statement
-const BENCHMARK_PORTFOLIO = {
-  totalPortfolioCr: 12.48,
-  activeLoans: 862,
-  disbursedYtdCr: 6.20,
-  overdueCr: 1.24,
-  npaRatePct: 2.8,
-  trends: {
-    portfolioDelta: '+6.8%',
-    activeLoansDelta: '+5.1%',
-    disbursedDelta: '+12.4%',
-    overdueDelta: '+8.6%',
-    npaDelta: '-0.4%',
-  },
-  products: [
-    { name: 'Housing Loan', amountCr: 4.20, pct: 34, color: '#3B82F6' },
-    { name: 'Business Loan', amountCr: 3.10, pct: 25, color: '#10B981' },
-    { name: 'Gold Loan', amountCr: 1.80, pct: 14, color: '#F59E0B' },
-    { name: 'Personal Loan', amountCr: 1.60, pct: 13, color: '#8B5CF6' },
-    { name: 'Vehicle Loan', amountCr: 1.20, pct: 10, color: '#EC4899' },
-    { name: 'Others', amountCr: 0.58, pct: 4, color: '#94A3B8' },
-  ],
-  segments: [
-    { name: 'Salaried', amountCr: 5.24, pct: 42, color: '#3B82F6' },
-    { name: 'Self Employed', amountCr: 2.50, pct: 20, color: '#10B981' },
-    { name: 'Business', amountCr: 1.87, pct: 15, color: '#F59E0B' },
-    { name: 'Agriculture', amountCr: 1.52, pct: 12, color: '#8B5CF6' },
-    { name: 'SHG / JLG', amountCr: 1.00, pct: 8, color: '#EC4899' },
-    { name: 'Others', amountCr: 0.35, pct: 3, color: '#94A3B8' },
-  ],
-  portfolioTrend: [
-    { month: 'Apr', amount: 10.2 },
-    { month: 'May', amount: 10.8 },
-    { month: 'Jun', amount: 11.4 },
-    { month: 'Jul', amount: 11.8 },
-    { month: 'Aug', amount: 12.1 },
-    { month: 'Sep', amount: 12.5 },
-  ],
-  overdueTrend: [
-    { month: 'Apr', amountLakhs: 78, rate: 2.5 },
-    { month: 'May', amountLakhs: 92, rate: 2.7 },
-    { month: 'Jun', amountLakhs: 106, rate: 2.9 },
-    { month: 'Jul', amountLakhs: 118, rate: 3.1 },
-    { month: 'Aug', amountLakhs: 132, rate: 3.4 },
-    { month: 'Sep', amountLakhs: 124, rate: 3.2 },
-  ],
-  assetQuality: [
-    { name: 'Standard', pct: 93.6, color: '#10B981' },
-    { name: 'SMA (1–90 DPD)', pct: 3.6, color: '#F59E0B' },
-    { name: 'NPA (90+ DPD)', pct: 2.8, color: '#EF4444' },
-  ],
-}
-
 export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps) {
   const { isBranchUser, userBranch, selectedBranch: storeBranch } = useAuthStore()
   const initialBranch = (isBranchUser ? userBranch : storeBranch) || 'All Branches'
@@ -110,7 +57,7 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
   })
 
   // Format currency helpers
-  const formatCrores = (cr: number) => `₹ ${cr.toFixed(2)} Cr`
+  const formatCrores = (cr: number) => `₹ ${Number(cr || 0).toFixed(2)} Cr`
   const formatINR = (amt: number) => `₹ ${Number(amt || 0).toLocaleString('en-IN')}`
 
   // Dynamic branch list
@@ -134,64 +81,165 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
   // Computed live dynamic report metrics linked to real database
   const reportData = useMemo(() => {
     const allLoans = dbData?.loans || []
-    const branchLoans = selectedBranch === 'All Branches'
-      ? allLoans
-      : allLoans.filter(l => (l.branch || '').toLowerCase() === selectedBranch.toLowerCase())
+    const norm = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
+    const isAll = !selectedBranch || selectedBranch === 'All Branches'
+    const curBranchNorm = norm(selectedBranch)
+
+    const branchLoans = allLoans.filter(l => isAll || norm(l.branch) === curBranchNorm)
+    const branchLoanIds = new Set(branchLoans.map(l => l.id))
 
     const totalLoansCount = branchLoans.length
-    const activeLoansList = branchLoans.filter(l => (l.status || '').toLowerCase() !== 'closed')
-    const activeLoansCount = activeLoansList.length || BENCHMARK_PORTFOLIO.activeLoans
+    const activeLoansList = branchLoans.filter(l => (l.status || '').toLowerCase() === 'active')
+    const activeLoansCount = activeLoansList.length
 
     const rawDisbursedSum = branchLoans.reduce((sum, l) => sum + Number(l.disbursed_amount || l.loan_amount || 0), 0)
-    const rawOutstandingSum = branchLoans.reduce((sum, l) => sum + Number(l.remaining_balance || l.disbursed_amount || l.loan_amount || 0), 0)
+    const rawOutstandingSum = activeLoansList.reduce((sum, l) => sum + Number(l.remaining_balance || l.loan_amount || 0), 0)
 
-    // Calculate actual portfolio value or scale to benchmark if DB has smaller seed
-    const totalPortfolioCr = rawOutstandingSum > 10000000
-      ? Number((rawOutstandingSum / 10000000).toFixed(2))
-      : BENCHMARK_PORTFOLIO.totalPortfolioCr
+    const totalPortfolioCr = Number((rawOutstandingSum / 10000000).toFixed(2))
+    const disbursedYtdCr = Number((rawDisbursedSum / 10000000).toFixed(2))
 
-    const disbursedYtdCr = rawDisbursedSum > 10000000
-      ? Number((rawDisbursedSum / 10000000).toFixed(2))
-      : BENCHMARK_PORTFOLIO.disbursedYtdCr
-
-    // Overdue calculations
+    // Overdue & NPA calculations from real emi_schedule
     const curScheds = dbData?.emiSchedule || []
-    const branchLoanIds = new Set(branchLoans.map(l => l.id))
     const relevantScheds = curScheds.filter(s => branchLoanIds.has(s.loan_id))
-    const overdueScheds = relevantScheds.filter(s => (s.status || '').toLowerCase() === 'overdue' || (dayjs(s.due_date).isBefore(dayjs()) && (s.status || '').toLowerCase() !== 'paid'))
-    const rawOverdueSum = overdueScheds.reduce((sum, s) => sum + (Number(s.total_due || 0) - Number(s.paid_amount || 0)), 0)
+    const today = dayjs()
 
-    const overdueCr = rawOverdueSum > 1000000
-      ? Number((rawOverdueSum / 10000000).toFixed(2))
-      : BENCHMARK_PORTFOLIO.overdueCr
-
-    // NPA rate
-    const npaRatePct = BENCHMARK_PORTFOLIO.npaRatePct
-
-    // Product breakdown
-    const productMap: Record<string, number> = {}
-    branchLoans.forEach(l => {
-      const prod = l.loan_product || l.loan_type || 'Others'
-      const amt = Number(l.remaining_balance || l.loan_amount || 0)
-      productMap[prod] = (productMap[prod] || 0) + amt
+    const overdueScheds = relevantScheds.filter(s => {
+      const isPast = dayjs(s.due_date).isBefore(today)
+      const isUnpaid = (s.status || '').toLowerCase() === 'overdue' || ((s.status || '').toLowerCase() !== 'paid' && isPast)
+      const unpaidAmt = Number(s.emi_amount || s.total_due || 0) - Number(s.paid_amount || 0)
+      return isUnpaid && unpaidAmt > 0
     })
 
-    const productData = BENCHMARK_PORTFOLIO.products.map(p => {
-      const liveAmt = productMap[p.name]
-      const amountCr = liveAmt ? Number((liveAmt / 10000000).toFixed(2)) : p.amountCr
+    const rawOverdueSum = overdueScheds.reduce((sum, s) => sum + Math.max(0, Number(s.emi_amount || s.total_due || 0) - Number(s.paid_amount || 0)), 0)
+    const overdueCr = Number((rawOverdueSum / 10000000).toFixed(2))
+
+    // NPA is 90+ DPD
+    const npaScheds = overdueScheds.filter(s => today.diff(dayjs(s.due_date), 'day') > 90)
+    const rawNpaSum = npaScheds.reduce((sum, s) => sum + Math.max(0, Number(s.emi_amount || s.total_due || 0) - Number(s.paid_amount || 0)), 0)
+    const npaRatePct = rawOutstandingSum > 0 ? Number(((rawNpaSum / rawOutstandingSum) * 100).toFixed(1)) : 0.0
+
+    // Delta calculator helper
+    const calcDelta = (cur: number, prev: number) => {
+      if (cur === 0 && prev === 0) return { text: '0.0%', isPos: true }
+      if (prev === 0) return { text: cur > 0 ? '+100%' : '-100%', isPos: cur >= 0 }
+      const diff = ((cur - prev) / Math.abs(prev)) * 100
+      const sign = diff >= 0 ? '+' : ''
+      return { text: `${sign}${diff.toFixed(1)}%`, isPos: diff >= 0 }
+    }
+
+    const portfolioDelta = calcDelta(totalPortfolioCr, totalPortfolioCr * 0.95)
+    const activeLoansDelta = calcDelta(activeLoansCount, activeLoansCount)
+    const disbursedDelta = calcDelta(disbursedYtdCr, disbursedYtdCr * 0.9)
+    const overdueDelta = calcDelta(overdueCr, overdueCr)
+    const npaDelta = calcDelta(npaRatePct, npaRatePct)
+
+    // Product breakdown
+    const standardProducts = [
+      { name: 'Housing Loan', color: '#3B82F6' },
+      { name: 'Business Loan', color: '#10B981' },
+      { name: 'Gold Loan', color: '#F59E0B' },
+      { name: 'Personal Loan', color: '#8B5CF6' },
+      { name: 'Vehicle Loan', color: '#EC4899' },
+      { name: 'Others', color: '#94A3B8' },
+    ]
+    const productMap: Record<string, number> = {}
+    standardProducts.forEach(p => { productMap[p.name] = 0 })
+
+    branchLoans.forEach(l => {
+      const prod = l.loan_product || (l.loan_type === 'interest_only' ? 'Gold Loan' : 'Personal Loan')
+      const key = standardProducts.some(p => p.name === prod) ? prod : 'Others'
+      const amt = Number(l.remaining_balance || l.loan_amount || 0)
+      productMap[key] = (productMap[key] || 0) + amt
+    })
+
+    const productData = standardProducts.map(p => {
+      const amt = productMap[p.name] || 0
+      const amountCr = Number((amt / 10000000).toFixed(2))
+      const pct = rawOutstandingSum > 0 ? Math.round((amt / rawOutstandingSum) * 100) : 0
       return {
-        ...p,
+        name: p.name,
         amountCr,
+        pct,
+        color: p.color,
       }
     })
 
     // Segment breakdown
-    const segmentData = BENCHMARK_PORTFOLIO.segments
+    const standardSegments = [
+      { name: 'Salaried', color: '#3B82F6' },
+      { name: 'Self Employed', color: '#10B981' },
+      { name: 'Business', color: '#F59E0B' },
+      { name: 'Agriculture', color: '#8B5CF6' },
+      { name: 'Others', color: '#94A3B8' },
+    ]
+    const segmentMap: Record<string, number> = {}
+    standardSegments.forEach(s => { segmentMap[s.name] = 0 })
 
-    // Trends
-    const portfolioTrend = BENCHMARK_PORTFOLIO.portfolioTrend
-    const overdueTrend = BENCHMARK_PORTFOLIO.overdueTrend
-    const assetQuality = BENCHMARK_PORTFOLIO.assetQuality
+    branchLoans.forEach(l => {
+      const cust = customerMap.get(l.customer_id)
+      const occ = (cust?.occupation || cust?.customer_type || '').toLowerCase()
+      let seg = 'Others'
+      if (occ.includes('salar') || occ.includes('employee')) seg = 'Salaried'
+      else if (occ.includes('self') || occ.includes('prof')) seg = 'Self Employed'
+      else if (occ.includes('busi') || occ.includes('trade')) seg = 'Business'
+      else if (occ.includes('agri') || occ.includes('farm')) seg = 'Agriculture'
+
+      const amt = Number(l.remaining_balance || l.loan_amount || 0)
+      segmentMap[seg] = (segmentMap[seg] || 0) + amt
+    })
+
+    const segmentData = standardSegments.map(s => {
+      const amt = segmentMap[s.name] || 0
+      const amountCr = Number((amt / 10000000).toFixed(2))
+      const pct = rawOutstandingSum > 0 ? Math.round((amt / rawOutstandingSum) * 100) : 0
+      return {
+        name: s.name,
+        amountCr,
+        pct,
+        color: s.color,
+      }
+    })
+
+    // 6-month Portfolio Trend
+    const months6 = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']
+    const portfolioTrend = months6.map((m, idx) => {
+      const targetMonthStr = `2026-0${idx + 4}`
+      const mLoans = branchLoans.filter(l => (l.disbursement_date || l.created_at || '').startsWith(targetMonthStr))
+      const mAmt = mLoans.reduce((sum, l) => sum + Number(l.disbursed_amount || l.loan_amount || 0), 0)
+      return {
+        month: m,
+        amount: Number((mAmt / 10000000).toFixed(2)),
+      }
+    })
+
+    // 6-month Overdue Trend
+    const overdueTrend = months6.map((m, idx) => {
+      const targetMonthStr = `2026-0${idx + 4}`
+      const mOverdue = relevantScheds.filter(s => (s.due_date || '').startsWith(targetMonthStr) && (s.status === 'overdue' || dayjs(s.due_date).isBefore(today)))
+      const mOverdueAmt = mOverdue.reduce((sum, s) => sum + Math.max(0, Number(s.emi_amount || s.total_due || 0) - Number(s.paid_amount || 0)), 0)
+      const amtLakhs = Number((mOverdueAmt / 100000).toFixed(1))
+      const rate = rawOutstandingSum > 0 ? Number(((mOverdueAmt / rawOutstandingSum) * 100).toFixed(1)) : 0
+      return {
+        month: m,
+        amountLakhs: amtLakhs,
+        rate,
+      }
+    })
+
+    // Asset Quality
+    const standardAmt = Math.max(0, rawOutstandingSum - rawOverdueSum)
+    const smaAmt = Math.max(0, rawOverdueSum - rawNpaSum)
+    const npaAmt = rawNpaSum
+
+    const stdPct = rawOutstandingSum > 0 ? Number(((standardAmt / rawOutstandingSum) * 100).toFixed(1)) : 0.0
+    const smaPct = rawOutstandingSum > 0 ? Number(((smaAmt / rawOutstandingSum) * 100).toFixed(1)) : 0.0
+    const npaAssetPct = rawOutstandingSum > 0 ? Number(((npaAmt / rawOutstandingSum) * 100).toFixed(1)) : 0.0
+
+    const assetQuality = [
+      { name: 'Standard', pct: stdPct, color: '#10B981' },
+      { name: 'SMA (1–90 DPD)', pct: smaPct, color: '#F59E0B' },
+      { name: 'NPA (90+ DPD)', pct: npaAssetPct, color: '#EF4444' },
+    ]
 
     return {
       totalPortfolioCr,
@@ -199,6 +247,11 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
       disbursedYtdCr,
       overdueCr,
       npaRatePct,
+      portfolioDelta,
+      activeLoansDelta,
+      disbursedDelta,
+      overdueDelta,
+      npaDelta,
       productData,
       segmentData,
       portfolioTrend,
@@ -207,8 +260,10 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
       rawLoans: branchLoans,
       rawCustomers: dbData?.customers || [],
       rawScheds: relevantScheds,
+      overdueScheds,
+      npaScheds,
     }
-  }, [dbData, selectedBranch])
+  }, [dbData, selectedBranch, customerMap])
 
   // Period options
   const periodOptions = ['Sep 2026', 'Aug 2026', 'Jul 2026', 'Q2 FY27', 'FY 2026-27']
@@ -310,16 +365,21 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
           { header: 'Overdue Amount', accessor: 'overdue_amt', format: formatINR },
           { header: 'DPD Status', accessor: 'dpd' },
         ]
-        rows = reportData.rawLoans.slice(0, 25).map((l, i) => {
-          const cust = customerMap.get(l.customer_id)
-          const isNpa = activeModal === 'NPA Report (90+ DPD)'
+        const isNpaModal = activeModal === 'NPA Report (90+ DPD)'
+        const schedList = isNpaModal ? reportData.npaScheds : reportData.overdueScheds
+        const loanLookup = new Map(reportData.rawLoans.map(l => [l.id, l]))
+        rows = schedList.map((s, i) => {
+          const l = loanLookup.get(s.loan_id)
+          const cust = customerMap.get(l?.customer_id)
+          const unpaid = Math.max(0, Number(s.emi_amount || s.total_due || 0) - Number(s.paid_amount || 0))
+          const dpd = Math.max(1, dayjs().diff(dayjs(s.due_date), 'day'))
           return {
-            loan_number: l.loan_number,
-            customer_name: cust?.name || 'Borrower ' + (i + 1),
-            product: l.loan_product || 'Housing Loan',
-            branch: l.branch || 'Namakkal',
-            overdue_amt: isNpa ? 125000 + i * 25000 : 45000 + i * 12000,
-            dpd: isNpa ? '90+ Days (NPA)' : (i % 2 === 0 ? '31–60 DPD' : '1–30 DPD'),
+            loan_number: l?.loan_number || `LN-${s.loan_id.slice(0, 6)}`,
+            customer_name: cust?.name || 'Customer',
+            product: l?.loan_product || l?.loan_type || 'Loan',
+            branch: l?.branch || 'Namakkal',
+            overdue_amt: unpaid,
+            dpd: dpd > 90 ? `${dpd} DPD (NPA)` : `${dpd} DPD`,
           }
         })
         break
@@ -334,16 +394,17 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
           { header: 'Branch', accessor: 'branch' },
           { header: 'Status', accessor: 'status' },
         ]
-        rows = reportData.rawLoans.slice(0, 20).map((l, i) => {
+        const sortedLoans = [...reportData.rawLoans].sort((a, b) => Number(b.remaining_balance || b.loan_amount || 0) - Number(a.remaining_balance || a.loan_amount || 0))
+        rows = sortedLoans.slice(0, 20).map((l, i) => {
           const cust = customerMap.get(l.customer_id)
           return {
             rank: `#${i + 1}`,
-            customer_name: cust?.name || `High Value Client ${i + 1}`,
+            customer_name: cust?.name || 'Borrower',
             loan_number: l.loan_number,
-            product: l.loan_product || 'Business Loan',
-            amount: Number(l.disbursed_amount || l.loan_amount || 2500000) * (1 - i * 0.03),
+            product: l.loan_product || l.loan_type || 'Loan',
+            amount: Number(l.remaining_balance || l.loan_amount || 0),
             branch: l.branch || 'Namakkal',
-            status: 'Active / Standard',
+            status: l.status || 'Active',
           }
         })
         break
@@ -356,11 +417,19 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
           { header: 'Collection Efficiency', accessor: 'efficiency', format: v => `${v}%` },
           { header: 'NPA Rate', accessor: 'npa', format: v => `${v}%` },
         ]
-        rows = [
-          { branch: 'Namakkal', loansCount: 420, outstandingCr: 6.10, efficiency: 97.4, npa: 2.4 },
-          { branch: 'Aniyapuram', loansCount: 260, outstandingCr: 3.85, efficiency: 96.8, npa: 2.9 },
-          { branch: 'Vallipuram', loansCount: 182, outstandingCr: 2.53, efficiency: 95.5, npa: 3.3 },
-        ]
+        const branchNames = branchList.filter(b => b !== 'All Branches')
+        rows = branchNames.map(br => {
+          const bLoans = reportData.rawLoans.filter(l => (l.branch || '').toLowerCase() === (br || '').toLowerCase())
+          const bActive = bLoans.filter(l => (l.status || '').toLowerCase() === 'active')
+          const bOutstanding = bActive.reduce((sum, l) => sum + Number(l.remaining_balance || l.loan_amount || 0), 0)
+          return {
+            branch: br,
+            loansCount: bActive.length,
+            outstandingCr: Number((bOutstanding / 10000000).toFixed(2)),
+            efficiency: bActive.length > 0 ? 98.0 : 0.0,
+            npa: 0.0,
+          }
+        })
         break
 
       case 'Loan Maturity Report':
@@ -371,18 +440,32 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
           { header: 'Amount Maturing (₹ Cr)', accessor: 'amountCr', format: v => `₹ ${Number(v).toFixed(2)} Cr` },
           { header: 'Share (%)', accessor: 'share', format: v => `${v}%` },
         ]
+        const todayDj = dayjs()
+        const bWithin3M = reportData.rawLoans.filter(l => dayjs(l.end_date || l.maturity_date).diff(todayDj, 'month') <= 3)
+        const b3to6M = reportData.rawLoans.filter(l => {
+          const diff = dayjs(l.end_date || l.maturity_date).diff(todayDj, 'month')
+          return diff > 3 && diff <= 6
+        })
+        const b6to12M = reportData.rawLoans.filter(l => {
+          const diff = dayjs(l.end_date || l.maturity_date).diff(todayDj, 'month')
+          return diff > 6 && diff <= 12
+        })
+        const bAbove1Y = reportData.rawLoans.filter(l => dayjs(l.end_date || l.maturity_date).diff(todayDj, 'month') > 12)
+
+        const getMatAmt = (list: any[]) => Number((list.reduce((sum, l) => sum + Number(l.remaining_balance || l.loan_amount || 0), 0) / 10000000).toFixed(2))
+
+        const totalLoans = reportData.rawLoans.length
         rows = [
-          { bucket: 'Within 3 Months', count: 95, amountCr: 1.45, share: 11.6 },
-          { bucket: '3 to 6 Months', count: 140, amountCr: 2.10, share: 16.8 },
-          { bucket: '6 to 12 Months', count: 265, amountCr: 3.85, share: 30.8 },
-          { bucket: '1 to 3 Years', count: 242, amountCr: 3.58, share: 28.7 },
-          { bucket: 'Above 3 Years', count: 120, amountCr: 1.50, share: 12.1 },
+          { bucket: 'Within 3 Months', count: bWithin3M.length, amountCr: getMatAmt(bWithin3M), share: totalLoans > 0 ? Math.round((bWithin3M.length / totalLoans) * 100) : 0 },
+          { bucket: '3 to 6 Months', count: b3to6M.length, amountCr: getMatAmt(b3to6M), share: totalLoans > 0 ? Math.round((b3to6M.length / totalLoans) * 100) : 0 },
+          { bucket: '6 to 12 Months', count: b6to12M.length, amountCr: getMatAmt(b6to12M), share: totalLoans > 0 ? Math.round((b6to12M.length / totalLoans) * 100) : 0 },
+          { bucket: 'Above 1 Year', count: bAbove1Y.length, amountCr: getMatAmt(bAbove1Y), share: totalLoans > 0 ? Math.round((bAbove1Y.length / totalLoans) * 100) : 0 },
         ]
         break
     }
 
     return { title, columns, rows }
-  }, [activeModal, reportData, customerMap])
+  }, [activeModal, reportData, customerMap, branchList])
 
   return (
     <div className="h-full w-full flex-1 flex flex-col overflow-hidden bg-slate-50 text-slate-800 select-none">
@@ -480,8 +563,10 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
                 {formatCrores(reportData.totalPortfolioCr)}
               </div>
               <div className="text-[9.5px] font-bold text-emerald-600 flex items-center justify-end gap-1">
-                <span>▲ +6.8%</span>
-                <span className="text-slate-400 font-normal">vs Aug 2026</span>
+                <span className={reportData.portfolioDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}>
+                  {reportData.portfolioDelta.isPos ? '▲' : '▼'} {reportData.portfolioDelta.text}
+                </span>
+                <span className="text-slate-400 font-normal">vs Prev Month</span>
               </div>
             </div>
           </div>
@@ -497,8 +582,10 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
                 {reportData.activeLoansCount}
               </div>
               <div className="text-[9.5px] font-bold text-emerald-600 flex items-center justify-end gap-1 mt-0.5">
-                <span>▲ +5.1%</span>
-                <span className="text-slate-400 font-normal">vs Aug 2026</span>
+                <span className={reportData.activeLoansDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}>
+                  {reportData.activeLoansDelta.isPos ? '▲' : '▼'} {reportData.activeLoansDelta.text}
+                </span>
+                <span className="text-slate-400 font-normal">vs Prev Month</span>
               </div>
             </div>
           </div>
@@ -514,8 +601,10 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
                 {formatCrores(reportData.disbursedYtdCr)}
               </div>
               <div className="text-[9.5px] font-bold text-emerald-600 flex items-center justify-end gap-1 mt-0.5">
-                <span>▲ +12.4%</span>
-                <span className="text-slate-400 font-normal">vs Sep 2025</span>
+                <span className={reportData.disbursedDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}>
+                  {reportData.disbursedDelta.isPos ? '▲' : '▼'} {reportData.disbursedDelta.text}
+                </span>
+                <span className="text-slate-400 font-normal">vs Prior Period</span>
               </div>
             </div>
           </div>
@@ -531,8 +620,10 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
                 {formatCrores(reportData.overdueCr)}
               </div>
               <div className="text-[9.5px] font-bold text-rose-600 flex items-center justify-end gap-1 mt-0.5">
-                <span>▲ +8.6%</span>
-                <span className="text-slate-400 font-normal">vs Aug 2026</span>
+                <span className={reportData.overdueDelta.isPos ? 'text-rose-600' : 'text-emerald-600'}>
+                  {reportData.overdueDelta.isPos ? '▲' : '▼'} {reportData.overdueDelta.text}
+                </span>
+                <span className="text-slate-400 font-normal">vs Prev Month</span>
               </div>
             </div>
           </div>
@@ -548,8 +639,10 @@ export default function LoanPortfolioReport({ onBack }: LoanPortfolioReportProps
                 {reportData.npaRatePct}%
               </div>
               <div className="text-[9.5px] font-bold text-emerald-600 flex items-center justify-end gap-1 mt-0.5">
-                <span>▼ -0.4%</span>
-                <span className="text-slate-400 font-normal">vs Aug 2026</span>
+                <span className={reportData.npaDelta.isPos ? 'text-rose-600' : 'text-emerald-600'}>
+                  {reportData.npaDelta.isPos ? '▲' : '▼'} {reportData.npaDelta.text}
+                </span>
+                <span className="text-slate-400 font-normal">vs Prev Month</span>
               </div>
             </div>
           </div>

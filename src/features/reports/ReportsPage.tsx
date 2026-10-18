@@ -240,7 +240,7 @@ export default function ReportsPage() {
                                   {sub.freq}
                                 </td>
                                 <td className="px-4 py-2.5 text-xs text-slate-500">
-                                  {sub.freq === 'Real-time' ? 'Just now' : `${Math.floor(Math.random() * 8) + 1} hrs ago`}
+                                  {sub.freq === 'Real-time' ? 'Live' : '—'}
                                 </td>
                                 <td className="px-4 py-2.5 text-right">
                                   <button className="px-3 py-1.5 rounded bg-white border border-slate-200 text-[10px] font-extrabold text-slate-700 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shadow-sm">

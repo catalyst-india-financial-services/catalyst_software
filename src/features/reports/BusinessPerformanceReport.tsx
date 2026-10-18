@@ -52,137 +52,30 @@ interface ReportSection {
   rows: RowData[]
 }
 
-// Baseline template data (from original screenshot specs)
-const TEMPLATE_SECTIONS: ReportSection[] = [
-  {
-    id: 1,
-    title: '1  BUSINESS GROWTH (DISBURSEMENTS)',
-    colorClass: 'bg-[#103055] text-white',
-    headerBg: '#103055',
-    rows: [
-      { sNo: '1.1', particulars: 'Term Loan', opening: '8.45', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '13.70', mom: '7.3%', prevDay: '14.70', today: '14.70', dod: '0.0%', targetQuarter: '15.70', achievement: '15.70', achPercent: '100.0%', gap: '-', gapPercent: '0.0%', ytd: '7.25', ytdPercent: '', qtd: '7.25', qtdPercent: '', mtd: '15.70' },
-      { sNo: '1.2', particulars: 'Working Capital', opening: '3.00', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '5.00', mom: '0.0%', prevDay: '5.00', today: '5.00', dod: '0.0%', targetQuarter: '7.00', achievement: '7.00', achPercent: '100.0%', gap: '-', gapPercent: '0.0%', ytd: '4.00', ytdPercent: '', qtd: '4.00', qtdPercent: '', mtd: '7.00' },
-      { sNo: '1.3', particulars: 'Composite Loan', opening: '-', lastYear: '-', yoy: '', lastMonthEnd: '4.00', mom: '0.0%', prevDay: '4.00', today: '4.00', dod: '0.0%', targetQuarter: '4.00', achievement: '4.00', achPercent: '100.0%', gap: '-', gapPercent: '0.0%', ytd: '4.00', ytdPercent: '', qtd: '4.00', qtdPercent: '', mtd: '4.00' },
-      { sNo: '1.4', particulars: 'Total Disbursements', opening: '11.45', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '22.70', mom: '4.4%', prevDay: '23.70', today: '23.70', dod: '0.0%', targetQuarter: '26.70', achievement: '26.70', achPercent: '100.0%', gap: '-', gapPercent: '0.0%', ytd: '15.25', ytdPercent: '', qtd: '15.25', qtdPercent: '', mtd: '26.70', isSummary: true },
-    ]
-  },
-  {
-    id: 2,
-    title: '2  COLLECTION PERFORMANCE',
-    colorClass: 'bg-[#15803d] text-white',
-    headerBg: '#15803d',
-    rows: [
-      { sNo: '2.1', particulars: 'Total Demand Due (EMI + Other)', opening: '10.50', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '12.30', mom: '-88.6%', prevDay: '1.25', today: '1.40', dod: '12.0%', targetQuarter: '14.00', achievement: '12.30', achPercent: '87.9%', gap: '1.70', gapPercent: '12.1%', ytd: '11.80', ytdPercent: '', qtd: '11.80', qtdPercent: '', mtd: '12.30' },
-      { sNo: '2.2', particulars: 'Principal Collection', opening: '8.20', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '9.60', mom: '-88.5%', prevDay: '0.95', today: '1.10', dod: '15.8%', targetQuarter: '', achievement: '', achPercent: '', gap: '', gapPercent: '', ytd: '9.40', ytdPercent: '', qtd: '9.40', qtdPercent: '', mtd: '9.60' },
-      { sNo: '2.3', particulars: 'Interest Collection', opening: '1.60', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '1.90', mom: '-88.4%', prevDay: '0.15', today: '0.22', dod: '46.7%', targetQuarter: '', achievement: '', achPercent: '', gap: '', gapPercent: '', ytd: '1.80', ytdPercent: '', qtd: '1.80', qtdPercent: '', mtd: '1.90' },
-      { sNo: '2.4', particulars: 'Total Collection', opening: '9.80', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '11.50', mom: '-88.5%', prevDay: '1.10', today: '1.32', dod: '20.0%', targetQuarter: '13.00', achievement: '11.50', achPercent: '88.5%', gap: '1.50', gapPercent: '11.5%', ytd: '11.20', ytdPercent: '', qtd: '11.20', qtdPercent: '', mtd: '11.50', isSummary: true },
-      { sNo: '2.5', particulars: 'Collection Efficiency', opening: '83.7%', lastYear: '-', yoy: '', lastMonthEnd: '83.5%', mom: '', prevDay: '86.4%', today: '83.3%', dod: '', targetQuarter: '', achievement: '', achPercent: '', gap: '', gapPercent: '', ytd: '83.9%', ytdPercent: '', qtd: '83.9%', qtdPercent: '', mtd: '83.5%' },
-    ]
-  },
-  {
-    id: 3,
-    title: '3  LOAN PORTFOLIO & OUTSTANDING',
-    colorClass: 'bg-[#6b21a8] text-white',
-    headerBg: '#6b21a8',
-    rows: [
-      { sNo: '3.1', particulars: 'Principal Outstanding', opening: '36.50', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '37.60', mom: '-1.3%', prevDay: '37.40', today: '37.10', dod: '-0.8%', targetQuarter: '', achievement: '', achPercent: '', gap: '', gapPercent: '', ytd: '37.10', ytdPercent: '', qtd: '37.10', qtdPercent: '', mtd: '37.10' },
-      { sNo: '3.2', particulars: 'Interest Outstanding', opening: '1.50', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '1.60', mom: '-0.6%', prevDay: '1.55', today: '1.59', dod: '2.6%', targetQuarter: '', achievement: '', achPercent: '', gap: '', gapPercent: '', ytd: '1.59', ytdPercent: '', qtd: '1.59', qtdPercent: '', mtd: '1.59' },
-      { sNo: '3.3', particulars: 'Total Loan Portfolio Outstanding', opening: '38.00', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '39.20', mom: '-1.3%', prevDay: '38.95', today: '38.69', dod: '-0.7%', targetQuarter: '', achievement: '', achPercent: '', gap: '', gapPercent: '', ytd: '38.69', ytdPercent: '', qtd: '38.69', qtdPercent: '', mtd: '38.69', isSummary: true },
-      { sNo: '3.4', particulars: 'Active Loan Accounts', opening: '142.00', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '148.00', mom: '1.4%', prevDay: '144.00', today: '150.00', dod: '4.2%', targetQuarter: '', achievement: '', achPercent: '', gap: '', gapPercent: '', ytd: '150.00', ytdPercent: '', qtd: '150.00', qtdPercent: '', mtd: '150.00' },
-      { sNo: '3.5', particulars: 'Loan Closures (During Period)', opening: '2.00', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '5.00', mom: '-100.0%', prevDay: '-', today: '-', dod: '', targetQuarter: '', achievement: '', achPercent: '', gap: '', gapPercent: '', ytd: '5.00', ytdPercent: '', qtd: '5.00', qtdPercent: '', mtd: '-' },
-      { sNo: '3.6', particulars: 'Net Portfolio Growth', opening: '11.45', lastYear: '-', yoy: '-100.0%', lastMonthEnd: '16.50', mom: '', prevDay: '', today: '', dod: '', targetQuarter: '', achievement: '', achPercent: '', gap: '', gapPercent: '', ytd: '15.25', ytdPercent: '', qtd: '15.25', qtdPercent: '', mtd: '26.70' },
-    ]
-  },
-  {
-    id: 4,
-    title: '4  LIQUIDITY & CAPITAL POSITION',
-    colorClass: 'bg-[#b45309] text-white',
-    headerBg: '#b45309',
-    rows: [
-      { sNo: '4.1', particulars: 'Capital' },
-      { sNo: '4.2', particulars: 'Deposits' },
-      { sNo: '4.3', particulars: 'Loans (Borrowings)' },
-      { sNo: '4.4', particulars: 'Capital Employed' },
-      { sNo: '4.5', particulars: 'Cash Balance' },
-      { sNo: '4.6', particulars: 'Bank Balance', prevDay: '11.99', today: '11.99', dod: '0.0%', ytd: '11.99', qtd: '11.99', mtd: '11.99' },
-      { sNo: '4.8', particulars: 'Capital Deployed', prevDay: '38.69', today: '38.69', dod: '0.0%', ytd: '38.69', qtd: '38.69', mtd: '38.69' },
-      { sNo: '4.9', particulars: 'Difference' },
-    ]
-  },
-  {
-    id: 5,
-    title: '5  PROFITABILITY (INCOME & EXPENSES)',
-    colorClass: 'bg-[#991b1b] text-white',
-    headerBg: '#991b1b',
-    rows: [
-      { sNo: '5.1', particulars: 'Interest Income' },
-      { sNo: '5.2', particulars: 'Interest Expense' },
-      { sNo: '5.3', particulars: 'Net Interest Income', today: '-' },
-      { sNo: '5.4', particulars: 'Operating Expenses' },
-      { sNo: '5.5', particulars: 'Credit Loss Provisions' },
-      { sNo: '5.6', particulars: 'Profit' },
-    ]
-  },
-  {
-    id: 6,
-    title: '6  ASSET QUALITY',
-    colorClass: 'bg-[#0284c7] text-white',
-    headerBg: '#0284c7',
-    rows: [
-      { sNo: '6.1', particulars: 'PAR 30+' },
-      { sNo: '6.2', particulars: 'PAR 90+' },
-      { sNo: '6.3', particulars: 'SMA - 0' },
-      { sNo: '6.4', particulars: 'SMA - 1' },
-      { sNo: '6.5', particulars: 'SMA - 2' },
-      { sNo: '6.6', particulars: 'Total Overdue Accounts' },
-      { sNo: '6.7', particulars: 'Total Overdue Amount' },
-      { sNo: '6.8', particulars: 'NPA Accounts' },
-      { sNo: '6.9', particulars: 'NPA Amount' },
-      { sNo: '6.10', particulars: 'NPA % of Portfolio' },
-      { sNo: '6.11', particulars: 'Recovery from Overdue Accounts' },
-      { sNo: '6.12', particulars: 'Recovery from NPA Accounts' },
-      { sNo: '6.13', particulars: 'Total Recovery' },
-    ]
-  },
-  {
-    id: 7,
-    title: '7  Ranking',
-    colorClass: 'bg-[#2563eb] text-white',
-    headerBg: '#2563eb',
-    rows: [
-      { sNo: '7.1', particulars: 'Disbursement Rank' },
-      { sNo: '7.2', particulars: 'Collection Rank' },
-      { sNo: '7.3', particulars: 'NPA Rank' },
-      { sNo: '7.4', particulars: 'Profitability Rank' },
-      { sNo: '7.5', particulars: 'Overdue Rank' },
-      { sNo: '7.6', particulars: 'Growth Rank' },
-      { sNo: '7.7', particulars: 'Overall Rank' },
-    ]
-  }
-]
+// 100% Dynamic data derived from live Supabase tables - no static or benchmark values
 
 // Formatting helpers
 function toLakhsStr(num: number | null | undefined, isCount = false): string {
-  if (num === null || num === undefined || isNaN(num) || num === 0) return '-'
-  if (isCount) return num.toFixed(2)
+  if (num === null || num === undefined || isNaN(num) || num === 0) return isCount ? '0' : '0.00'
+  if (isCount) return Math.round(num).toString()
   const lakhs = num / 100000
-  if (Math.abs(lakhs) < 0.005) return '-'
+  if (Math.abs(lakhs) < 0.005) return '0.00'
   return lakhs.toFixed(2)
 }
 
 function toPercentStr(num: number | null | undefined): string {
-  if (num === null || num === undefined || isNaN(num)) return ''
+  if (num === null || num === undefined || isNaN(num) || num === 0) return '0.0%'
   return `${num.toFixed(1)}%`
 }
 
 function calcPctChange(current: number, base: number): string {
   if (base > 0) {
     const change = ((current - base) / base) * 100
-    return `${change > 0 ? '' : ''}${change.toFixed(1)}%`
+    return `${change > 0 ? '+' : ''}${change.toFixed(1)}%`
   }
   if (base === 0 && current > 0) return '100.0%'
   if (base > 0 && current === 0) return '-100.0%'
-  return ''
+  return '0.0%'
 }
 
 interface BusinessPerformanceReportProps {
@@ -197,7 +90,6 @@ export default function BusinessPerformanceReport({ onBack }: BusinessPerformanc
   const [selectedBranch, setSelectedBranch] = useState<string>(initialBranch)
   const [activeTab, setActiveTab] = useState<'sheet' | 'notes'>('sheet')
   const [searchTerm, setSearchTerm] = useState('')
-  const [dataSourceMode, setDataSourceMode] = useState<'live' | 'template'>('live')
   
   // Custom date selection: defaults to current date
   const [reportDate, setReportDate] = useState<string>(dayjs().format('YYYY-MM-DD'))
@@ -293,22 +185,21 @@ export default function BusinessPerformanceReport({ onBack }: BusinessPerformanc
 
   // Dynamic calculation of sections from live DB data
   const dynamicSections = useMemo((): ReportSection[] => {
-    if (!dbData) return TEMPLATE_SECTIONS
-    if (dataSourceMode === 'template') return TEMPLATE_SECTIONS
+    const data = dbData || { customers: [], loans: [], emiSchedule: [], payments: [], income: [], expenses: [] }
 
     const norm = (s?: string | null) => (s || '').toLowerCase().replace(/\s+branch$/i, '').trim()
     const isAll = !selectedBranch || selectedBranch === 'All Branches'
     const curBranchNorm = norm(selectedBranch)
 
     // Filter loans by branch
-    const branchLoans = dbData.loans.filter(l => isAll || norm(l.branch) === curBranchNorm)
+    const branchLoans = data.loans.filter(l => isAll || norm(l.branch) === curBranchNorm)
     const branchLoanIds = new Set(branchLoans.map(l => l.id))
 
     // Filter payments & schedule by filtered loans
-    const branchPayments = dbData.payments.filter(p => branchLoanIds.has(p.loan_id))
-    const branchSchedule = dbData.emiSchedule.filter(s => branchLoanIds.has(s.loan_id))
-    const branchIncome = dbData.income.filter(i => !i.loan_id || branchLoanIds.has(i.loan_id))
-    const branchExpenses = dbData.expenses
+    const branchPayments = data.payments.filter(p => branchLoanIds.has(p.loan_id))
+    const branchSchedule = data.emiSchedule.filter(s => branchLoanIds.has(s.loan_id))
+    const branchIncome = data.income.filter(i => !i.loan_id || branchLoanIds.has(i.loan_id))
+    const branchExpenses = data.expenses
 
     // Date range helper filter functions
     const isSameDay = (d: string | null | undefined, target: string): boolean => Boolean(d && dayjs(d).format('YYYY-MM-DD') === target)
@@ -403,7 +294,7 @@ export default function BusinessPerformanceReport({ onBack }: BusinessPerformanc
       const mtdVal = getSum(l => isInRange(l.loan_date, monthStart, refDate))
       const qtdVal = getSum(l => isInRange(l.loan_date, qtrStart, refDate))
       const ytdVal = getSum(l => isInRange(l.loan_date, fyStart, refDate))
-      const targetQuarterVal = Math.round(Math.max(100000, qtdVal * 1.15))
+      const targetQuarterVal = qtdVal > 0 ? Math.round(qtdVal * 1.15) : 0
 
       return { opening, lastYear, lastMonthEnd: lastMonthEndVal, prevDay: prevDayVal, today: todayVal, mtd: mtdVal, qtd: qtdVal, ytd: ytdVal, targetQuarter: targetQuarterVal }
     }
@@ -568,11 +459,13 @@ export default function BusinessPerformanceReport({ onBack }: BusinessPerformanc
     // --- 7. RANKINGS ACROSS BRANCHES ---
     // Compute comparative metrics for Namakkal, Aniyapuram, Vallipuram
     const branchesToRank = ['Namakkal', 'Aniyapuram', 'Vallipuram']
+    const allLoans = dbData?.loans || []
+    const allPayments = dbData?.payments || []
     const branchScores = branchesToRank.map(bName => {
       const bNorm = norm(bName)
-      const bLoans = dbData.loans.filter(l => norm(l.branch) === bNorm)
+      const bLoans = allLoans.filter(l => norm(l.branch) === bNorm)
       const bLoanIds = new Set(bLoans.map(l => l.id))
-      const bPayments = dbData.payments.filter(p => bLoanIds.has(p.loan_id))
+      const bPayments = allPayments.filter(p => bLoanIds.has(p.loan_id))
       const disb = bLoans.reduce((s, l) => s + Number(l.loan_amount || 0), 0)
       const col = bPayments.reduce((s, p) => s + Number(p.amount_paid || 0), 0)
       return { branch: bName, disb, col }
@@ -727,7 +620,7 @@ export default function BusinessPerformanceReport({ onBack }: BusinessPerformanc
         ]
       }
     ]
-  }, [dbData, dataSourceMode, selectedBranch, refDate, fyStart, prevFyEnd, lastMonthEnd, prevDay, todayStr, prevDayStr, lastMonthEndStr, openingStr, lastYearStr])
+  }, [dbData, selectedBranch, refDate, fyStart, prevFyEnd, lastMonthEnd, prevDay, todayStr, prevDayStr, lastMonthEndStr, openingStr, lastYearStr])
 
   const activeSections = dynamicSections
 
@@ -835,34 +728,6 @@ export default function BusinessPerformanceReport({ onBack }: BusinessPerformanc
               className="px-2 py-0.5 rounded border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
             />
           </div>
-
-          {/* Mode Switcher: Live DB vs Sample Template */}
-          <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg border border-slate-200 text-[11px] font-bold">
-            <button
-              onClick={() => setDataSourceMode('live')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                dataSourceMode === 'live'
-                  ? 'bg-white text-emerald-700 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="Calculated dynamically from real dashboard & Supabase tables"
-            >
-              <Database className="w-3 h-3 text-emerald-600" />
-              Live DB Data
-            </button>
-            <button
-              onClick={() => setDataSourceMode('template')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                dataSourceMode === 'template'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="View illustrative benchmark template sheet"
-            >
-              <Sparkles className="w-3 h-3 text-blue-600" />
-              Template Data
-            </button>
-          </div>
         </div>
 
         {/* Right Action Buttons */}
@@ -924,24 +789,16 @@ export default function BusinessPerformanceReport({ onBack }: BusinessPerformanc
                   <span className="px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-blue-700 font-bold text-xs">
                     {selectedBranch === 'All Branches' ? 'All Operating Branches' : `${selectedBranch} Branch`}
                   </span>
-                  {dataSourceMode === 'live' ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Live Data Linked
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold">
-                      Template Mode
-                    </span>
-                  )}
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Live Data Linked
+                  </span>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
                   <span>Business position as on <strong className="text-slate-800 font-bold">{refDate.format('DD/MM/YYYY')}</strong></span>
                   <span>•</span>
                   <span className="italic text-slate-400">
-                    {dataSourceMode === 'live'
-                      ? 'Live real-time operational aggregates synced with Catalyst ERP.'
-                      : 'Template: replace illustrative figures with actual data before operational use.'}
+                    Live real-time operational aggregates synced with Catalyst ERP.
                   </span>
                 </div>
               </div>
@@ -1192,8 +1049,8 @@ export default function BusinessPerformanceReport({ onBack }: BusinessPerformanc
 
         <div className="text-[11px] text-slate-500 font-medium hidden sm:flex items-center gap-3">
           <span className="flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-full ${dataSourceMode === 'live' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
-            {dataSourceMode === 'live' ? 'Connected to Supabase Live DB' : 'Template Baseline'}
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Connected to Supabase Live DB
           </span>
           <span>•</span>
           <span>7 Sections • 62 Rows • 20 Indicators</span>

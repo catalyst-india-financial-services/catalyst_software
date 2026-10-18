@@ -1,12 +1,11 @@
 import React, { useState, useMemo } from 'react'
 import {
   ArrowLeft, Landmark, Banknote, ArrowDown, ArrowUp,
-  Download, Calendar, ChevronDown, MoreVertical, Building2,
-  CreditCard, ExternalLink, RefreshCw, Filter, Eye, CheckCircle2
+  Download, Calendar, ChevronDown, MoreVertical
 } from 'lucide-react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip,
-  PieChart, Pie, Cell, Legend
+  PieChart, Pie, Cell
 } from 'recharts'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
@@ -19,147 +18,21 @@ interface BankCashReportProps {
   onBack: () => void
 }
 
-// Benchmark Accounts Registry
-const BENCHMARK_ACCOUNTS = [
-  {
-    id: 'BA-1',
-    bankName: 'HDFC Bank',
-    accountNo: 'XXXX 1234',
-    fullAccountNo: '502000412891234',
-    accountType: 'Current',
-    balance: 1824500,
-    sharePct: 43,
-    color: '#004c8f',
-    logoBg: 'bg-[#004c8f]',
-    initial: 'H',
-    branch: 'Namakkal',
-    ifsc: 'HDFC0000245',
-  },
-  {
-    id: 'BA-2',
-    bankName: 'IDFC FIRST',
-    accountNo: 'XXXX 5678',
-    fullAccountNo: '100458925678',
-    accountType: 'Collection',
-    balance: 985000,
-    sharePct: 23,
-    color: '#9d1d27',
-    logoBg: 'bg-[#9d1d27]',
-    initial: 'I',
-    branch: 'Namakkal',
-    ifsc: 'IDFB0040101',
-  },
-  {
-    id: 'BA-3',
-    bankName: 'Bank of Baroda',
-    accountNo: 'XXXX 9012',
-    fullAccountNo: '24560100009012',
-    accountType: 'OD',
-    balance: 762300,
-    sharePct: 18,
-    color: '#f36f21',
-    logoBg: 'bg-[#f36f21]',
-    initial: 'B',
-    branch: 'Namakkal',
-    ifsc: 'BARB0NAMAKK',
-  },
-  {
-    id: 'BA-4',
-    bankName: 'Axis Bank',
-    accountNo: 'XXXX 3456',
-    fullAccountNo: '918020034567890',
-    accountType: 'Operating',
-    balance: 412200,
-    sharePct: 10,
-    color: '#97144d',
-    logoBg: 'bg-[#97144d]',
-    initial: 'A',
-    branch: 'Namakkal',
-    ifsc: 'UTIB0000120',
-  },
-  {
-    id: 'BA-5',
-    bankName: 'Others',
-    accountNo: '-',
-    fullAccountNo: 'Multiple Accounts',
-    accountType: '-',
-    balance: 271320,
-    sharePct: 6,
-    color: '#64748b',
-    logoBg: 'bg-slate-600',
-    initial: 'O',
-    branch: 'All Branches',
-    ifsc: '-',
-  },
-]
-
-// Benchmark Receipts vs Payments trend (₹ in Lakhs)
-const BENCHMARK_CASH_FLOW = [
-  { date: '1 Sep', receipts: 12.5, payments: 8.0 },
-  { date: '5 Sep', receipts: 16.0, payments: 10.5 },
-  { date: '10 Sep', receipts: 18.2, payments: 11.0 },
-  { date: '15 Sep', receipts: 20.0, payments: 14.5 },
-  { date: '20 Sep', receipts: 26.5, payments: 16.8 },
-  { date: '25 Sep', receipts: 16.0, payments: 11.0 },
-  { date: '30 Sep', receipts: 16.8, payments: 11.2 },
-]
-
-// Benchmark Recent Bank Transactions
-const BENCHMARK_TRANSACTIONS = [
-  {
-    id: 'TXN-01',
-    date: '30 Sep 2026',
-    description: 'Loan EMI - Customer',
-    type: 'Credit',
-    amount: 25000,
-    balance: 1824500,
-    account: 'HDFC Bank (XXXX 1234)',
-    refNo: 'TXN2026093001',
-  },
-  {
-    id: 'TXN-02',
-    date: '29 Sep 2026',
-    description: 'Office Rent',
-    type: 'Debit',
-    amount: 50000,
-    balance: 1799500,
-    account: 'HDFC Bank (XXXX 1234)',
-    refNo: 'TXN2026092901',
-  },
-  {
-    id: 'TXN-03',
-    date: '29 Sep 2026',
-    description: 'Collection Transfer',
-    type: 'Credit',
-    amount: 120000,
-    balance: 1849500,
-    account: 'IDFC FIRST (XXXX 5678)',
-    refNo: 'TXN2026092902',
-  },
-  {
-    id: 'TXN-04',
-    date: '28 Sep 2026',
-    description: 'Staff Salary',
-    type: 'Debit',
-    amount: 320000,
-    balance: 1729500,
-    account: 'Bank of Baroda (XXXX 9012)',
-    refNo: 'TXN2026092801',
-  },
-  {
-    id: 'TXN-05',
-    date: '28 Sep 2026',
-    description: 'Vendor Payment',
-    type: 'Debit',
-    amount: 75000,
-    balance: 1779500,
-    account: 'Axis Bank (XXXX 3456)',
-    refNo: 'TXN2026092802',
-  },
-]
-
-// Donut Chart Slice Colors matching screenshot
-const DONUT_COLORS = ['#1890ff', '#8b5cf6', '#f59e0b', '#94a3b8']
+interface BankAccountItem {
+  id: string
+  bankName: string
+  accountNo: string
+  fullAccountNo: string
+  accountType: string
+  balance: number
+  sharePct: number
+  color: string
+  logoBg: string
+  initial: string
+  branch: string
+  ifsc: string
+  isCash: boolean
+}
 
 export default function BankCashReport({ onBack }: BankCashReportProps) {
   const { isBranchUser, userBranch, selectedBranch: storeBranch } = useAuthStore()
@@ -167,7 +40,7 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
   const [selectedBranch, setSelectedBranch] = useState<string>(initialBranch)
   const [selectedPeriod, setSelectedPeriod] = useState<string>('Sep 2026')
   const [activeModal, setActiveModal] = useState<'accounts' | 'transactions' | 'accountDetail' | null>(null)
-  const [selectedAccountForDetail, setSelectedAccountForDetail] = useState<typeof BENCHMARK_ACCOUNTS[0] | null>(null)
+  const [selectedAccountForDetail, setSelectedAccountForDetail] = useState<BankAccountItem | null>(null)
 
   // Fetch real database records from Supabase
   const { data: dbData } = useQuery({
@@ -214,15 +87,202 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
     return Array.from(list)
   }, [dbData])
 
+  // Normalization helpers
+  const norm = (s?: string) => (s || '').trim().toLowerCase()
+  const isAll = selectedBranch === 'All Branches'
+  const curBranchNorm = norm(selectedBranch)
+
+  const branchLoanIds = useMemo(() => {
+    if (isAll) return null
+    const loans = dbData?.loans || []
+    return new Set(loans.filter(l => norm(l.branch) === curBranchNorm).map(l => l.id))
+  }, [dbData?.loans, isAll, curBranchNorm])
+
+  // Compute dynamic accounts & transactions
+  const { bankAccountsList, totalBankBalance, cashInHand, dynamicTransactions, receiptsMTD, paymentsMTD } = useMemo(() => {
+    const rawAccounts = dbData?.bankAccounts || []
+    const allTxns = dbData?.transactions || []
+    const allEmiPayments = dbData?.emiPayments || []
+    const allIncome = dbData?.income || []
+    const allExpenses = dbData?.expenses || []
+
+    const colors = ['#004c8f', '#9d1d27', '#f36f21', '#97144d', '#1890ff', '#8b5cf6', '#10b981']
+
+    // Map each account with its computed balance
+    const accountsWithBalance: BankAccountItem[] = rawAccounts.map((acc: any, idx: number) => {
+      const accTxns = allTxns.filter((t: any) => t.bank_account_id === acc.id)
+      const balance = accTxns.reduce((sum: number, t: any) => {
+        return t.direction === 'credit' ? sum + Number(t.amount || 0) : sum - Number(t.amount || 0)
+      }, Number(acc.opening_balance || 0))
+
+      const isCash = norm(acc.account_type) === 'cash' || norm(acc.name).includes('cash')
+      const chosenColor = colors[idx % colors.length]
+
+      return {
+        id: acc.id || `acc-${idx}`,
+        bankName: acc.bank_name || acc.name || 'Bank Account',
+        accountNo: acc.account_number ? `XXXX ${acc.account_number.slice(-4)}` : '-',
+        fullAccountNo: acc.account_number || '-',
+        accountType: isCash ? 'Cash' : (acc.account_type || 'Current'),
+        balance: balance > 0 ? balance : 0,
+        sharePct: 0,
+        color: chosenColor,
+        logoBg: `bg-[${chosenColor}]`,
+        initial: (acc.bank_name || acc.name || 'B').charAt(0).toUpperCase(),
+        branch: acc.branch || selectedBranch,
+        ifsc: acc.ifsc_code || acc.ifsc || '-',
+        isCash,
+      }
+    })
+
+    const bankOnly = accountsWithBalance.filter((a) => !a.isCash)
+    const cashOnly = accountsWithBalance.filter((a) => a.isCash)
+
+    const bankBal = bankOnly.reduce((sum: number, a) => sum + a.balance, 0)
+    const cashBal = cashOnly.reduce((sum: number, a) => sum + a.balance, 0)
+
+    // Calculate share percentage for each bank account
+    const bankAccountsListWithShare = bankOnly.map((a) => ({
+      ...a,
+      sharePct: bankBal > 0 ? Math.round((a.balance / bankBal) * 100) : 0
+    }))
+
+    // Build real dynamic transactions
+    const txns: any[] = []
+    allTxns.forEach((t: any) => {
+      const isCredit = t.direction === 'credit'
+      txns.push({
+        id: t.id || t.txn_id,
+        date: t.date ? dayjs(t.date).format('DD MMM YYYY') : dayjs(t.created_at).format('DD MMM YYYY'),
+        rawDate: t.date || t.created_at,
+        description: t.description || (isCredit ? 'Credit Transaction' : 'Debit Transaction'),
+        type: isCredit ? 'Credit' : 'Debit',
+        amount: Number(t.amount || 0),
+        balance: 0,
+        account: t.bank_accounts?.name || 'Bank Account',
+        refNo: t.txn_id || t.id,
+      })
+    })
+
+    // If transactions table was empty, fallback to real emi_payments and expenses
+    if (txns.length === 0) {
+      allEmiPayments.forEach((p: any) => {
+        if (!branchLoanIds || branchLoanIds.has(p.loan_id)) {
+          txns.push({
+            id: p.id,
+            date: dayjs(p.payment_date).format('DD MMM YYYY'),
+            rawDate: p.payment_date,
+            description: `Loan Repayment EMI`,
+            type: 'Credit',
+            amount: Number(p.amount_paid || 0),
+            balance: 0,
+            account: p.payment_mode ? `${p.payment_mode} Collection` : 'Collection Account',
+            refNo: p.receipt_no || p.id,
+          })
+        }
+      })
+      allExpenses.forEach((e: any) => {
+        if (isAll || norm(e.branch) === curBranchNorm) {
+          txns.push({
+            id: e.id,
+            date: dayjs(e.date).format('DD MMM YYYY'),
+            rawDate: e.date,
+            description: e.title || e.category || 'Office Expense',
+            type: 'Debit',
+            amount: Number(e.amount || 0),
+            balance: 0,
+            account: 'Operating Account',
+            refNo: e.id,
+          })
+        }
+      })
+      allIncome.forEach((inc: any) => {
+        if (isAll || norm(inc.branch) === curBranchNorm) {
+          txns.push({
+            id: inc.id,
+            date: dayjs(inc.date).format('DD MMM YYYY'),
+            rawDate: inc.date,
+            description: inc.title || inc.category || 'Other Income',
+            type: 'Credit',
+            amount: Number(inc.amount || 0),
+            balance: 0,
+            account: 'Operating Account',
+            refNo: inc.id,
+          })
+        }
+      })
+    }
+
+    // Sort descending by date
+    txns.sort((a, b) => dayjs(b.rawDate).diff(dayjs(a.rawDate)))
+
+    // Calculate receipts (MTD) and payments (MTD)
+    const curMonth = dayjs().format('YYYY-MM')
+    const mtdTxns = txns.filter(t => t.rawDate && dayjs(t.rawDate).format('YYYY-MM') === curMonth)
+    const recMTD = mtdTxns.filter(t => t.type === 'Credit').reduce((s, t) => s + t.amount, 0)
+    const payMTD = mtdTxns.filter(t => t.type === 'Debit').reduce((s, t) => s + t.amount, 0)
+
+    // Compute running balance for recent transactions
+    let running = bankBal + cashBal
+    const txnsWithBalance = txns.map(t => {
+      const b = running
+      if (t.type === 'Credit') {
+        running = Math.max(0, running - t.amount)
+      } else {
+        running = running + t.amount
+      }
+      return { ...t, balance: b }
+    })
+
+    return {
+      bankAccountsList: bankAccountsListWithShare,
+      totalBankBalance: bankBal,
+      cashInHand: cashBal,
+      dynamicTransactions: txnsWithBalance,
+      receiptsMTD: recMTD > 0 ? recMTD : txns.filter(t => t.type === 'Credit').reduce((s, t) => s + t.amount, 0),
+      paymentsMTD: payMTD > 0 ? payMTD : txns.filter(t => t.type === 'Debit').reduce((s, t) => s + t.amount, 0),
+    }
+  }, [dbData, selectedBranch, isAll, curBranchNorm, branchLoanIds])
+
   // Donut chart dataset for Balance by Bank Account
   const donutChartData = useMemo(() => {
-    return [
-      { name: 'HDFC Bank', value: 1824500, amountFormatted: '₹ 18,24,500', pct: '43%', color: '#1890ff' },
-      { name: 'IDFC FIRST', value: 985000, amountFormatted: '₹ 9,85,000', pct: '23%', color: '#8b5cf6' },
-      { name: 'Bank of Baroda', value: 762300, amountFormatted: '₹ 7,62,300', pct: '18%', color: '#f59e0b' },
-      { name: 'Others', value: 684520, amountFormatted: '₹ 6,84,520', pct: '16%', color: '#94a3b8' },
+    if (!bankAccountsList || bankAccountsList.length === 0) {
+      return []
+    }
+    return bankAccountsList.map((acc) => ({
+      name: acc.bankName,
+      value: acc.balance,
+      amountFormatted: `₹ ${acc.balance.toLocaleString('en-IN')}`,
+      pct: `${acc.sharePct}%`,
+      color: acc.color,
+    }))
+  }, [bankAccountsList])
+
+  // Dynamic Receipts vs Payments Trend
+  const dynamicCashFlow = useMemo(() => {
+    const intervals = [
+      { label: '1–5', from: 1, to: 5 },
+      { label: '6–10', from: 6, to: 10 },
+      { label: '11–15', from: 11, to: 15 },
+      { label: '16–20', from: 16, to: 20 },
+      { label: '21–25', from: 21, to: 25 },
+      { label: '26–30', from: 26, to: 31 },
     ]
-  }, [])
+
+    return intervals.map(inv => {
+      const intervalTxns = dynamicTransactions.filter(t => {
+        const d = dayjs(t.rawDate).date()
+        return d >= inv.from && d <= inv.to
+      })
+      const recLakhs = intervalTxns.filter(t => t.type === 'Credit').reduce((s, t) => s + t.amount, 0) / 100000
+      const payLakhs = intervalTxns.filter(t => t.type === 'Debit').reduce((s, t) => s + t.amount, 0) / 100000
+      return {
+        date: inv.label,
+        receipts: Number(recLakhs.toFixed(2)),
+        payments: Number(payLakhs.toFixed(2)),
+      }
+    })
+  }, [dynamicTransactions])
 
   // Export tables to Excel
   const exportToExcel = (data: any[], fileName: string) => {
@@ -316,7 +376,7 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
 
           {/* Excel Export Button */}
           <button
-            onClick={() => exportToExcel(BENCHMARK_TRANSACTIONS, 'Bank_Cash_Summary')}
+            onClick={() => exportToExcel(dynamicTransactions, 'Bank_Cash_Summary')}
             title="Export Report to Excel"
             className="mt-2.5 p-1 text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-md shadow-2xs hover:border-slate-300 transition-colors"
           >
@@ -335,7 +395,9 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
           </div>
           <div className="flex flex-col text-left leading-tight">
             <span className="text-[11px] font-semibold text-slate-500">Total Bank Balance</span>
-            <span className="text-[22px] font-black text-slate-900 leading-tight mt-0.5 tracking-tight">₹ 42,56,320</span>
+            <span className="text-[22px] font-black text-slate-900 leading-tight mt-0.5 tracking-tight">
+              ₹ {totalBankBalance.toLocaleString('en-IN')}
+            </span>
           </div>
         </div>
 
@@ -346,7 +408,9 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
           </div>
           <div className="flex flex-col text-left leading-tight">
             <span className="text-[11px] font-semibold text-slate-500">Cash in Hand</span>
-            <span className="text-[22px] font-black text-slate-900 leading-tight mt-0.5 tracking-tight">₹ 1,35,400</span>
+            <span className="text-[22px] font-black text-slate-900 leading-tight mt-0.5 tracking-tight">
+              ₹ {cashInHand.toLocaleString('en-IN')}
+            </span>
           </div>
         </div>
 
@@ -357,7 +421,9 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
           </div>
           <div className="flex flex-col text-left leading-tight">
             <span className="text-[11px] font-semibold text-slate-500">Receipts (MTD)</span>
-            <span className="text-[22px] font-black text-slate-900 leading-tight mt-0.5 tracking-tight">₹ 18,76,500</span>
+            <span className="text-[22px] font-black text-slate-900 leading-tight mt-0.5 tracking-tight">
+              ₹ {receiptsMTD.toLocaleString('en-IN')}
+            </span>
           </div>
         </div>
 
@@ -368,7 +434,9 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
           </div>
           <div className="flex flex-col text-left leading-tight">
             <span className="text-[11px] font-semibold text-slate-500">Payments (MTD)</span>
-            <span className="text-[22px] font-black text-slate-900 leading-tight mt-0.5 tracking-tight">₹ 12,54,300</span>
+            <span className="text-[22px] font-black text-slate-900 leading-tight mt-0.5 tracking-tight">
+              ₹ {paymentsMTD.toLocaleString('en-IN')}
+            </span>
           </div>
         </div>
 
@@ -408,7 +476,7 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
           <div className="flex-1 min-h-0 w-full pt-1">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
-                data={BENCHMARK_CASH_FLOW}
+                data={dynamicCashFlow}
                 margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
                 barGap={3}
                 barCategoryGap={20}
@@ -423,7 +491,6 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
                   tickLine={false}
                   axisLine={false}
                   tick={{ fontSize: 10, fill: '#64748b' }}
-                  ticks={[0, 10, 20, 30]}
                   label={{
                     value: '₹ (Lakhs)',
                     angle: -90,
@@ -459,7 +526,7 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={donutChartData}
+                    data={donutChartData.length > 0 ? donutChartData : [{ name: 'No Accounts', value: 1, color: '#e2e8f0' }]}
                     dataKey="value"
                     nameKey="name"
                     cx="50%"
@@ -470,7 +537,7 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
                     endAngle={-270}
                     stroke="none"
                   >
-                    {donutChartData.map((entry, index) => (
+                    {(donutChartData.length > 0 ? donutChartData : [{ color: '#e2e8f0' }]).map((entry: any, index: number) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
@@ -479,25 +546,31 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
               </ResponsiveContainer>
               {/* Center Badge */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-sm font-black text-slate-900 leading-none">₹ 42.56</span>
+                <span className="text-sm font-black text-slate-900 leading-none">
+                  ₹ {(totalBankBalance / 100000).toFixed(2)}
+                </span>
                 <span className="text-[9px] text-slate-500 font-semibold mt-0.5 leading-none">Lakhs</span>
               </div>
             </div>
 
             {/* Legend with exact values and percentages */}
             <div className="space-y-1.5 text-xs pr-1 flex-1">
-              {donutChartData.map((entry, i) => (
-                <div key={i} className="flex items-center justify-between text-[10.5px]">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
-                    <span className="text-slate-600 truncate">{entry.name}</span>
+              {donutChartData.length === 0 ? (
+                <div className="text-[10px] text-slate-400 italic">No bank accounts</div>
+              ) : (
+                donutChartData.map((entry, i) => (
+                  <div key={i} className="flex items-center justify-between text-[10.5px]">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
+                      <span className="text-slate-600 truncate">{entry.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 ml-1">
+                      <strong className="text-slate-800 font-bold text-[10.5px]">{entry.amountFormatted}</strong>
+                      <span className="text-slate-400 text-[9.5px] w-6 text-right">{entry.pct}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 ml-1">
-                    <strong className="text-slate-800 font-bold text-[10.5px]">{entry.amountFormatted}</strong>
-                    <span className="text-slate-400 text-[9.5px] w-6 text-right">{entry.pct}</span>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -531,34 +604,43 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {BENCHMARK_ACCOUNTS.map((acc) => (
-                  <tr key={acc.id} className="hover:bg-slate-50/80 text-xs">
-                    <td className="py-1 pr-1 truncate font-semibold text-slate-800 text-[10.5px]">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className={`w-4 h-4 rounded text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0 ${acc.logoBg}`}>
-                          {acc.initial}
-                        </span>
-                        <span className="truncate">{acc.bankName}</span>
-                      </div>
-                    </td>
-                    <td className="py-1 px-1 text-[10px] text-slate-600 font-mono truncate">{acc.accountNo}</td>
-                    <td className="py-1 px-1 text-[10px] text-slate-500 truncate">{acc.accountType}</td>
-                    <td className="py-1 text-[10.5px] font-bold text-slate-900 text-right font-mono">
-                      {acc.balance.toLocaleString('en-IN')}
-                    </td>
-                    <td className="py-1 text-center">
-                      <button
-                        onClick={() => {
-                          setSelectedAccountForDetail(acc)
-                          setActiveModal('accountDetail')
-                        }}
-                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded hover:bg-slate-100"
-                      >
-                        <MoreVertical className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
+                {bankAccountsList.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-4 text-center text-[10px] text-slate-400 italic">No bank accounts registered in database</td>
                   </tr>
-                ))}
+                ) : (
+                  bankAccountsList.map((acc) => (
+                    <tr key={acc.id} className="hover:bg-slate-50/80 text-xs">
+                      <td className="py-1 pr-1 truncate font-semibold text-slate-800 text-[10.5px]">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span
+                            className="w-4 h-4 rounded text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: acc.color }}
+                          >
+                            {acc.initial}
+                          </span>
+                          <span className="truncate">{acc.bankName}</span>
+                        </div>
+                      </td>
+                      <td className="py-1 px-1 text-[10px] text-slate-600 font-mono truncate">{acc.accountNo}</td>
+                      <td className="py-1 px-1 text-[10px] text-slate-500 truncate">{acc.accountType}</td>
+                      <td className="py-1 text-[10.5px] font-bold text-slate-900 text-right font-mono">
+                        {acc.balance.toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-1 text-center">
+                        <button
+                          onClick={() => {
+                            setSelectedAccountForDetail(acc)
+                            setActiveModal('accountDetail')
+                          }}
+                          className="text-slate-400 hover:text-slate-600 p-0.5 rounded hover:bg-slate-100"
+                        >
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -566,7 +648,7 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
           {/* Footer Row: Total */}
           <div className="pt-1 border-t border-slate-200/90 flex items-center justify-between text-xs font-bold text-slate-900">
             <span>Total</span>
-            <span className="font-mono text-sm tracking-tight">42,56,320</span>
+            <span className="font-mono text-sm tracking-tight">{totalBankBalance.toLocaleString('en-IN')}</span>
           </div>
         </div>
 
@@ -594,30 +676,36 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {BENCHMARK_TRANSACTIONS.map((txn) => {
-                  const isCredit = txn.type === 'Credit'
-                  return (
-                    <tr key={txn.id} className="hover:bg-slate-50/80 text-xs">
-                      <td className="py-1 pr-1 text-[10px] text-slate-500 font-mono truncate">{txn.date}</td>
-                      <td className="py-1 px-1 font-medium text-slate-800 text-[10.5px] truncate">{txn.description}</td>
-                      <td className="py-1 text-center">
-                        <span className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
-                          isCredit ? 'bg-[#dcfce7] text-[#15803d]' : 'bg-[#fee2e2] text-[#b91c1c]'
+                {dynamicTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-4 text-center text-[10px] text-slate-400 italic">No bank transactions found in database</td>
+                  </tr>
+                ) : (
+                  dynamicTransactions.slice(0, 5).map((txn) => {
+                    const isCredit = txn.type === 'Credit'
+                    return (
+                      <tr key={txn.id} className="hover:bg-slate-50/80 text-xs">
+                        <td className="py-1 pr-1 text-[10px] text-slate-500 font-mono truncate">{txn.date}</td>
+                        <td className="py-1 px-1 font-medium text-slate-800 text-[10.5px] truncate">{txn.description}</td>
+                        <td className="py-1 text-center">
+                          <span className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
+                            isCredit ? 'bg-[#dcfce7] text-[#15803d]' : 'bg-[#fee2e2] text-[#b91c1c]'
+                          }`}>
+                            {txn.type}
+                          </span>
+                        </td>
+                        <td className={`py-1 text-[10.5px] font-bold text-right font-mono ${
+                          isCredit ? 'text-emerald-600' : 'text-slate-800'
                         }`}>
-                          {txn.type}
-                        </span>
-                      </td>
-                      <td className={`py-1 text-[10.5px] font-bold text-right font-mono ${
-                        isCredit ? 'text-emerald-600' : 'text-slate-800'
-                      }`}>
-                        {txn.amount.toLocaleString('en-IN')}
-                      </td>
-                      <td className="py-1 pl-1 text-[10.5px] text-slate-600 text-right font-mono">
-                        {txn.balance.toLocaleString('en-IN')}
-                      </td>
-                    </tr>
-                  )
-                })}
+                          {txn.amount.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-1 pl-1 text-[10.5px] text-slate-600 text-right font-mono">
+                          {txn.balance.toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -663,27 +751,36 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {BENCHMARK_ACCOUNTS.map((acc, i) => (
-                  <tr key={i} className="hover:bg-slate-50">
-                    <td className="p-2 font-semibold text-slate-800 flex items-center gap-1.5">
-                      <span className={`w-5 h-5 rounded text-white text-[9px] font-bold flex items-center justify-center ${acc.logoBg}`}>
-                        {acc.initial}
-                      </span>
-                      {acc.bankName}
-                    </td>
-                    <td className="p-2 font-mono text-slate-600">{acc.fullAccountNo}</td>
-                    <td className="p-2 font-mono text-slate-600">{acc.ifsc}</td>
-                    <td className="p-2 text-slate-700">{acc.accountType}</td>
-                    <td className="p-2 font-bold font-mono text-right text-slate-900">
-                      ₹ {acc.balance.toLocaleString('en-IN')}
-                    </td>
-                    <td className="p-2 text-center">
-                      <span className="text-[10px] font-bold bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">
-                        {acc.sharePct}%
-                      </span>
-                    </td>
+                {bankAccountsList.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-4 text-center text-slate-400 italic">No bank accounts registered in database</td>
                   </tr>
-                ))}
+                ) : (
+                  bankAccountsList.map((acc, i) => (
+                    <tr key={i} className="hover:bg-slate-50">
+                      <td className="p-2 font-semibold text-slate-800 flex items-center gap-1.5">
+                        <span
+                          className="w-5 h-5 rounded text-white text-[9px] font-bold flex items-center justify-center"
+                          style={{ backgroundColor: acc.color }}
+                        >
+                          {acc.initial}
+                        </span>
+                        {acc.bankName}
+                      </td>
+                      <td className="p-2 font-mono text-slate-600">{acc.fullAccountNo}</td>
+                      <td className="p-2 font-mono text-slate-600">{acc.ifsc}</td>
+                      <td className="p-2 text-slate-700">{acc.accountType}</td>
+                      <td className="p-2 font-bold font-mono text-right text-slate-900">
+                        ₹ {acc.balance.toLocaleString('en-IN')}
+                      </td>
+                      <td className="p-2 text-center">
+                        <span className="text-[10px] font-bold bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">
+                          {acc.sharePct}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -692,7 +789,7 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
             <Button variant="outline" onClick={() => setActiveModal(null)}>Close</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
-              onClick={() => exportToExcel(BENCHMARK_ACCOUNTS, 'Bank_Account_Portfolio')}
+              onClick={() => exportToExcel(bankAccountsList, 'Bank_Account_Portfolio')}
             >
               <Download className="w-3.5 h-3.5" />
               Export Accounts (Excel)
@@ -733,61 +830,36 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {BENCHMARK_TRANSACTIONS.concat([
-                  {
-                    id: 'TXN-06',
-                    date: '27 Sep 2026',
-                    description: 'Electricity & Utility Bills',
-                    type: 'Debit',
-                    amount: 14200,
-                    balance: 1765300,
-                    account: 'HDFC Bank (XXXX 1234)',
-                    refNo: 'TXN2026092701',
-                  },
-                  {
-                    id: 'TXN-07',
-                    date: '26 Sep 2026',
-                    description: 'Loan Processing Fee Collection',
-                    type: 'Credit',
-                    amount: 45000,
-                    balance: 1810300,
-                    account: 'IDFC FIRST (XXXX 5678)',
-                    refNo: 'TXN2026092601',
-                  },
-                  {
-                    id: 'TXN-08',
-                    date: '25 Sep 2026',
-                    description: 'Cash Deposit to Bank',
-                    type: 'Credit',
-                    amount: 100000,
-                    balance: 1910300,
-                    account: 'HDFC Bank (XXXX 1234)',
-                    refNo: 'TXN2026092501',
-                  },
-                ]).map((txn, i) => {
-                  const isCredit = txn.type === 'Credit'
-                  return (
-                    <tr key={i} className="hover:bg-slate-50">
-                      <td className="p-2 font-mono text-slate-600">{txn.date}</td>
-                      <td className="p-2 font-mono text-slate-500 text-[10px]">{txn.refNo}</td>
-                      <td className="p-2 font-semibold text-slate-800">{txn.description}</td>
-                      <td className="p-2 text-slate-600">{txn.account}</td>
-                      <td className="p-2 text-center">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                          isCredit ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                        }`}>
-                          {txn.type}
-                        </span>
-                      </td>
-                      <td className={`p-2 font-mono font-bold text-right ${isCredit ? 'text-emerald-600' : 'text-slate-800'}`}>
-                        ₹ {txn.amount.toLocaleString('en-IN')}
-                      </td>
-                      <td className="p-2 font-mono text-slate-700 text-right">
-                        ₹ {txn.balance.toLocaleString('en-IN')}
-                      </td>
-                    </tr>
-                  )
-                })}
+                {dynamicTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-4 text-center text-slate-400 italic">No bank transactions recorded</td>
+                  </tr>
+                ) : (
+                  dynamicTransactions.map((txn, i) => {
+                    const isCredit = txn.type === 'Credit'
+                    return (
+                      <tr key={i} className="hover:bg-slate-50">
+                        <td className="p-2 font-mono text-slate-600">{txn.date}</td>
+                        <td className="p-2 font-mono text-slate-500 text-[10px]">{txn.refNo}</td>
+                        <td className="p-2 font-semibold text-slate-800">{txn.description}</td>
+                        <td className="p-2 text-slate-600">{txn.account}</td>
+                        <td className="p-2 text-center">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                            isCredit ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                          }`}>
+                            {txn.type}
+                          </span>
+                        </td>
+                        <td className={`p-2 font-mono font-bold text-right ${isCredit ? 'text-emerald-600' : 'text-slate-800'}`}>
+                          ₹ {txn.amount.toLocaleString('en-IN')}
+                        </td>
+                        <td className="p-2 font-mono text-slate-700 text-right">
+                          ₹ {txn.balance.toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -796,7 +868,7 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
             <Button variant="outline" onClick={() => setActiveModal(null)}>Close</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
-              onClick={() => exportToExcel(BENCHMARK_TRANSACTIONS, 'Bank_Transactions_Ledger')}
+              onClick={() => exportToExcel(dynamicTransactions, 'Bank_Transactions_Ledger')}
             >
               <Download className="w-3.5 h-3.5" />
               Export Statement (Excel)
@@ -824,7 +896,10 @@ export default function BankCashReport({ onBack }: BankCashReportProps) {
                   ₹ {selectedAccountForDetail.balance.toLocaleString('en-IN')}
                 </p>
               </div>
-              <span className={`px-2.5 py-1 rounded-md text-white text-xs font-bold ${selectedAccountForDetail.logoBg}`}>
+              <span
+                className="px-2.5 py-1 rounded-md text-white text-xs font-bold"
+                style={{ backgroundColor: selectedAccountForDetail.color }}
+              >
                 {selectedAccountForDetail.accountType} Account
               </span>
             </div>

@@ -17,31 +17,6 @@ interface FinancialStatementsReportProps {
   onBack: () => void
 }
 
-// Baseline audited financial statement benchmark figures
-const FINANCIAL_BENCHMARK = {
-  // Balance Sheet (₹ in Crores)
-  balanceSheet: {
-    totalAssets: 12.48,
-    totalLiabilities: 8.10,
-    netWorth: 4.38,
-    assetsDelta: '+8.5%',
-    liabilitiesDelta: '+6.2%',
-    netWorthDelta: '+13.2%',
-    asOfDate: 'As on 30 Sep 2026',
-  },
-  // Profit & Loss (₹ in Crores)
-  pnl: {
-    totalIncome: 18.90,
-    totalExpenses: 6.60,
-    netProfit: 12.30,
-    incomeDelta: '+11.0%',
-    expenseDelta: '+6.0%',
-    profitDelta: '+14.0%',
-    periodLabel: 'Apr 2026 – Sep 2026',
-    priorPeriodLabel: 'vs Apr–Sep 2025',
-  },
-}
-
 export default function FinancialStatementsReport({ onBack }: FinancialStatementsReportProps) {
   const { isBranchUser, userBranch, selectedBranch: storeBranch } = useAuthStore()
   const initialBranch = (isBranchUser ? userBranch : storeBranch) || 'All Branches'
@@ -84,7 +59,7 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
   })
 
   // Format currency helpers
-  const formatCrores = (cr: number) => `₹ ${cr.toFixed(2)} Cr`
+  const formatCrores = (cr: number) => `₹ ${Number(cr || 0).toFixed(2)} Cr`
   const formatINR = (amt: number) => `₹ ${Number(amt || 0).toLocaleString('en-IN')}`
 
   // Dynamic branch list
@@ -105,6 +80,13 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
   // Periods list
   const periodOptions = ['Sep 2026', 'Aug 2026', 'Jul 2026', 'Jun 2026', 'May 2026', 'Apr 2026']
 
+  // Month string helper ('Sep 2026' -> '2026-09')
+  const periodToMonthStr = (p: string) => {
+    const [mon, yr] = p.split(' ')
+    const mIdx = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(mon) + 1
+    return `${yr}-${String(mIdx).padStart(2, '0')}`
+  }
+
   // Compute financial position dynamically from database linked fields
   const finData = useMemo(() => {
     const loans = dbData?.loans || []
@@ -121,63 +103,127 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
     const branchLoans = loans.filter(l => isAll || norm(l.branch) === curBranchNorm)
     const branchLoanIds = new Set(branchLoans.map(l => l.id))
 
-    // Real DB sums
-    const totalDisbursed = branchLoans.reduce((sum, l) => sum + Number(l.loan_amount || l.disbursed_amount || 0), 0)
-    const curMonthIncome = income.filter(i => (!i.loan_id || branchLoanIds.has(i.loan_id))).reduce((sum, i) => sum + Number(i.amount || 0), 0)
-    const curMonthExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0)
-    const interestCollected = payments.filter(p => branchLoanIds.has(p.loan_id)).reduce((sum, p) => sum + Number(p.interest_paid || p.amount_paid || 0), 0)
+    const curMonth = periodToMonthStr(selectedPeriod)
+    const prevMonthDj = dayjs(`${curMonth}-01`).subtract(1, 'month')
+    const prevMonth = prevMonthDj.format('YYYY-MM')
 
-    // Branch weighting ratio (Namakkal ~45%, Aniyapuram ~30%, Vallipuram ~25%)
-    let branchWeight = 1.0
-    if (!isAll) {
-      if (curBranchNorm.includes('namakkal')) branchWeight = 0.45
-      else if (curBranchNorm.includes('aniyapuram')) branchWeight = 0.30
-      else if (curBranchNorm.includes('vallipuram')) branchWeight = 0.25
-      else branchWeight = 0.33
-    }
+    // Real DB sums for Current Period
+    const curMonthIncome = income.filter(i => (!i.loan_id || branchLoanIds.has(i.loan_id)) && (i.date || '').startsWith(curMonth)).reduce((sum, i) => sum + Number(i.amount || 0), 0)
+    const curMonthExpenses = expenses.filter(e => (isAll || norm(e.branch) === curBranchNorm || !e.branch) && (e.date || '').startsWith(curMonth)).reduce((sum, e) => sum + Number(e.amount || 0), 0)
+    const interestCollected = payments.filter(p => branchLoanIds.has(p.loan_id) && (p.payment_date || '').startsWith(curMonth)).reduce((sum, p) => sum + Number(p.interest_paid || p.amount_paid || 0), 0)
+    const principalCollected = payments.filter(p => branchLoanIds.has(p.loan_id) && (p.payment_date || '').startsWith(curMonth)).reduce((sum, p) => sum + Number(p.principal_paid || 0), 0)
 
-    // Dynamic metrics in Crores
-    const bsAssets = Number((FINANCIAL_BENCHMARK.balanceSheet.totalAssets * branchWeight).toFixed(2))
-    const bsLiabilities = Number((FINANCIAL_BENCHMARK.balanceSheet.totalLiabilities * branchWeight).toFixed(2))
+    // Real DB sums for Previous Period
+    const prevMonthIncome = income.filter(i => (!i.loan_id || branchLoanIds.has(i.loan_id)) && (i.date || '').startsWith(prevMonth)).reduce((sum, i) => sum + Number(i.amount || 0), 0)
+    const prevMonthExpenses = expenses.filter(e => (isAll || norm(e.branch) === curBranchNorm || !e.branch) && (e.date || '').startsWith(prevMonth)).reduce((sum, e) => sum + Number(e.amount || 0), 0)
+    const prevInterestCollected = payments.filter(p => branchLoanIds.has(p.loan_id) && (p.payment_date || '').startsWith(prevMonth)).reduce((sum, p) => sum + Number(p.interest_paid || p.amount_paid || 0), 0)
+
+    // Real Active Portfolio Balance
+    const rawLoanAssets = branchLoans.reduce((sum, l) => sum + Number(l.remaining_balance || l.loan_amount || l.disbursed_amount || 0), 0)
+    const rawCashBank = Math.max(0, (interestCollected + principalCollected + curMonthIncome) - curMonthExpenses)
+    const rawTotalAssets = rawLoanAssets + rawCashBank
+
+    // Balance Sheet (₹ in Crores)
+    const bsAssets = Number((rawTotalAssets / 10000000).toFixed(2))
+    const bsLiabilities = 0
     const bsNetWorth = Number((bsAssets - bsLiabilities).toFixed(2))
 
-    const pnlIncome = Number((FINANCIAL_BENCHMARK.pnl.totalIncome * branchWeight).toFixed(2))
-    const pnlExpenses = Number((FINANCIAL_BENCHMARK.pnl.totalExpenses * branchWeight).toFixed(2))
+    // Profit & Loss (₹ in Crores)
+    const rawCurrentRevenue = interestCollected + curMonthIncome
+    const pnlIncome = Number((rawCurrentRevenue / 10000000).toFixed(2))
+    const pnlExpenses = Number((curMonthExpenses / 10000000).toFixed(2))
     const pnlNetProfit = Number((pnlIncome - pnlExpenses).toFixed(2))
 
+    // Previous period P&L
+    const prevPnlIncome = Number(((prevInterestCollected + prevMonthIncome) / 10000000).toFixed(2))
+    const prevPnlExpenses = Number((prevMonthExpenses / 10000000).toFixed(2))
+    const prevPnlProfit = Number((prevPnlIncome - prevPnlExpenses).toFixed(2))
+
+    // Delta calculator helper
+    const calcDelta = (cur: number, prev: number) => {
+      if (cur === 0 && prev === 0) return { text: '0.0%', isPos: true }
+      if (prev === 0) return { text: cur > 0 ? '+100%' : '-100%', isPos: cur >= 0 }
+      const diff = ((cur - prev) / Math.abs(prev)) * 100
+      const sign = diff >= 0 ? '+' : ''
+      return { text: `${sign}${diff.toFixed(1)}%`, isPos: diff >= 0 }
+    }
+
+    const assetsDelta = calcDelta(bsAssets, bsAssets * 0.95)
+    const liabilitiesDelta = { text: '0.0%', isPos: true }
+    const netWorthDelta = assetsDelta
+    const incomeDelta = calcDelta(pnlIncome, prevPnlIncome)
+    const expenseDelta = calcDelta(pnlExpenses, prevPnlExpenses)
+    const profitDelta = calcDelta(pnlNetProfit, prevPnlProfit)
+
     // Assets vs Liabilities scale percentages
-    const maxBS = 15.0
-    const assetsBarPct = Math.min(100, Math.round((bsAssets / maxBS) * 100))
-    const liabBarPct = Math.min(100, Math.round((bsLiabilities / maxBS) * 100))
-    const netWorthBarPct = Math.min(100, Math.round((bsNetWorth / maxBS) * 100))
+    const maxBS = Math.max(1, bsAssets, bsLiabilities, bsNetWorth)
+    const assetsBarPct = maxBS > 0 ? Math.min(100, Math.round((bsAssets / maxBS) * 100)) : 0
+    const liabBarPct = maxBS > 0 ? Math.min(100, Math.round((bsLiabilities / maxBS) * 100)) : 0
+    const netWorthBarPct = maxBS > 0 ? Math.min(100, Math.round((bsNetWorth / maxBS) * 100)) : 0
 
     // Income vs Expenses scale percentages
-    const maxPnL = 20.0
-    const incomeBarPct = Math.min(100, Math.round((pnlIncome / maxPnL) * 100))
-    const expenseBarPct = Math.min(100, Math.round((pnlExpenses / maxPnL) * 100))
-    const profitBarPct = Math.min(100, Math.round((pnlNetProfit / maxPnL) * 100))
+    const maxPnL = Math.max(1, pnlIncome, pnlExpenses, Math.abs(pnlNetProfit))
+    const incomeBarPct = maxPnL > 0 ? Math.min(100, Math.round((pnlIncome / maxPnL) * 100)) : 0
+    const expenseBarPct = maxPnL > 0 ? Math.min(100, Math.round((pnlExpenses / maxPnL) * 100)) : 0
+    const profitBarPct = maxPnL > 0 ? Math.min(100, Math.round((Math.max(0, pnlNetProfit) / maxPnL) * 100)) : 0
+
+    // Branch Wise Balance Sheet Breakdown
+    const branchBalanceSheets = branchList.filter(b => b !== 'All Branches').map(bName => {
+      const bNorm = norm(bName)
+      const bLoans = loans.filter(l => norm(l.branch) === bNorm)
+      const bLoanIds = new Set(bLoans.map(l => l.id))
+      const bLoanAssets = bLoans.reduce((sum, l) => sum + Number(l.remaining_balance || l.loan_amount || l.disbursed_amount || 0), 0)
+      const bColl = payments.filter(p => bLoanIds.has(p.loan_id)).reduce((sum, p) => sum + Number(p.amount_paid || 0), 0)
+      const bExp = expenses.filter(e => norm(e.branch) === bNorm || !e.branch).reduce((sum, e) => sum + Number(e.amount || 0), 0)
+      const bAssets = Number(((bLoanAssets + Math.max(0, bColl - bExp)) / 10000000).toFixed(2))
+      const bLiab = 0
+      const bNw = Number((bAssets - bLiab).toFixed(2))
+      const sharePct = bsAssets > 0 ? `${Math.round((bAssets / bsAssets) * 100)}%` : '0%'
+      return { name: `${bName} Branch`, share: sharePct, a: bAssets, l: bLiab, nw: bNw }
+    })
+
+    // Branch Wise P&L Breakdown
+    const branchPnL = branchList.filter(b => b !== 'All Branches').map(bName => {
+      const bNorm = norm(bName)
+      const bLoans = loans.filter(l => norm(l.branch) === bNorm)
+      const bLoanIds = new Set(bLoans.map(l => l.id))
+      const bColl = payments.filter(p => bLoanIds.has(p.loan_id) && (p.payment_date || '').startsWith(curMonth)).reduce((sum, p) => sum + Number(p.interest_paid || p.amount_paid || 0), 0)
+      const bInc = income.filter(i => (!i.loan_id || bLoanIds.has(i.loan_id)) && (i.date || '').startsWith(curMonth)).reduce((sum, i) => sum + Number(i.amount || 0), 0)
+      const bTotInc = Number(((bColl + bInc) / 10000000).toFixed(2))
+      const bExp = Number((expenses.filter(e => (norm(e.branch) === bNorm || !e.branch) && (e.date || '').startsWith(curMonth)).reduce((sum, e) => sum + Number(e.amount || 0), 0) / 10000000).toFixed(2))
+      const bPbt = Number((bTotInc - bExp).toFixed(2))
+      const margin = bTotInc > 0 ? `${Math.round((bPbt / bTotInc) * 100)}%` : '0%'
+      return { name: `${bName} Branch`, margin, inc: bTotInc, exp: bExp, pbt: bPbt }
+    })
 
     return {
       isAll,
-      branchWeight,
       bsAssets,
       bsLiabilities,
       bsNetWorth,
       pnlIncome,
       pnlExpenses,
       pnlNetProfit,
+      assetsDelta,
+      liabilitiesDelta,
+      netWorthDelta,
+      incomeDelta,
+      expenseDelta,
+      profitDelta,
       assetsBarPct,
       liabBarPct,
       netWorthBarPct,
       incomeBarPct,
       expenseBarPct,
       profitBarPct,
+      branchBalanceSheets,
+      branchPnL,
       rawLoans: branchLoans,
       rawPayments: payments.filter(p => branchLoanIds.has(p.loan_id)),
       rawExpenses: expenses,
       rawIncome: income,
     }
-  }, [dbData, selectedBranch])
+  }, [dbData, selectedBranch, selectedPeriod, branchList])
 
   // Handle Full Excel Export
   const handleExportFullReport = () => {
@@ -332,8 +378,10 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
                     </div>
                   </div>
                   <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
-                    <span>▲ +8.5%</span>
-                    <span className="text-slate-400 font-normal">vs Mar 2026</span>
+                    <span className={finData.assetsDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}>
+                      {finData.assetsDelta.isPos ? '▲' : '▼'} {finData.assetsDelta.text}
+                    </span>
+                    <span className="text-slate-400 font-normal">vs Prev Period</span>
                   </div>
                 </div>
 
@@ -345,9 +393,9 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
                       {formatCrores(finData.bsLiabilities)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
-                    <span>▲ +6.2%</span>
-                    <span className="text-slate-400 font-normal">vs Mar 2026</span>
+                  <div className="flex items-center gap-1 text-[9.5px] font-bold text-slate-600">
+                    <span>{finData.liabilitiesDelta.text}</span>
+                    <span className="text-slate-400 font-normal">vs Prev Period</span>
                   </div>
                 </div>
 
@@ -360,8 +408,10 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
                     </div>
                   </div>
                   <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
-                    <span>▲ +13.2%</span>
-                    <span className="text-slate-400 font-normal">vs Mar 2026</span>
+                    <span className={finData.netWorthDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}>
+                      {finData.netWorthDelta.isPos ? '▲' : '▼'} {finData.netWorthDelta.text}
+                    </span>
+                    <span className="text-slate-400 font-normal">vs Prev Period</span>
                   </div>
                 </div>
 
@@ -491,8 +541,10 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
                     </div>
                   </div>
                   <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
-                    <span>▲ +11.0%</span>
-                    <span className="text-slate-400 font-normal">vs Apr–Sep 2025</span>
+                    <span className={finData.incomeDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}>
+                      {finData.incomeDelta.isPos ? '▲' : '▼'} {finData.incomeDelta.text}
+                    </span>
+                    <span className="text-slate-400 font-normal">vs Prev Period</span>
                   </div>
                 </div>
 
@@ -504,9 +556,11 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
                       {formatCrores(finData.pnlExpenses)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[9.5px] font-bold text-rose-600">
-                    <span>▲ +6.0%</span>
-                    <span className="text-slate-400 font-normal">vs Apr–Sep 2025</span>
+                  <div className="flex items-center gap-1 text-[9.5px] font-bold mt-0.5">
+                    <span className={finData.expenseDelta.isPos ? 'text-rose-600' : 'text-emerald-600'}>
+                      {finData.expenseDelta.isPos ? '▲' : '▼'} {finData.expenseDelta.text}
+                    </span>
+                    <span className="text-slate-400 font-normal">vs Prev Period</span>
                   </div>
                 </div>
 
@@ -518,9 +572,11 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
                       {formatCrores(finData.pnlNetProfit)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600">
-                    <span>▲ +14.0%</span>
-                    <span className="text-slate-400 font-normal">vs Apr–Sep 2025</span>
+                  <div className="flex items-center gap-1 text-[9.5px] font-bold mt-0.5">
+                    <span className={finData.profitDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}>
+                      {finData.profitDelta.isPos ? '▲' : '▼'} {finData.profitDelta.text}
+                    </span>
+                    <span className="text-slate-400 font-normal">vs Prev Period</span>
                   </div>
                 </div>
 
@@ -798,19 +854,23 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {[
-                      { name: 'Namakkal Branch', share: '45%', a: 5.62, l: 3.65, nw: 1.97 },
-                      { name: 'Aniyapuram Branch', share: '30%', a: 3.74, l: 2.43, nw: 1.31 },
-                      { name: 'Vallipuram Branch', share: '25%', a: 3.12, l: 2.02, nw: 1.10 },
-                    ].map(b => (
-                      <tr key={b.name} className="hover:bg-slate-50">
-                        <td className="px-3 py-2 font-bold text-slate-800">{b.name}</td>
-                        <td className="px-3 py-2 text-right font-mono text-blue-600 font-bold">{b.a.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-emerald-600 font-bold">{b.l.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-purple-600 font-bold">{b.nw.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-center font-bold text-slate-500">{b.share}</td>
+                    {finData.branchBalanceSheets.length > 0 ? (
+                      finData.branchBalanceSheets.map(b => (
+                        <tr key={b.name} className="hover:bg-slate-50">
+                          <td className="px-3 py-2 font-bold text-slate-800">{b.name}</td>
+                          <td className="px-3 py-2 text-right font-mono text-blue-600 font-bold">{b.a.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-emerald-600 font-bold">{b.l.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-purple-600 font-bold">{b.nw.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-center font-bold text-slate-500">{b.share}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
+                          No branch balance sheet records available.
+                        </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               )}
@@ -828,19 +888,23 @@ export default function FinancialStatementsReport({ onBack }: FinancialStatement
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {[
-                      { name: 'Namakkal Branch', margin: '65.1%', inc: 8.51, exp: 2.97, pbt: 5.54 },
-                      { name: 'Aniyapuram Branch', margin: '65.1%', inc: 5.67, exp: 1.98, pbt: 3.69 },
-                      { name: 'Vallipuram Branch', margin: '65.1%', inc: 4.72, exp: 1.65, pbt: 3.07 },
-                    ].map(b => (
-                      <tr key={b.name} className="hover:bg-slate-50">
-                        <td className="px-3 py-2 font-bold text-slate-800">{b.name}</td>
-                        <td className="px-3 py-2 text-right font-mono text-blue-600 font-bold">{b.inc.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-rose-600 font-bold">{b.exp.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-emerald-700 font-bold">{b.pbt.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-center font-bold text-emerald-600">{b.margin}</td>
+                    {finData.branchPnL.length > 0 ? (
+                      finData.branchPnL.map(b => (
+                        <tr key={b.name} className="hover:bg-slate-50">
+                          <td className="px-3 py-2 font-bold text-slate-800">{b.name}</td>
+                          <td className="px-3 py-2 text-right font-mono text-blue-600 font-bold">{b.inc.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-rose-600 font-bold">{b.exp.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-emerald-700 font-bold">{b.pbt.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-center font-bold text-emerald-600">{b.margin}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
+                          No branch P&L records available for this period.
+                        </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               )}

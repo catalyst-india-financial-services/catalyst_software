@@ -20,40 +20,6 @@ interface InterestProfitabilityReportProps {
   onBack: () => void
 }
 
-// Benchmark baseline targets for authentic visual fidelity
-const BENCHMARK_DATA = {
-  interestExpected: 1850000,
-  interestCollected: 1610000,
-  collectionRate: 87.0,
-  netInterestIncome: 1230000,
-  totalIncome: 1890000,
-  totalExpenses: 660000,
-  pbtProfit: 485000,
-  expDelta: '+10%',
-  colDelta: '+12%',
-  rateDelta: '+2.1%',
-  niiDelta: '+14%',
-  incomeDelta: '+11%',
-  expenseDelta: '+6%',
-  profitDelta: '+18%',
-  trend: [
-    { month: 'Apr 2026', expected: 14.2, collected: 12.1 },
-    { month: 'May 2026', expected: 15.6, collected: 13.0 },
-    { month: 'Jun 2026', expected: 16.8, collected: 14.5 },
-    { month: 'Jul 2026', expected: 17.0, collected: 15.1 },
-    { month: 'Aug 2026', expected: 18.1, collected: 15.8 },
-    { month: 'Sep 2026', expected: 18.5, collected: 16.1 },
-  ],
-  products: [
-    { name: 'Housing Loan', expected: 6.20, collected: 5.60, rate: 90, color: '#3B82F6' },
-    { name: 'Business Loan', expected: 4.50, collected: 3.70, rate: 82, color: '#F59E0B' },
-    { name: 'Gold Loan', expected: 2.80, collected: 2.60, rate: 93, color: '#10B981' },
-    { name: 'Personal Loan', expected: 2.10, collected: 1.80, rate: 86, color: '#F97316' },
-    { name: 'Vehicle Loan', expected: 1.90, collected: 1.60, rate: 84, color: '#8B5CF6' },
-    { name: 'Others', expected: 1.00, collected: 0.80, rate: 80, color: '#06B6D4' },
-  ],
-}
-
 export default function InterestProfitabilityReport({ onBack }: InterestProfitabilityReportProps) {
   const { isBranchUser, userBranch, selectedBranch: storeBranch } = useAuthStore()
   const initialBranch = (isBranchUser ? userBranch : storeBranch) || 'All Branches'
@@ -97,7 +63,7 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
 
   // Format currency helpers
   const formatLakhs = (amt: number) => {
-    const lk = amt / 100000
+    const lk = Number(amt || 0) / 100000
     return `₹ ${lk.toFixed(2)} L`
   }
 
@@ -172,40 +138,58 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
     const curPays = payments.filter(p => branchLoanIds.has(p.loan_id) && (p.payment_date || '').startsWith(curMonth))
     const prevPays = payments.filter(p => branchLoanIds.has(p.loan_id) && (p.payment_date || '').startsWith(prevMonth))
 
-    const curExpList = expenses.filter(e => (e.date || '').startsWith(curMonth))
-    const prevExpList = expenses.filter(e => (e.date || '').startsWith(prevMonth))
+    const curExpList = expenses.filter(e => (e.date || '').startsWith(curMonth) && (isAll || norm(e.branch) === curBranchNorm || !e.branch))
+    const prevExpList = expenses.filter(e => (e.date || '').startsWith(prevMonth) && (isAll || norm(e.branch) === curBranchNorm || !e.branch))
 
     const curIncList = income.filter(i => (i.date || '').startsWith(curMonth) && (!i.loan_id || branchLoanIds.has(i.loan_id)))
+    const prevIncList = income.filter(i => (i.date || '').startsWith(prevMonth) && (!i.loan_id || branchLoanIds.has(i.loan_id)))
 
     // Calculate Interest Expected & Collected
-    let rawExpected = curScheds.reduce((sum, s) => sum + Number(s.interest || 0), 0)
-    let rawCollected = curPays.reduce((sum, p) => sum + (p.interest_paid !== undefined && p.interest_paid !== null ? Number(p.interest_paid) : Number(p.amount_paid || 0)), 0)
+    const interestExpected = curScheds.reduce((sum, s) => sum + Number(s.interest || 0), 0)
+    const interestCollected = curPays.reduce((sum, p) => sum + (p.interest_paid !== undefined && p.interest_paid !== null ? Number(p.interest_paid) : Number(p.amount_paid || 0)), 0)
 
     // For previous month
-    let prevExpected = prevScheds.reduce((sum, s) => sum + Number(s.interest || 0), 0)
-    let prevCollected = prevPays.reduce((sum, p) => sum + (p.interest_paid !== undefined && p.interest_paid !== null ? Number(p.interest_paid) : Number(p.amount_paid || 0)), 0)
+    const prevExpected = prevScheds.reduce((sum, s) => sum + Number(s.interest || 0), 0)
+    const prevCollected = prevPays.reduce((sum, p) => sum + (p.interest_paid !== undefined && p.interest_paid !== null ? Number(p.interest_paid) : Number(p.amount_paid || 0)), 0)
 
     // Non-EMI other income & total expenses
     const rawOtherIncome = curIncList.reduce((sum, i) => sum + Number(i.amount || 0), 0)
-    const rawExpenses = curExpList.reduce((sum, e) => sum + Number(e.amount || 0), 0)
-    const prevExpensesAmt = prevExpList.reduce((sum, e) => sum + Number(e.amount || 0), 0)
+    const prevOtherIncome = prevIncList.reduce((sum, i) => sum + Number(i.amount || 0), 0)
+    const totalExpenses = curExpList.reduce((sum, e) => sum + Number(e.amount || 0), 0)
+    const prevExpenses = prevExpList.reduce((sum, e) => sum + Number(e.amount || 0), 0)
 
-    // If live records exist for this branch, scale dynamically with authentic benchmark ratios
-    const hasDbData = branchLoans.length > 0 && curScheds.length > 0
+    const collectionRate = interestExpected > 0 ? Number(((interestCollected / interestExpected) * 100).toFixed(1)) : 0
+    const prevCollectionRate = prevExpected > 0 ? Number(((prevCollected / prevExpected) * 100).toFixed(1)) : 0
 
-    const interestExpected = hasDbData ? (rawExpected >= 50000 ? rawExpected : BENCHMARK_DATA.interestExpected) : BENCHMARK_DATA.interestExpected
-    const interestCollected = hasDbData ? (rawCollected >= 40000 ? rawCollected : BENCHMARK_DATA.interestCollected) : BENCHMARK_DATA.interestCollected
+    const netInterestIncome = interestCollected
+    const prevNetInterestIncome = prevCollected
 
-    const collectionRate = interestExpected > 0 ? Number(((interestCollected / interestExpected) * 100).toFixed(1)) : 87.0
-    const branchRatio = isAll ? 1 : (interestCollected / 1610000)
-    const netInterestIncome = isAll ? BENCHMARK_DATA.netInterestIncome : Math.round(BENCHMARK_DATA.netInterestIncome * branchRatio)
-    const totalIncome = interestCollected + (rawOtherIncome > 0 ? rawOtherIncome : Math.round(280000 * branchRatio))
-    const totalExpenses = rawExpenses > 0 ? (isAll ? rawExpenses : Math.round(rawExpenses * branchRatio)) : (isAll ? BENCHMARK_DATA.totalExpenses : Math.round(BENCHMARK_DATA.totalExpenses * branchRatio))
-    const pbtProfit = isAll ? BENCHMARK_DATA.pbtProfit : Math.round(BENCHMARK_DATA.pbtProfit * branchRatio)
+    const totalIncome = interestCollected + rawOtherIncome
+    const prevTotalIncome = prevCollected + prevOtherIncome
+
+    const pbtProfit = totalIncome - totalExpenses
+    const prevPbtProfit = prevTotalIncome - prevExpenses
+
+    // Helper for calculating percentage change delta vs previous period
+    const calcDelta = (cur: number, prev: number) => {
+      if (cur === 0 && prev === 0) return { text: '0.0%', isPos: true }
+      if (prev === 0) return { text: cur > 0 ? '+100%' : '-100%', isPos: cur >= 0 }
+      const diff = ((cur - prev) / Math.abs(prev)) * 100
+      const sign = diff >= 0 ? '+' : ''
+      return { text: `${sign}${diff.toFixed(1)}%`, isPos: diff >= 0 }
+    }
+
+    const expDelta = calcDelta(interestExpected, prevExpected)
+    const colDelta = calcDelta(interestCollected, prevCollected)
+    const rateDelta = calcDelta(collectionRate, prevCollectionRate)
+    const niiDelta = calcDelta(netInterestIncome, prevNetInterestIncome)
+    const incomeDelta = calcDelta(totalIncome, prevTotalIncome)
+    const expenseDelta = calcDelta(totalExpenses, prevExpenses)
+    const profitDelta = calcDelta(pbtProfit, prevPbtProfit)
 
     // Trend for 6 months (Apr 2026 to Sep 2026)
     const months6 = ['Apr 2026', 'May 2026', 'Jun 2026', 'Jul 2026', 'Aug 2026', 'Sep 2026']
-    const trend = months6.map((mLabel, idx) => {
+    const trend = months6.map((mLabel) => {
       const mStr = periodToMonthStr(mLabel)
       const mScheds = emiSchedule.filter(s => branchLoanIds.has(s.loan_id) && (s.due_date || '').startsWith(mStr))
       const mPays = payments.filter(p => branchLoanIds.has(p.loan_id) && (p.payment_date || '').startsWith(mStr))
@@ -213,47 +197,79 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
       const dbExp = mScheds.reduce((sum, s) => sum + Number(s.interest || 0), 0)
       const dbCol = mPays.reduce((sum, p) => sum + (p.interest_paid !== undefined && p.interest_paid !== null ? Number(p.interest_paid) : Number(p.amount_paid || 0)), 0)
 
-      if (dbExp > 0 && dbCol > 0) {
-        return {
-          month: mLabel,
-          expected: Number((dbExp / 100000).toFixed(1)),
-          collected: Number((dbCol / 100000).toFixed(1)),
-        }
+      return {
+        month: mLabel,
+        expected: Number((dbExp / 100000).toFixed(2)),
+        collected: Number((dbCol / 100000).toFixed(2)),
       }
-      return BENCHMARK_DATA.trend[idx]
     })
 
     // Product Wise Interest Breakdown
-    const standardProducts = ['Housing Loan', 'Business Loan', 'Gold Loan', 'Personal Loan', 'Vehicle Loan', 'Others']
+    const standardProducts = [
+      { name: 'Housing Loan', color: '#3B82F6' },
+      { name: 'Business Loan', color: '#F59E0B' },
+      { name: 'Gold Loan', color: '#10B981' },
+      { name: 'Personal Loan', color: '#F97316' },
+      { name: 'Vehicle Loan', color: '#8B5CF6' },
+      { name: 'Others', color: '#06B6D4' },
+    ]
     const productExpectedMap: Record<string, number> = {}
     const productCollectedMap: Record<string, number> = {}
-    standardProducts.forEach(p => { productExpectedMap[p] = 0; productCollectedMap[p] = 0 })
+    standardProducts.forEach(p => { productExpectedMap[p.name] = 0; productCollectedMap[p.name] = 0 })
 
     curScheds.forEach(s => {
       const prod = loanProductMap.get(s.loan_id) || 'Others'
-      const key = standardProducts.includes(prod) ? prod : 'Others'
+      const key = standardProducts.some(p => p.name === prod) ? prod : 'Others'
       productExpectedMap[key] += Number(s.interest || 0)
     })
 
     curPays.forEach(p => {
       const prod = loanProductMap.get(p.loan_id) || 'Others'
-      const key = standardProducts.includes(prod) ? prod : 'Others'
+      const key = standardProducts.some(p => p.name === prod) ? prod : 'Others'
       productCollectedMap[key] += (p.interest_paid !== undefined && p.interest_paid !== null ? Number(p.interest_paid) : Number(p.amount_paid || 0))
     })
 
-    const productWise = standardProducts.map((pName, i) => {
-      const bm = BENCHMARK_DATA.products[i]
-      const expLakh = productExpectedMap[pName] > 0 ? Number((productExpectedMap[pName] / 100000).toFixed(2)) : bm.expected
-      const colLakh = productCollectedMap[pName] > 0 ? Number((productCollectedMap[pName] / 100000).toFixed(2)) : bm.collected
-      const rate = expLakh > 0 ? Math.round((colLakh / expLakh) * 100) : bm.rate
+    const productWise = standardProducts.map((p) => {
+      const expLakh = Number((productExpectedMap[p.name] / 100000).toFixed(2))
+      const colLakh = Number((productCollectedMap[p.name] / 100000).toFixed(2))
+      const rate = expLakh > 0 ? Math.round((colLakh / expLakh) * 100) : 0
 
       return {
-        name: pName,
+        name: p.name,
         expected: expLakh,
         collected: colLakh,
         rate,
-        color: bm.color,
+        color: p.color,
       }
+    })
+
+    // Branch Wise Profitability Breakdown (Live Dynamic)
+    const branchBreakdown = branchList.filter(b => b !== 'All Branches').map(bName => {
+      const bNorm = norm(bName)
+      const bLoanIds = new Set(loans.filter(l => norm(l.branch) === bNorm).map(l => l.id))
+      const bScheds = emiSchedule.filter(s => bLoanIds.has(s.loan_id) && (s.due_date || '').startsWith(curMonth))
+      const bPays = payments.filter(p => bLoanIds.has(p.loan_id) && (p.payment_date || '').startsWith(curMonth))
+      const bCol = bPays.reduce((sum, p) => sum + (p.interest_paid !== undefined && p.interest_paid !== null ? Number(p.interest_paid) : Number(p.amount_paid || 0)), 0)
+      const bInc = income.filter(i => (!i.loan_id || bLoanIds.has(i.loan_id)) && (i.date || '').startsWith(curMonth)).reduce((sum, i) => sum + Number(i.amount || 0), 0)
+      const bTotInc = bCol + bInc
+      const bExp = expenses.filter(e => (norm(e.branch) === bNorm || !e.branch) && (e.date || '').startsWith(curMonth)).reduce((sum, e) => sum + Number(e.amount || 0), 0)
+      const bProf = bTotInc - bExp
+      const bMargin = bTotInc > 0 ? `${Math.round((bProf / bTotInc) * 100)}%` : '0%'
+
+      return {
+        branch: bName,
+        income: bTotInc,
+        expenses: bExp,
+        profit: bProf,
+        margin: bMargin,
+      }
+    })
+
+    // Operating expenses grouped by category
+    const expenseCategories: Record<string, number> = {}
+    curExpList.forEach(e => {
+      const cat = e.category || 'General Operating Expense'
+      expenseCategories[cat] = (expenseCategories[cat] || 0) + Number(e.amount || 0)
     })
 
     return {
@@ -265,14 +281,23 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
       totalExpenses,
       pbtProfit,
       prevPeriodLabel,
+      expDelta,
+      colDelta,
+      rateDelta,
+      niiDelta,
+      incomeDelta,
+      expenseDelta,
+      profitDelta,
       trend,
       productWise,
+      branchBreakdown,
+      expenseCategories,
       rawLoans: branchLoans,
       rawSchedules: curScheds,
       rawPayments: curPays,
       rawExpenses: curExpList,
     }
-  }, [dbData, selectedBranch, selectedPeriod])
+  }, [dbData, selectedBranch, selectedPeriod, branchList])
 
   // Handle Excel Export
   const handleExportExcel = () => {
@@ -392,8 +417,8 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                 {formatLakhs(reportData.interestExpected)}
               </div>
               <div className="flex items-center gap-1.5 text-xs mt-1">
-                <span className="font-bold text-emerald-600 flex items-center">
-                  <span className="text-[10px] mr-0.5">▲</span> +10%
+                <span className={`font-bold flex items-center ${reportData.expDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  <span className="text-[10px] mr-0.5">{reportData.expDelta.isPos ? '▲' : '▼'}</span> {reportData.expDelta.text}
                 </span>
                 <span className="text-slate-400 text-[11px]">vs {reportData.prevPeriodLabel}</span>
               </div>
@@ -411,8 +436,8 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                 {formatLakhs(reportData.interestCollected)}
               </div>
               <div className="flex items-center gap-1.5 text-xs mt-1">
-                <span className="font-bold text-emerald-600 flex items-center">
-                  <span className="text-[10px] mr-0.5">▲</span> +12%
+                <span className={`font-bold flex items-center ${reportData.colDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  <span className="text-[10px] mr-0.5">{reportData.colDelta.isPos ? '▲' : '▼'}</span> {reportData.colDelta.text}
                 </span>
                 <span className="text-slate-400 text-[11px]">vs {reportData.prevPeriodLabel}</span>
               </div>
@@ -430,8 +455,8 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                 {reportData.collectionRate}%
               </div>
               <div className="flex items-center gap-1.5 text-xs mt-1">
-                <span className="font-bold text-emerald-600 flex items-center">
-                  <span className="text-[10px] mr-0.5">▲</span> +2.1%
+                <span className={`font-bold flex items-center ${reportData.rateDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  <span className="text-[10px] mr-0.5">{reportData.rateDelta.isPos ? '▲' : '▼'}</span> {reportData.rateDelta.text}
                 </span>
                 <span className="text-slate-400 text-[11px]">vs {reportData.prevPeriodLabel}</span>
               </div>
@@ -449,8 +474,8 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                 {formatLakhs(reportData.netInterestIncome)}
               </div>
               <div className="flex items-center gap-1.5 text-xs mt-1">
-                <span className="font-bold text-emerald-600 flex items-center">
-                  <span className="text-[10px] mr-0.5">▲</span> +14%
+                <span className={`font-bold flex items-center ${reportData.niiDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  <span className="text-[10px] mr-0.5">{reportData.niiDelta.isPos ? '▲' : '▼'}</span> {reportData.niiDelta.text}
                 </span>
                 <span className="text-slate-400 text-[11px]">vs {reportData.prevPeriodLabel}</span>
               </div>
@@ -499,8 +524,7 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                     tickLine={false}
                   />
                   <YAxis
-                    domain={[0, 25]}
-                    ticks={[0, 5, 10, 15, 20, 25]}
+                    domain={[0, 'auto']}
                     tick={{ fontSize: 11, fill: '#64748b' }}
                     axisLine={false}
                     tickLine={false}
@@ -546,9 +570,9 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
             {/* Product Rows with Dual Progress Bars */}
             <div className="space-y-3.5 my-auto">
               {reportData.productWise.map((prod) => {
-                const maxExpected = 7.0 // max reference scale in lakhs
-                const expWidth = Math.min(100, (prod.expected / maxExpected) * 100)
-                const colWidth = Math.min(100, (prod.collected / maxExpected) * 100)
+                const maxExpected = Math.max(1, ...reportData.productWise.map(p => p.expected))
+                const expWidth = maxExpected > 0 ? Math.min(100, (prod.expected / maxExpected) * 100) : 0
+                const colWidth = maxExpected > 0 ? Math.min(100, (prod.collected / maxExpected) * 100) : 0
 
                 return (
                   <div key={prod.name} className="flex items-center gap-3 text-xs">
@@ -632,7 +656,9 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                     {formatLakhs(reportData.totalIncome)}
                   </div>
                   <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 mt-1">
-                    <span>▲ +11%</span>
+                    <span className={reportData.incomeDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}>
+                      {reportData.incomeDelta.isPos ? '▲' : '▼'} {reportData.incomeDelta.text}
+                    </span>
                     <span className="text-slate-400 font-normal">vs {reportData.prevPeriodLabel}</span>
                   </div>
                 </div>
@@ -650,8 +676,10 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                   <div className="text-xl font-black text-slate-900 tracking-tight">
                     {formatLakhs(reportData.totalExpenses)}
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-rose-600 mt-1">
-                    <span>▲ +6%</span>
+                  <div className="flex items-center gap-1 text-[11px] font-bold mt-1">
+                    <span className={reportData.expenseDelta.isPos ? 'text-rose-600' : 'text-emerald-600'}>
+                      {reportData.expenseDelta.isPos ? '▲' : '▼'} {reportData.expenseDelta.text}
+                    </span>
                     <span className="text-slate-400 font-normal">vs {reportData.prevPeriodLabel}</span>
                   </div>
                 </div>
@@ -669,8 +697,10 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                   <div className="text-xl font-black text-slate-900 tracking-tight">
                     {formatLakhs(reportData.netInterestIncome)}
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 mt-1">
-                    <span>▲ +14%</span>
+                  <div className="flex items-center gap-1 text-[11px] font-bold mt-1">
+                    <span className={reportData.niiDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}>
+                      {reportData.niiDelta.isPos ? '▲' : '▼'} {reportData.niiDelta.text}
+                    </span>
                     <span className="text-slate-400 font-normal">vs {reportData.prevPeriodLabel}</span>
                   </div>
                 </div>
@@ -688,8 +718,10 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                   <div className="text-xl font-black text-slate-900 tracking-tight">
                     {formatLakhs(reportData.pbtProfit)}
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 mt-1">
-                    <span>▲ +18%</span>
+                  <div className="flex items-center gap-1 text-[11px] font-bold mt-1">
+                    <span className={reportData.profitDelta.isPos ? 'text-emerald-600' : 'text-rose-600'}>
+                      {reportData.profitDelta.isPos ? '▲' : '▼'} {reportData.profitDelta.text}
+                    </span>
                     <span className="text-slate-400 font-normal">vs {reportData.prevPeriodLabel}</span>
                   </div>
                 </div>
@@ -788,19 +820,23 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {[
-                      { branch: 'Namakkal', income: 1150000, expenses: 390000, profit: 760000, margin: '66%' },
-                      { branch: 'Aniyapuram', income: 480000, expenses: 160000, profit: 320000, margin: '67%' },
-                      { branch: 'Vallipuram', income: 260000, expenses: 110000, profit: 150000, margin: '58%' },
-                    ].map((b, i) => (
-                      <tr key={i} className="hover:bg-slate-50">
-                        <td className="px-3 py-2 font-bold text-slate-800">{b.branch}</td>
-                        <td className="px-3 py-2 text-right font-mono text-slate-700">{formatINR(b.income)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-rose-600">{formatINR(b.expenses)}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600">{formatINR(b.profit)}</td>
-                        <td className="px-3 py-2 text-center font-bold text-slate-700">{b.margin}</td>
+                    {reportData.branchBreakdown.length > 0 ? (
+                      reportData.branchBreakdown.map((b, i) => (
+                        <tr key={i} className="hover:bg-slate-50">
+                          <td className="px-3 py-2 font-bold text-slate-800">{b.branch}</td>
+                          <td className="px-3 py-2 text-right font-mono text-slate-700">{formatINR(b.income)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-rose-600">{formatINR(b.expenses)}</td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600">{formatINR(b.profit)}</td>
+                          <td className="px-3 py-2 text-center font-bold text-slate-700">{b.margin}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
+                          No branch data recorded for the selected period.
+                        </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               ) : selectedQuickReport === 'P&L Report' ? (
@@ -825,27 +861,27 @@ export default function InterestProfitabilityReport({ onBack }: InterestProfitab
                     <tr className="hover:bg-slate-50">
                       <td className="px-3 py-2 font-sans text-slate-800">Fee & Other Operational Income</td>
                       <td className="px-3 py-2 font-sans text-slate-500">Non-interest Income</td>
-                      <td className="px-3 py-2 text-right text-emerald-700">{formatINR(reportData.totalIncome - reportData.interestCollected)}</td>
+                      <td className="px-3 py-2 text-right text-emerald-700">{formatINR(Math.max(0, reportData.totalIncome - reportData.interestCollected))}</td>
                     </tr>
                     <tr className="bg-rose-50/40 font-sans font-bold text-rose-900">
                       <td colSpan={2} className="px-3 py-2">B. Operating Expenses</td>
                       <td className="px-3 py-2 text-right">{formatINR(reportData.totalExpenses)}</td>
                     </tr>
-                    <tr className="hover:bg-slate-50">
-                      <td className="px-3 py-2 font-sans text-slate-800">Staff Salaries & Allowances</td>
-                      <td className="px-3 py-2 font-sans text-slate-500">HR Expense</td>
-                      <td className="px-3 py-2 text-right text-rose-600">₹ 3,80,000</td>
-                    </tr>
-                    <tr className="hover:bg-slate-50">
-                      <td className="px-3 py-2 font-sans text-slate-800">Branch Office Rent & Utilities</td>
-                      <td className="px-3 py-2 font-sans text-slate-500">Admin Expense</td>
-                      <td className="px-3 py-2 text-right text-rose-600">₹ 1,65,000</td>
-                    </tr>
-                    <tr className="hover:bg-slate-50">
-                      <td className="px-3 py-2 font-sans text-slate-800">Field Recovery & Admin Operations</td>
-                      <td className="px-3 py-2 font-sans text-slate-500">Operating Expense</td>
-                      <td className="px-3 py-2 text-right text-rose-600">₹ 1,15,000</td>
-                    </tr>
+                    {Object.keys(reportData.expenseCategories).length > 0 ? (
+                      Object.entries(reportData.expenseCategories).map(([cat, amt]) => (
+                        <tr key={cat} className="hover:bg-slate-50">
+                          <td className="px-3 py-2 font-sans text-slate-800">{cat}</td>
+                          <td className="px-3 py-2 font-sans text-slate-500">Operating Expense</td>
+                          <td className="px-3 py-2 text-right text-rose-600">{formatINR(amt)}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr className="hover:bg-slate-50">
+                        <td className="px-3 py-2 font-sans text-slate-800">Operating Expenses Recorded</td>
+                        <td className="px-3 py-2 font-sans text-slate-500">Expense Ledger</td>
+                        <td className="px-3 py-2 text-right text-slate-400">₹ 0</td>
+                      </tr>
+                    )}
                     <tr className="bg-blue-50/60 font-sans font-black text-blue-900 border-t-2 border-blue-200">
                       <td colSpan={2} className="px-3 py-2.5">Net Profit Before Tax (PBT = A - B)</td>
                       <td className="px-3 py-2.5 text-right text-blue-950 font-bold">{formatINR(reportData.pbtProfit)}</td>
