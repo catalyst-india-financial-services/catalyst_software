@@ -14,6 +14,7 @@ import LoanPortfolioReport from './LoanPortfolioReport'
 import TaskOperationsReport from './TaskOperationsReport'
 import BankCashReport from './BankCashReport'
 import RiskControlReport from './RiskControlReport'
+import DailyReportsReport from './DailyReportsReport'
 
 const REPORTS = [
   { 
@@ -59,10 +60,15 @@ const REPORTS = [
   { 
     id: 6, 
     title: 'Daily Reports', 
-    desc: 'Track staff targets, productivity and recovery performance.', 
+    desc: '4 Daily Registers: EMI, earnings & expenses, daily master, and voucher.', 
     icon: Users, 
     iconColor: 'text-pink-600', iconBg: 'bg-pink-50', badgeBg: 'bg-pink-600',
-    subReports: Array.from({ length: 5 }).map((_, i) => ({ id: `STAFF_0${i+1}`, name: `Staff Report ${i+1}`, desc: 'Staff productivity metrics.', freq: 'Daily' }))
+    subReports: [
+      { id: 'DAILY_01', name: 'EMI', desc: '12-Month EMI tracking sheet (Apr - Mar) with staff initials.', freq: 'Daily' },
+      { id: 'DAILY_02', name: 'earnings & expenses', desc: 'Dual-ledger daily collections, disbursals, expenses & O/s reconciliation.', freq: 'Daily' },
+      { id: 'DAILY_03', name: 'daily master', desc: '55-Cycle daily master register: O/s, collections, cash, bank & closing figures.', freq: 'Daily' },
+      { id: 'DAILY_04', name: 'voucher', desc: 'Actual daily cash voucher, debit/credit balance, and live SMA-0/1/2/NPA portfolio.', freq: 'Daily' },
+    ]
   },
   { 
     id: 7, 
@@ -94,7 +100,7 @@ export default function ReportsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedReport, setSelectedReport] = useState<typeof REPORTS[0] | null>(null)
   return (
-    <div className={selectedReport?.id === 2 || selectedReport?.id === 3 || selectedReport?.id === 4 || selectedReport?.id === 5 || selectedReport?.id === 7 || selectedReport?.id === 8 || selectedReport?.id === 9 ? "h-full w-full flex-1 flex flex-col overflow-hidden" : "p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4"}>
+    <div className={selectedReport ? "h-full w-full flex-1 flex flex-col overflow-hidden" : "p-4 max-w-7xl mx-auto h-[calc(100vh-64px)] flex flex-col overflow-hidden space-y-4"}>
       {/* Header */}
       {!selectedReport && (
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 flex-shrink-0">
@@ -134,6 +140,10 @@ export default function ReportsPage() {
       ) : selectedReport?.id === 5 ? (
         <div className="flex-1 min-h-0 flex flex-col">
           <LoanPortfolioReport onBack={() => setSelectedReport(null)} />
+        </div>
+      ) : selectedReport?.id === 6 ? (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <DailyReportsReport onBack={() => setSelectedReport(null)} />
         </div>
       ) : selectedReport?.id === 7 ? (
         <div className="flex-1 min-h-0 flex flex-col">
