@@ -60,14 +60,14 @@ const REPORTS = [
   { 
     id: 6, 
     title: 'Daily Reports', 
-    desc: '4 Daily Registers: EMI, earnings & expenses, daily master, and voucher.', 
+    desc: '4 Daily Registers: voucher, earnings & expenses, daily master, and EMI.', 
     icon: Users, 
     iconColor: 'text-pink-600', iconBg: 'bg-pink-50', badgeBg: 'bg-pink-600',
     subReports: [
-      { id: 'DAILY_01', name: 'EMI', desc: '12-Month EMI tracking sheet (Apr - Mar) with staff initials.', freq: 'Daily' },
+      { id: 'DAILY_01', name: 'voucher', desc: 'Actual daily cash voucher, debit/credit balance, and live SMA-0/1/2/NPA portfolio.', freq: 'Daily' },
       { id: 'DAILY_02', name: 'earnings & expenses', desc: 'Dual-ledger daily collections, disbursals, expenses & O/s reconciliation.', freq: 'Daily' },
       { id: 'DAILY_03', name: 'daily master', desc: '55-Cycle daily master register: O/s, collections, cash, bank & closing figures.', freq: 'Daily' },
-      { id: 'DAILY_04', name: 'voucher', desc: 'Actual daily cash voucher, debit/credit balance, and live SMA-0/1/2/NPA portfolio.', freq: 'Daily' },
+      { id: 'DAILY_04', name: 'EMI', desc: '12-Month EMI tracking sheet (Apr - Mar) with staff initials.', freq: 'Daily' },
     ]
   },
   { 

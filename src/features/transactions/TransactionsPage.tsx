@@ -32,7 +32,7 @@ const TAB_ITEMS: { id: string; label: string; icon: React.ComponentType<{ classN
   { id: 'expenses', label: 'Expenses', icon: ShoppingBag },
   { id: 'deposit', label: 'Deposit', icon: Banknote },
   { id: 'ledger', label: 'Ledger', icon: FileText },
-  { id: 'bank-accounts', label: 'Bank Accounts', icon: Landmark },
+  { id: 'bank-accounts', label: 'Ledger Account', icon: Landmark },
 ]
 
 // ─── Type colors / labels ──────────────────────────────────────────────────────

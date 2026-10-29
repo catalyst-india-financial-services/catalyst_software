@@ -14,12 +14,12 @@ import { Button, Badge } from '@/components/ui'
 
 interface DailyReportsReportProps {
   onBack: () => void
-  initialCard?: 'emi' | 'earnings_expenses' | 'daily_master' | 'voucher'
+  initialCard?: 'voucher' | 'earnings_expenses' | 'daily_master' | 'emi'
 }
 
-type CardType = 'emi' | 'earnings_expenses' | 'daily_master' | 'voucher'
+type CardType = 'voucher' | 'earnings_expenses' | 'daily_master' | 'emi'
 
-export default function DailyReportsReport({ onBack, initialCard = 'emi' }: DailyReportsReportProps) {
+export default function DailyReportsReport({ onBack, initialCard = 'voucher' }: DailyReportsReportProps) {
   const { isBranchUser, userBranch, selectedBranch: storeBranch } = useAuthStore()
   const initialBranch = (isBranchUser ? userBranch : storeBranch) || 'All Branches'
   
@@ -703,28 +703,18 @@ export default function DailyReportsReport({ onBack, initialCard = 'emi' }: Dail
   const handleExportExcel = () => {
     const wb = XLSX.utils.book_new()
 
-    // 1. EMI Sheet
-    const emiExport = emiRows.map(r => ({
+    // 1. Voucher Sheet
+    const voucherExport = voucherRows.map(r => ({
       'Sr No': r.srNo,
-      'Account / Loan': r.accountNo,
-      'Customer Name': r.customerName,
-      'Apr': r.apr,
-      'May': r.may,
-      'June': r.june,
-      'July': r.july,
-      'August': r.august,
-      'September': r.september,
-      'October': r.october,
-      'November': r.november,
-      'December': r.december,
-      'January': r.january,
-      'February': r.february,
-      'March': r.march,
+      'Name': r.name,
+      'Loan No': r.loanNo,
+      'Particulars': r.particulars,
+      'Debit': r.debit,
+      'Credit': r.credit,
       'Initial 1': r.initial1,
-      'Initial 2': r.initial2,
-      'Remarks': r.remarks
+      'Initial 2': r.initial2
     }))
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(emiExport), '1. EMI')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(voucherExport), '1. Voucher')
 
     // 2. Earnings & Expenses Sheet
     const earnExpExport = leftLedgerRows.map((r, i) => {
@@ -770,18 +760,28 @@ export default function DailyReportsReport({ onBack, initialCard = 'emi' }: Dail
     }))
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(masterExport), '3. Daily Master')
 
-    // 4. Voucher Sheet
-    const voucherExport = voucherRows.map(r => ({
+    // 4. EMI Sheet
+    const emiExport = emiRows.map(r => ({
       'Sr No': r.srNo,
-      'Name': r.name,
-      'Loan No': r.loanNo,
-      'Particulars': r.particulars,
-      'Debit': r.debit,
-      'Credit': r.credit,
+      'Account / Loan': r.accountNo,
+      'Customer Name': r.customerName,
+      'Apr': r.apr,
+      'May': r.may,
+      'June': r.june,
+      'July': r.july,
+      'August': r.august,
+      'September': r.september,
+      'October': r.october,
+      'November': r.november,
+      'December': r.december,
+      'January': r.january,
+      'February': r.february,
+      'March': r.march,
       'Initial 1': r.initial1,
-      'Initial 2': r.initial2
+      'Initial 2': r.initial2,
+      'Remarks': r.remarks
     }))
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(voucherExport), '4. Voucher')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(emiExport), '4. EMI')
 
     const fileName = `Daily_Reports_${selectedBranch.replace(/\s+/g, '_')}_${dayjs().format('YYYY-MM-DD')}.xlsx`
     XLSX.writeFile(wb, fileName)
@@ -818,7 +818,7 @@ export default function DailyReportsReport({ onBack, initialCard = 'emi' }: Dail
                 </Badge>
               </div>
               <p className="text-xs text-slate-500">
-                Four official daily reports: EMI Register, Earnings & Expenses, Daily Master, and Actual Voucher
+                Four official daily reports: Actual Voucher, Earnings & Expenses, Daily Master, and EMI Register
               </p>
             </div>
           </div>
@@ -890,45 +890,41 @@ export default function DailyReportsReport({ onBack, initialCard = 'emi' }: Dail
       </div>
 
       {/* ─────────────────────────────────────────────────────────────────────────────
-          THE 4 CARDS (Requested by User in Exact Order)
-          Card 1: EMI
-          Card 2: earnings & expenses
-          Card 3: daily master
-          Card 4: voucher
+          THE 4 CARDS (Card 1: voucher, Card 2: earnings & expenses, Card 3: daily master, Card 4: EMI)
       ───────────────────────────────────────────────────────────────────────────── */}
       <div className="px-4 py-3 bg-slate-100/70 border-b border-slate-200 flex-shrink-0 print:hidden">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* CARD 1: EMI */}
+          {/* CARD 1: VOUCHER */}
           <div
-            onClick={() => setActiveCard('emi')}
+            onClick={() => setActiveCard('voucher')}
             className={`cursor-pointer rounded-xl p-3 border transition-all text-left relative overflow-hidden group shadow-2xs ${
-              activeCard === 'emi'
-                ? 'bg-white border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
-                : 'bg-white/80 hover:bg-white border-slate-200 hover:border-blue-300'
+              activeCard === 'voucher'
+                ? 'bg-white border-rose-500 ring-2 ring-rose-500/20 shadow-sm'
+                : 'bg-white/80 hover:bg-white border-slate-200 hover:border-rose-300'
             }`}
           >
             <div className="flex items-center justify-between mb-1.5">
               <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                activeCard === 'emi' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                activeCard === 'voucher' ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-600'
               }`}>
                 Card 1
               </span>
               <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                activeCard === 'emi' ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400 group-hover:text-blue-500'
+                activeCard === 'voucher' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400 group-hover:text-rose-500'
               }`}>
-                <CreditCard className="w-4 h-4" />
+                <Receipt className="w-4 h-4" />
               </div>
             </div>
-            <h3 className="font-extrabold text-slate-900 text-sm tracking-tight mb-0.5">EMI</h3>
-            <p className="text-[11px] text-slate-500 line-clamp-1">12-Month Financial Year Register (Apr - Mar)</p>
+            <h3 className="font-extrabold text-slate-900 text-sm tracking-tight mb-0.5">voucher</h3>
+            <p className="text-[11px] text-slate-500 line-clamp-1">Actual Day-End Voucher, Reconciliation & SMA</p>
             <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
-              <span className="font-bold text-slate-600">40 Ledger Rows</span>
-              <span className={`font-extrabold ${activeCard === 'emi' ? 'text-blue-600' : 'text-slate-400'}`}>
-                {activeCard === 'emi' ? 'Active View' : 'Click to View'}
+              <span className="font-bold text-slate-600">17 Items + SMA</span>
+              <span className={`font-extrabold ${activeCard === 'voucher' ? 'text-rose-600' : 'text-slate-400'}`}>
+                {activeCard === 'voucher' ? 'Active View' : 'Click to View'}
               </span>
             </div>
-            {activeCard === 'emi' && (
-              <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-600" />
+            {activeCard === 'voucher' && (
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-rose-600" />
             )}
           </div>
 
@@ -1000,37 +996,37 @@ export default function DailyReportsReport({ onBack, initialCard = 'emi' }: Dail
             )}
           </div>
 
-          {/* CARD 4: VOUCHER */}
+          {/* CARD 4: EMI */}
           <div
-            onClick={() => setActiveCard('voucher')}
+            onClick={() => setActiveCard('emi')}
             className={`cursor-pointer rounded-xl p-3 border transition-all text-left relative overflow-hidden group shadow-2xs ${
-              activeCard === 'voucher'
-                ? 'bg-white border-rose-500 ring-2 ring-rose-500/20 shadow-sm'
-                : 'bg-white/80 hover:bg-white border-slate-200 hover:border-rose-300'
+              activeCard === 'emi'
+                ? 'bg-white border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
+                : 'bg-white/80 hover:bg-white border-slate-200 hover:border-blue-300'
             }`}
           >
             <div className="flex items-center justify-between mb-1.5">
               <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                activeCard === 'voucher' ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-600'
+                activeCard === 'emi' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
               }`}>
                 Card 4
               </span>
               <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                activeCard === 'voucher' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400 group-hover:text-rose-500'
+                activeCard === 'emi' ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400 group-hover:text-blue-500'
               }`}>
-                <Receipt className="w-4 h-4" />
+                <CreditCard className="w-4 h-4" />
               </div>
             </div>
-            <h3 className="font-extrabold text-slate-900 text-sm tracking-tight mb-0.5">voucher</h3>
-            <p className="text-[11px] text-slate-500 line-clamp-1">Actual Day-End Voucher, Reconciliation & SMA</p>
+            <h3 className="font-extrabold text-slate-900 text-sm tracking-tight mb-0.5">EMI</h3>
+            <p className="text-[11px] text-slate-500 line-clamp-1">12-Month Financial Year Register (Apr - Mar)</p>
             <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
-              <span className="font-bold text-slate-600">17 Items + SMA</span>
-              <span className={`font-extrabold ${activeCard === 'voucher' ? 'text-rose-600' : 'text-slate-400'}`}>
-                {activeCard === 'voucher' ? 'Active View' : 'Click to View'}
+              <span className="font-bold text-slate-600">40 Ledger Rows</span>
+              <span className={`font-extrabold ${activeCard === 'emi' ? 'text-blue-600' : 'text-slate-400'}`}>
+                {activeCard === 'emi' ? 'Active View' : 'Click to View'}
               </span>
             </div>
-            {activeCard === 'voucher' && (
-              <div className="absolute top-0 left-0 right-0 h-0.5 bg-rose-600" />
+            {activeCard === 'emi' && (
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-600" />
             )}
           </div>
         </div>
@@ -1050,7 +1046,7 @@ export default function DailyReportsReport({ onBack, initialCard = 'emi' }: Dail
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-600" />
                 <h2 className="text-xs font-bold text-slate-800 tracking-wider uppercase">
-                  Card 1: EMI Ledger (12-Month Financial Year Grid)
+                  Card 4: EMI Ledger (12-Month Financial Year Grid)
                 </h2>
                 <span className="text-[11px] text-slate-500 font-medium">| {selectedBranch} | FY {selectedFy}</span>
               </div>
@@ -1845,7 +1841,7 @@ export default function DailyReportsReport({ onBack, initialCard = 'emi' }: Dail
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-rose-600" />
                 <h2 className="text-xs font-bold text-slate-800 tracking-wider uppercase">
-                  Card 4: voucher (Actual Cash & SMA Portfolio Voucher)
+                  Card 1: voucher (Actual Cash & SMA Portfolio Voucher)
                 </h2>
               </div>
               <div className="text-xs text-slate-500 font-medium">
